@@ -8,11 +8,12 @@
 import { log } from './lib/logger';
 import { handleMessage, handleCallback, handleCommand } from './bot';
 import * as telegram from './lib/telegram';
+import { allTools } from './tools';
 import type { TelegramUpdate } from './types/telegram';
 import type { AITool } from './types/ai';
 
-// Tool registry — populated in Phase 5
-const tools: AITool[] = [];
+// Tool registry — all 26 tools loaded from typed modules
+const tools: AITool[] = allTools;
 
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
