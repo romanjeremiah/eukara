@@ -1,0 +1,60 @@
+// ============================================================
+// Callback Query Handler
+//
+// Handles inline keyboard button presses.
+// Each callback_data value routes to a specific action.
+// ============================================================
+
+import type { TelegramCallbackQuery } from '../types/telegram';
+import * as telegram from '../lib/telegram';
+import { log } from '../lib/logger';
+
+export async function handleCallback(
+	query: TelegramCallbackQuery,
+	env: Env
+): Promise<void> {
+	const chatId = query.message?.chat.id;
+	const msgId = query.message?.message_id;
+	const data = query.data;
+
+	if (!chatId || !msgId || !data) return;
+
+	const threadId = query.message?.message_thread_id
+		? String(query.message.message_thread_id) : 'default';
+
+	log.info('callback', { chatId, data });
+
+	// --- Voice ---
+	if (data === 'action_voice') {
+		await telegram.answerCallbackQuery(query.id, env, { text: '🔊 Generating voice...' });
+		await telegram.sendChatAction(chatId, threadId, 'record_voice', env);
+		// TODO Phase 5: Generate TTS from message text
+		await telegram.answerCallbackQuery(query.id, env, { text: 'Voice generation coming soon.' });
+
+	// --- Delete message ---
+	} else if (data === 'action_delete_msg') {
+		await telegram.deleteMessage(chatId, msgId, env);
+		await telegram.answerCallbackQuery(query.id, env).catch(() => {});
+
+	// --- Architect kill switch ---
+	} else if (data === 'architect_kill') {
+		await env.CHAT_KV.delete(`architect_lock_${chatId}`);
+		await telegram.editMessage(chatId, msgId,
+			'⚙️ <b>Architecture review cancelled.</b> Run /architect to start fresh.', env);
+		await telegram.answerCallbackQuery(query.id, env, { text: 'Cancelled.' }).catch(() => {});
+
+	// --- Mood emotion selection ---
+	} else if (data.startsWith('mood_emo_')) {
+		// TODO Phase 5: Wire up mood emotion selection flow
+		await telegram.answerCallbackQuery(query.id, env).catch(() => {});
+
+	// --- Noop (dismiss buttons) ---
+	} else if (data === 'noop') {
+		await telegram.answerCallbackQuery(query.id, env).catch(() => {});
+
+	// --- Unknown callback ---
+	} else {
+		log.warn('unknown_callback', { chatId, data });
+		await telegram.answerCallbackQuery(query.id, env).catch(() => {});
+	}
+}
