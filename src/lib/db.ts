@@ -24,6 +24,17 @@ export function safeLike(input: string | undefined | null, maxWords = 4): string
 }
 
 /**
+ * Type-safe D1 query helper. Casts results through unknown to avoid
+ * the Record<string, unknown> -> T type error.
+ */
+export async function queryAll<T>(
+	stmt: D1PreparedStatement
+): Promise<T[]> {
+	const { results } = await stmt.all();
+	return (results ?? []) as unknown as T[];
+}
+
+/**
  * Retry a D1 operation with exponential backoff.
  * D1 can transiently fail under load; this handles it gracefully.
  */
