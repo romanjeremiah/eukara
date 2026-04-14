@@ -7,6 +7,8 @@
 
 import { log } from './lib/logger';
 import { handleMessage, handleCallback, handleCommand } from './bot';
+import { handleCron } from './router/cron';
+import { handleQueue } from './router/queue';
 import * as telegram from './lib/telegram';
 import { allTools } from './tools';
 import type { TelegramUpdate } from './types/telegram';
@@ -65,16 +67,11 @@ export default {
 	},
 
 	async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-		// TODO Phase 7: Lightweight cron checks, enqueue to Queue
-		log.info('cron_tick');
+		ctx.waitUntil(handleCron(env).catch(e => log.error('cron_error', { msg: (e as Error).message })));
 	},
 
 	async queue(batch: MessageBatch, env: Env): Promise<void> {
-		// TODO Phase 7: Queue consumer for LLM-calling background tasks
-		for (const msg of batch.messages) {
-			log.info('queue_message', { body: msg.body });
-			msg.ack();
-		}
+		await handleQueue(batch, env);
 	},
 };
 
