@@ -95,3 +95,28 @@ CREATE TABLE IF NOT EXISTS knowledge_graph (
 CREATE INDEX IF NOT EXISTS idx_kg_subject ON knowledge_graph(chat_id, subject);
 CREATE INDEX IF NOT EXISTS idx_kg_object ON knowledge_graph(chat_id, object);
 CREATE INDEX IF NOT EXISTS idx_kg_predicate ON knowledge_graph(chat_id, predicate);
+
+
+-- 7. MOOD JOURNAL
+CREATE TABLE IF NOT EXISTS mood_journal (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id INTEGER NOT NULL,
+    date TEXT NOT NULL,
+    entry_type TEXT NOT NULL DEFAULT 'evening',
+    mood_score INTEGER,
+    emotions TEXT,
+    sleep_hours REAL,
+    sleep_quality TEXT,
+    medication_taken INTEGER DEFAULT 0,
+    medication_time TEXT,
+    medication_notes TEXT,
+    activities TEXT,
+    note TEXT,
+    ai_observation TEXT,
+    photo_r2_key TEXT,
+    clinical_tags TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_mood_chat_date ON mood_journal(chat_id, date);
