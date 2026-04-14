@@ -41,6 +41,23 @@
 	"ai": {
 		"binding": "AI"
 	},
+	"workflows": [
+		{
+			"name": "memory-consolidation",
+			"binding": "MEMORY_WORKFLOW",
+			"class_name": "MemoryConsolidationWorkflow"
+		},
+		{
+			"name": "deep-research",
+			"binding": "RESEARCH_WORKFLOW",
+			"class_name": "DeepResearchWorkflow"
+		},
+		{
+			"name": "architect-review",
+			"binding": "ARCHITECT_WORKFLOW",
+			"class_name": "ArchitectWorkflow"
+		}
+	],
 	"queues": {
 		"producers": [
 			{

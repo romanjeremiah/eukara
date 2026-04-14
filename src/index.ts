@@ -12,6 +12,11 @@ import { allTools } from './tools';
 import type { TelegramUpdate } from './types/telegram';
 import type { AITool } from './types/ai';
 
+// Export Workflow classes (required by Cloudflare Workers)
+export { MemoryConsolidationWorkflow } from './workflows/consolidation';
+export { DeepResearchWorkflow } from './workflows/research';
+export { ArchitectWorkflow } from './workflows/architect';
+
 // Tool registry — all 26 tools loaded from typed modules
 const tools: AITool[] = allTools;
 

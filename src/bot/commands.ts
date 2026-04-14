@@ -40,10 +40,41 @@ export async function handleCommand(
 			await telegram.sendMessage(chatId, threadId, 'Mood tracking coming soon.', env);
 			return true;
 
-		case '/architect':
-			// TODO Phase 6: Trigger architect workflow
-			await telegram.sendMessage(chatId, threadId, 'Architecture review coming soon.', env);
+		case '/architect': {
+			if (!env.OWNER_ID || String(msg.from?.id) !== String(env.OWNER_ID)) {
+				await telegram.sendMessage(chatId, threadId, 'This command is owner-only.', env);
+				return true;
+			}
+			// Concurrency guard with kill switch
+			const lock = await env.CHAT_KV.get(`architect_lock_${chatId}`);
+			if (lock) {
+				const age = Math.round((Date.now() - parseInt(lock)) / 1000);
+				await telegram.sendMessage(chatId, threadId,
+					`⚙️ <b>Architecture review already running</b> (${age}s ago).`,
+					env, { markup: { inline_keyboard: [[
+						{ text: '🔄 Kill & Restart', callback_data: 'architect_kill' },
+						{ text: '⏳ Wait', callback_data: 'noop' },
+					]] } });
+				return true;
+			}
+			await env.CHAT_KV.put(`architect_lock_${chatId}`, String(Date.now()), { expirationTtl: 120 });
+
+			const statusRes = await telegram.sendMessage(chatId, threadId,
+				'⚙️ <b>Architecture Review</b>\n\n<i>Starting research workflow...</i>', env);
+			const statusMsgId = statusRes.result?.message_id;
+
+			try {
+				await env.ARCHITECT_WORKFLOW.create({
+					id: `architect-${Date.now()}`,
+					params: { chatId, statusMsgId },
+				});
+			} catch (e) {
+				await env.CHAT_KV.delete(`architect_lock_${chatId}`);
+				await telegram.sendMessage(chatId, threadId,
+					`⚙️ Workflow error: ${((e as Error).message ?? '').slice(0, 100)}`, env);
+			}
 			return true;
+		}
 
 		case '/listen':
 			// TODO Phase 5: Start brain dump mode
