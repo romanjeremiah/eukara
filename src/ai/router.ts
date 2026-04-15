@@ -47,10 +47,10 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 	}
 
 	// Code / architecture: Qwen3 30B on CF AI (free, strong reasoning)
-	if (COMPLEXITY_PATTERNS.code.test(userText) || COMPLEXITY_PATTERNS.codeBlock.test(userText)) {
+	if (COMPLEXITY_PATTERNS.code.test(userText) || /```/.test(userText)) {
 		return {
 			provider: 'cloudflare',
-			model: CF_MODELS.reasoning,
+			model: CF_MODELS.code,
 			thinkingEffort: 'high',
 			reason: 'code_content',
 		};
@@ -60,7 +60,7 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 	if (COMPLEXITY_PATTERNS.analytical.test(userText)) {
 		return {
 			provider: 'cloudflare',
-			model: CF_MODELS.reasoning,
+			model: CF_MODELS.code,
 			thinkingEffort: 'medium',
 			reason: 'analytical_content',
 		};
@@ -70,7 +70,7 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 	if (userText.length > 300) {
 		return {
 			provider: 'cloudflare',
-			model: CF_MODELS.reasoning,
+			model: CF_MODELS.code,
 			thinkingEffort: 'medium',
 			reason: 'long_message',
 		};

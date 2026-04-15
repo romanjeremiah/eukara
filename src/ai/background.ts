@@ -78,7 +78,7 @@ export async function tagMoodEntry(
 	emotions: string[],
 	note?: string
 ): Promise<string | null> {
-	return generate(ai, CF_MODELS.classify,
+	return generate(ai, CF_MODELS.tagging,
 		`Mood score: ${score}/10. Emotions: ${emotions.join(', ')}. Note: ${(note ?? 'none').slice(0, 200)}.
 
 Tag this entry with 1-3 clinical categories from this list:
@@ -101,7 +101,7 @@ export async function deduplicateMemories(
 
 	const list = memories.map((m, i) => `[${i}] [${m.category}] ${m.fact}`).join('\n');
 
-	const result = await generate(ai, CF_MODELS.summarise,
+	const result = await generate(ai, CF_MODELS.dedup,
 		`Here are ${memories.length} stored memories. Identify:
 1. DUPLICATES: memories that say the same thing (list pairs of indices)
 2. GROUPS: memories that relate to the same topic (list groups of indices with a label)
