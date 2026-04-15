@@ -1,5 +1,5 @@
 // ============================================================
-// Tenon — Entry Point
+// Eukara — Entry Point
 //
 // Minimal router. Delegates to specialised handlers.
 // No business logic lives here.
@@ -63,7 +63,7 @@ export default {
 			return new Response('OK');
 		}
 
-		return new Response('Tenon is running', { status: 200 });
+		return new Response('Eukara is running', { status: 200 });
 	},
 
 	async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {

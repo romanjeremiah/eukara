@@ -117,7 +117,7 @@ export class GeminiProvider implements AIProvider {
 
 	async embed(text: string): Promise<number[]> {
 		// Gemini embedding returns 768 dims, but our Vectorize index is 1024
-		// This provider shouldn't be used for embeddings in my-ai-bot
+		// This provider shouldn't be used for embeddings in Eukara
 		log.warn('gemini_embed_called', { msg: 'Use CloudflareProvider.embed instead (1024 dims)' });
 		return [];
 	}
