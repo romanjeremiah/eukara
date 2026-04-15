@@ -3,7 +3,7 @@
 // Semantic search keyed by userId for per-user isolation.
 // ============================================================
 
-import { CF_MODELS } from '../config/models';
+import { CF_MODELS, AI_GATEWAY } from '../config/models';
 import { log } from '../lib/logger';
 
 export async function semanticSearch(
@@ -13,7 +13,7 @@ export async function semanticSearch(
 	try {
 		const result = await env.AI.run(CF_MODELS.embedding as unknown as keyof AiModels, {
 			text: [query],
-		}) as { data?: number[][] };
+		}, { gateway: AI_GATEWAY }) as { data?: number[][] };
 		const vector = result?.data?.[0];
 		if (!vector?.length) return [];
 
@@ -46,7 +46,7 @@ export async function rerank(
 
 		const reranked = await env.AI.run(CF_MODELS.reranker as unknown as keyof AiModels, {
 			query, contexts,
-		}) as { data?: Array<{ index: number; score: number }> };
+		}, { gateway: AI_GATEWAY }) as { data?: Array<{ index: number; score: number }> };
 		if (!reranked?.data?.length) return results;
 
 		return reranked.data

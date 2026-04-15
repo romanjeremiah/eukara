@@ -5,7 +5,7 @@
 // ============================================================
 
 import { log } from '../lib/logger';
-import { CF_MODELS } from '../config/models';
+import { CF_MODELS, AI_GATEWAY } from '../config/models';
 
 interface QueueTask {
 	type: string;
@@ -46,7 +46,7 @@ async function processTask(task: QueueTask, env: Env): Promise<void> {
 					{ role: 'user', content: prompt },
 				],
 				max_tokens: 200,
-			}) as any;
+			}, { gateway: AI_GATEWAY }) as any;
 
 			const greeting = extractText(result) ?? (task.period === 'morning'
 				? 'Morning! How did you sleep? Have you taken your meds?' : 'Quick check — have you taken your meds?');
@@ -98,7 +98,7 @@ async function processTask(task: QueueTask, env: Env): Promise<void> {
 					{ role: 'user', content: 'Send a brief, gentle 1-sentence medication follow-up.' },
 				],
 				max_tokens: 100,
-			}) as any;
+			}, { gateway: AI_GATEWAY }) as any;
 
 			await sendTelegram(token, chatId, extractText(result) ?? 'Just checking — did you manage to take your meds?');
 			break;
@@ -111,7 +111,7 @@ async function processTask(task: QueueTask, env: Env): Promise<void> {
 					{ role: 'user', content: 'Send a spontaneous, brief 1-2 sentence check-in message.' },
 				],
 				max_tokens: 200,
-			}) as any;
+			}, { gateway: AI_GATEWAY }) as any;
 
 			const message = extractText(result);
 			if (message) await sendTelegram(token, chatId, message);

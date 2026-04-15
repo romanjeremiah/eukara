@@ -10,7 +10,7 @@ import type {
 	AIProvider, AIMessage, AITool, AIProviderConfig,
 	AIResponse, AIStreamChunk, AIToolCall, AIMessageContent,
 } from '../types/ai';
-import { CF_MODELS } from '../config/models';
+import { CF_MODELS, AI_GATEWAY } from '../config/models';
 import { log } from '../lib/logger';
 
 export class CloudflareProvider implements AIProvider {
@@ -25,7 +25,11 @@ export class CloudflareProvider implements AIProvider {
 
 	// Cast model string for env.AI.run() which expects keyof AiModels
 	private runModel(input: Record<string, unknown>): Promise<AiTextGenerationOutput> {
-		return this.ai.run(this.model as unknown as keyof AiModels, input) as Promise<AiTextGenerationOutput>;
+		return this.ai.run(
+			this.model as unknown as keyof AiModels,
+			input,
+			{ gateway: AI_GATEWAY }
+		) as Promise<AiTextGenerationOutput>;
 	}
 
 	async chat(
@@ -67,12 +71,16 @@ export class CloudflareProvider implements AIProvider {
 		const cfMessages = this.convertMessages(messages, config?.systemInstruction);
 
 		try {
-			const stream = await this.ai.run(this.model as unknown as keyof AiModels, {
-				messages: cfMessages,
-				temperature: config?.temperature ?? 1.0,
-				max_tokens: config?.maxTokens ?? 2048,
-				stream: true,
-			});
+			const stream = await this.ai.run(
+				this.model as unknown as keyof AiModels,
+				{
+					messages: cfMessages,
+					temperature: config?.temperature ?? 1.0,
+					max_tokens: config?.maxTokens ?? 2048,
+					stream: true,
+				},
+				{ gateway: AI_GATEWAY }
+			);
 
 			// CF AI streaming returns an EventSource-like stream
 			if (stream instanceof ReadableStream) {
@@ -109,9 +117,11 @@ export class CloudflareProvider implements AIProvider {
 
 	async embed(text: string): Promise<number[]> {
 		try {
-			const result = await this.ai.run(CF_MODELS.embedding as unknown as keyof AiModels, {
-				text: [text],
-			}) as EmbeddingResponse;
+			const result = await this.ai.run(
+				CF_MODELS.embedding as unknown as keyof AiModels,
+				{ text: [text] },
+				{ gateway: AI_GATEWAY }
+			) as EmbeddingResponse;
 
 			return result?.data?.[0] ?? [];
 		} catch (err) {
