@@ -92,7 +92,7 @@ export async function handleMessage(
 	].filter(Boolean).join('');
 
 	// TODO: Load persona instruction from config
-	const systemInstruction = `You are Xaridotis, a genuine AI companion.\n\n${dynamicContext}`;
+	const systemInstruction = `You are Eukara, a warm and genuine AI companion. You are friendly, curious, and supportive. Respond naturally and conversationally. Keep responses concise but engaging.\n\n${dynamicContext}`;
 
 	// Build message history
 	const messages: AIMessage[] = [
@@ -106,80 +106,33 @@ export async function handleMessage(
 
 	try {
 		for (let round = 0; round < maxToolRounds; round++) {
-			const useStreaming = round === 0 && provider.chatStream;
+			// Use non-streaming for reliability (streaming can be re-enabled after testing)
+			const response = await provider.chat(messages, tools, {
+				temperature: 1.0,
+				thinkingEffort: route.thinkingEffort,
+				systemInstruction,
+			});
 
-			if (useStreaming && provider.chatStream) {
-				// Streaming first pass
-				let draftId = `d_${Date.now()}`;
-				let lastDraftTime = 0;
-				let passText = '';
-				const toolCalls: Array<{ name: string; args: Record<string, unknown>; id: string }> = [];
+			log.info('ai_response', { round, textLen: response.text?.length ?? 0, toolCalls: response.toolCalls?.length ?? 0 });
 
-				for await (const chunk of provider.chatStream(messages, tools, {
-					temperature: 1.0,
-					thinkingEffort: route.thinkingEffort,
-					systemInstruction,
-				})) {
-					if (chunk.type === 'text' && chunk.text) {
-						passText += chunk.text;
-						fullText += chunk.text;
+			if (response.text) fullText += response.text;
 
-						const now = Date.now();
-						if (now - lastDraftTime >= DRAFT_THROTTLE_MS && fullText.trim()) {
-							const safeDraft = fullText.replace(/<[^>]*$/, '');
-							if (safeDraft.trim()) {
-								telegram.sendMessageDraft(chatId, threadId, draftId, safeDraft, env, messageId);
-								lastDraftTime = now;
-							}
-						}
-					} else if (chunk.type === 'tool_call' && chunk.toolCall) {
-						toolCalls.push(chunk.toolCall);
+			if (response.toolCalls?.length) {
+				for (const tc of response.toolCalls) {
+					const tool = tools.find(t => t.schema.function.name === tc.name);
+					if (!tool) continue;
+					try {
+						const result = await tool.execute(tc.args, env, toolContext);
+						messages.push({ role: 'model', content: { type: 'tool_use', name: tc.name, args: tc.args, id: tc.id } });
+						messages.push({ role: 'tool', content: { type: 'tool_result', toolCallId: tc.id, content: JSON.stringify(result) } });
+						log.info('tool_executed', { tool: tc.name, status: result.status });
+					} catch (e) {
+						log.error('tool_error', { tool: tc.name, msg: (e as Error).message });
 					}
 				}
-
-				// Execute tool calls if any
-				if (toolCalls.length) {
-					for (const tc of toolCalls) {
-						const tool = tools.find(t => t.schema.function.name === tc.name);
-						if (!tool) continue;
-						try {
-							const result = await tool.execute(tc.args, env, toolContext);
-							messages.push({ role: 'model', content: { type: 'tool_use', name: tc.name, args: tc.args, id: tc.id } });
-							messages.push({ role: 'tool', content: { type: 'tool_result', toolCallId: tc.id, content: JSON.stringify(result) } });
-						} catch (e) {
-							log.error('tool_error', { tool: tc.name, msg: (e as Error).message });
-						}
-					}
-					continue; // Next round to get AI response with tool results
-				}
-				break; // No tool calls, done
-
-			} else {
-				// Non-streaming pass (tool result follow-ups)
-				const response = await provider.chat(messages, tools, {
-					temperature: 1.0,
-					thinkingEffort: route.thinkingEffort,
-					systemInstruction,
-				});
-
-				if (response.text) fullText += response.text;
-
-				if (response.toolCalls?.length) {
-					for (const tc of response.toolCalls) {
-						const tool = tools.find(t => t.schema.function.name === tc.name);
-						if (!tool) continue;
-						try {
-							const result = await tool.execute(tc.args, env, toolContext);
-							messages.push({ role: 'model', content: { type: 'tool_use', name: tc.name, args: tc.args, id: tc.id } });
-							messages.push({ role: 'tool', content: { type: 'tool_result', toolCallId: tc.id, content: JSON.stringify(result) } });
-						} catch (e) {
-							log.error('tool_error', { tool: tc.name, msg: (e as Error).message });
-						}
-					}
-					continue;
-				}
-				break;
+				continue; // Next round with tool results
 			}
+			break; // No tool calls, done
 		}
 	} catch (err) {
 		log.error('ai_chat_error', { msg: (err as Error).message, provider: route.provider, model: route.model });
