@@ -1,9 +1,8 @@
 // ============================================================
 // Message Handler
 //
-// Processes incoming user messages. Routes to AI provider,
-// handles tool calls, manages streaming drafts.
-// Replaces the 1,578-line handlers.js monolith.
+// All data operations use userId (from.id), not chatId.
+// chatId is only used for message delivery.
 // ============================================================
 
 import type { TelegramMessage } from '../types/telegram';
@@ -16,8 +15,7 @@ import * as memory from '../services/memory';
 import * as episode from '../services/episode';
 import * as knowledgeGraph from '../services/knowledge-graph';
 import * as vector from '../services/vector';
-
-const DRAFT_THROTTLE_MS = 500;
+import * as persona from '../services/persona';
 
 export async function handleMessage(
 	msg: TelegramMessage,
@@ -25,44 +23,49 @@ export async function handleMessage(
 	tools: AITool[]
 ): Promise<void> {
 	const chatId = msg.chat.id;
+	const userId = msg.from?.id;
+	if (!userId) return; // Can't process without a user identity
+
 	const threadId = msg.message_thread_id ? String(msg.message_thread_id) : 'default';
 	const userText = msg.text ?? msg.caption ?? '';
 	const messageId = msg.message_id;
 
 	if (!userText.trim()) return;
 
-	const isOwner = env.OWNER_ID && String(msg.from?.id) === String(env.OWNER_ID);
+	// Ensure user profile + persona config exist
+	await persona.ensureUser(env, userId, msg.from?.first_name, msg.from?.username, msg.from?.language_code);
 
-	// Show typing indicator
+	const isOwner = env.OWNER_ID && String(userId) === String(env.OWNER_ID);
+
 	await telegram.sendChatAction(chatId, threadId, 'typing', env);
 
-	// Check health check-in state
+	// Check health check-in state (keyed by userId)
 	const healthCheckin = isOwner
-		? await env.CHAT_KV.get(`health_checkin_active_${chatId}`)
+		? await env.CHAT_KV.get(`health_checkin_active_${userId}`)
 		: null;
 
-	// Route to the right AI provider
+	// Route to AI provider
 	const { provider, route } = getProvider(
 		{ userText, isOwner: !!isOwner, healthCheckinActive: healthCheckin },
 		env
 	);
 
-	// Build context
+	// Build context — all queries use userId
 	const isSubstantive = userText.length > 5;
 	const [memCtx, semanticCtx] = await Promise.all([
-		isSubstantive ? memory.getFormattedContext(env, chatId) : Promise.resolve(''),
-		isSubstantive ? vector.getSemanticContext(env, chatId, userText) : Promise.resolve(''),
+		isSubstantive ? memory.getFormattedContext(env, userId) : Promise.resolve(''),
+		isSubstantive ? vector.getSemanticContext(env, userId, userText) : Promise.resolve(''),
 	]);
 
-	// CoALA: batch episode + procedural queries for emotional messages
+	// CoALA: batch episode + procedural queries
 	let episodeCtx = '';
 	let proceduralCtx = '';
 	const isEmotional = /\b(anxious|depressed|panic|overwhelm|scared|lonely|empty|hopeless|angry|frustrated|sad|grief|trigger|manic|racing|numb|crying|breakdown|struggling|worried|stressed)\b/i.test(userText);
 
 	if (isEmotional) {
 		const [episodes, insights] = await Promise.all([
-			episode.getRecentEpisodes(env, chatId, 5).catch(() => []),
-			episode.getProceduralInsights(env, chatId).catch(() => ({ worked: [], didntWork: [] })),
+			episode.getRecentEpisodes(env, userId, 5).catch(() => []),
+			episode.getProceduralInsights(env, userId).catch(() => ({ worked: [], didntWork: [] })),
 		]);
 		episodeCtx = episode.formatEpisodesForContext(episodes);
 		proceduralCtx = episode.formatProceduralContext(insights);
@@ -73,7 +76,7 @@ export async function handleMessage(
 	if (isSubstantive) {
 		const keywords = userText.split(/\s+/).filter(w => w.length > 3).slice(0, 3);
 		for (const kw of keywords) {
-			const triples = await knowledgeGraph.queryRelated(env, chatId, kw, 5).catch(() => []);
+			const triples = await knowledgeGraph.queryRelated(env, userId, kw, 5).catch(() => []);
 			if (triples.length) {
 				graphCtx = knowledgeGraph.formatGraphContext(triples);
 				break;
@@ -81,9 +84,9 @@ export async function handleMessage(
 		}
 	}
 
-	// Build system instruction with dynamic context
+	// Dynamic context
 	const dynamicContext = [
-		`[Context] London Time: ${new Date().toLocaleString('en-GB', { timeZone: 'Europe/London' })} | Unix: ${Math.floor(Date.now() / 1000)}`,
+		`London Time: ${new Date().toLocaleString('en-GB', { timeZone: 'Europe/London' })} | Unix: ${Math.floor(Date.now() / 1000)}`,
 		memCtx ? `\nMEMORY:\n${memCtx}` : '',
 		semanticCtx,
 		episodeCtx ? `\n${episodeCtx}` : '',
@@ -91,22 +94,20 @@ export async function handleMessage(
 		graphCtx ? `\n${graphCtx}` : '',
 	].filter(Boolean).join('');
 
-	// TODO: Load persona instruction from config
-	const systemInstruction = `You are Eukara, a warm and genuine AI companion. You are friendly, curious, and supportive. Respond naturally and conversationally. Keep responses concise but engaging.\n\n${dynamicContext}`;
+	// Build per-user system instruction (persona evolves per user)
+	const systemInstruction = await persona.buildSystemInstruction(env, userId, dynamicContext);
 
-	// Build message history
 	const messages: AIMessage[] = [
 		{ role: 'user', content: userText },
 	];
 
 	// --- AI Call with tool loop ---
 	let fullText = '';
-	const toolContext: ToolContext = { chatId, threadId, messageId, userId: msg.from?.id };
+	const toolContext: ToolContext = { userId, chatId, threadId, messageId };
 	const maxToolRounds = 5;
 
 	try {
 		for (let round = 0; round < maxToolRounds; round++) {
-			// Use non-streaming for reliability (streaming can be re-enabled after testing)
 			const response = await provider.chat(messages, tools, {
 				temperature: 1.0,
 				thinkingEffort: route.thinkingEffort,
@@ -130,9 +131,9 @@ export async function handleMessage(
 						log.error('tool_error', { tool: tc.name, msg: (e as Error).message });
 					}
 				}
-				continue; // Next round with tool results
+				continue;
 			}
-			break; // No tool calls, done
+			break;
 		}
 	} catch (err) {
 		log.error('ai_chat_error', { msg: (err as Error).message, provider: route.provider, model: route.model });
@@ -160,48 +161,35 @@ export async function handleMessage(
 				});
 			}
 		} else {
-			// Delete the streaming draft and send final formatted message
-			const draftKey = `draft_${chatId}_d_${Date.now()}`;
-			const draftMsgId = await env.CHAT_KV.get(`draft_${chatId}_d_${messageId}`);
-			if (draftMsgId) {
-				await telegram.editMessage(chatId, parseInt(draftMsgId), fullText, env, btns);
-				await env.CHAT_KV.delete(`draft_${chatId}_d_${messageId}`);
-			} else {
-				await telegram.sendMessage(chatId, threadId, fullText, env, {
-					replyId: messageId,
-					markup: btns,
-				});
-			}
+			await telegram.sendMessage(chatId, threadId, fullText, env, {
+				replyId: messageId,
+				markup: btns,
+			});
 		}
 	}
 
-	// --- Background: silent observation (fire-and-forget) ---
+	// --- Background: silent observation (uses userId) ---
 	if (userText.length > 20 && fullText.length > 20) {
 		import('../ai/background').then(async ({ extractObservation }) => {
 			const obs = await extractObservation(env.AI, userText, fullText);
 			if (!obs || obs.includes('NOTHING_NEW')) return;
 
-			// Save observations
 			const obsMatch = obs.match(/OBSERVATION:\s*(.+)/);
 			if (obsMatch?.[1]) {
-				await memory.saveMemory(env, chatId, 'observation', obsMatch[1].trim());
+				await memory.saveMemory(env, userId, 'observation', obsMatch[1].trim());
 			}
 
-			// Save triples
 			for (const match of obs.matchAll(/TRIPLE:\s*([^|]+)\|([^|]+)\|(.+)/g)) {
 				const [, subject, predicate, object] = match;
 				if (subject && predicate && object) {
-					await knowledgeGraph.saveTriple(
-						env, chatId,
-						subject.trim(), predicate.trim(), object.trim(),
-						null, 'observation'
-					);
+					await knowledgeGraph.saveTriple(env, userId, subject.trim(), predicate.trim(), object.trim(), null, 'observation');
 				}
 			}
 		}).catch(e => log.error('observation_error', { msg: (e as Error).message }));
 	}
 
 	log.info('message_handled', {
+		userId,
 		chatId,
 		provider: route.provider,
 		model: route.model.split('/').pop(),

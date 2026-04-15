@@ -1,44 +1,43 @@
-// Therapeutic Note Tools
+// Therapeutic Note Tools — keyed by ctx.userId
 
 import { defineTool, ok, empty } from './factory';
-import { queryAll } from '../lib/db';
 
 export const saveTherapeuticNote = defineTool(
 	'save_therapeutic_note',
-	'Save a structured therapeutic note. Types: pattern (recurring behaviour), schema (core belief), trigger (emotional trigger), avoidance (avoidance pattern), homework (therapeutic task), session (session summary), growth (positive change).',
+	'Save a structured therapeutic note.',
 	{
 		note_type: { type: 'string', enum: ['pattern', 'schema', 'trigger', 'avoidance', 'homework', 'session', 'growth'] },
-		content: { type: 'string', description: 'The therapeutic note content' },
+		content: { type: 'string' },
 		severity: { type: 'integer', description: '1-5 severity/importance scale' },
 	},
 	['note_type', 'content'],
 	async (args, env, ctx) => {
 		await env.DB.prepare(
-			"INSERT INTO memories (chat_id, category, fact, importance_score) VALUES (?, ?, ?, ?)"
-		).bind(ctx.chatId, args.note_type as string, args.content as string, (args.severity as number) ?? 2).run();
+			'INSERT INTO memories (user_id, category, fact, importance_score) VALUES (?, ?, ?, ?)'
+		).bind(ctx.userId, args.note_type as string, args.content as string, (args.severity as number) ?? 2).run();
 		return ok({ note_type: args.note_type });
 	}
 );
 
 export const getTherapeuticNotes = defineTool(
 	'get_therapeutic_notes',
-	'Retrieve therapeutic notes for review. Use when discussing patterns, triggers, or therapeutic progress.',
+	'Retrieve therapeutic notes for review.',
 	{
-		note_type: { type: 'string', description: 'Filter by type. Omit for all therapeutic notes.' },
+		note_type: { type: 'string' },
 		limit: { type: 'integer', description: 'Max results. Default 10.' },
 	},
 	[],
 	async (args, env, ctx) => {
 		const categories = ['pattern', 'schema', 'trigger', 'avoidance', 'homework', 'session', 'growth'];
 		let query: string;
-		const params: (number | string)[] = [ctx.chatId];
+		const params: (number | string)[] = [ctx.userId];
 
 		if (args.note_type && categories.includes(args.note_type as string)) {
-			query = 'SELECT category, fact, importance_score, created_at FROM memories WHERE chat_id = ? AND category = ? ORDER BY created_at DESC LIMIT ?';
+			query = 'SELECT category, fact, importance_score, created_at FROM memories WHERE user_id = ? AND category = ? ORDER BY created_at DESC LIMIT ?';
 			params.push(args.note_type as string, (args.limit as number) ?? 10);
 		} else {
 			const placeholders = categories.map(() => '?').join(',');
-			query = `SELECT category, fact, importance_score, created_at FROM memories WHERE chat_id = ? AND category IN (${placeholders}) ORDER BY created_at DESC LIMIT ?`;
+			query = `SELECT category, fact, importance_score, created_at FROM memories WHERE user_id = ? AND category IN (${placeholders}) ORDER BY created_at DESC LIMIT ?`;
 			params.push(...categories, (args.limit as number) ?? 10);
 		}
 

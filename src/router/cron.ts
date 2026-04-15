@@ -1,87 +1,77 @@
 // ============================================================
 // Cron Handler
 //
-// Runs every minute. Only performs CHEAP checks (KV reads,
-// time comparisons). All LLM-calling tasks go to the Queue.
+// All KV keys scoped by userId. Cron iterates over known users
+// (currently OWNER_ID, extensible to all users).
 // ============================================================
 
 import { log } from '../lib/logger';
 
-interface ScheduleConfig {
-	hour: number;
-	minute: number;
-}
+interface ScheduleConfig { hour: number; minute: number }
 
 export async function handleCron(env: Env): Promise<void> {
 	if (!env.OWNER_ID) return;
 
-	const chatId = Number(env.OWNER_ID);
-	const tz = await env.CHAT_KV.get(`timezone_${chatId}`) ?? 'Europe/London';
-	const now = new Date();
-	const londonTime = new Date(now.toLocaleString('en-US', { timeZone: tz }));
-	const hour = londonTime.getHours();
-	const minute = londonTime.getMinutes();
+	// For multi-user: iterate over all active users
+	// For now: single owner
+	const userIds = [Number(env.OWNER_ID)];
 
-	// --- Health check-ins: enqueue to Queue ---
-	try {
-		await enqueueHealthTasks(env, chatId, hour, minute);
-	} catch (e) {
-		log.error('cron_health_error', { msg: (e as Error).message });
-	}
+	for (const userId of userIds) {
+		const tz = await env.CHAT_KV.get(`timezone_${userId}`) ?? 'Europe/London';
+		const now = new Date();
+		const localTime = new Date(now.toLocaleString('en-US', { timeZone: tz }));
+		const hour = localTime.getHours();
+		const minute = localTime.getMinutes();
+		const today = localTime.toISOString().split('T')[0]!;
 
-	// --- Memory consolidation: trigger Workflow monthly ---
-	try {
-		await checkConsolidation(env, chatId, londonTime);
-	} catch (e) {
-		log.error('cron_consolidation_error', { msg: (e as Error).message });
-	}
+		// Health check-ins
+		try {
+			await enqueueHealthTasks(env, userId, hour, minute, today);
+		} catch (e) { log.error('cron_health_error', { userId, msg: (e as Error).message }); }
 
-	// --- Spontaneous outreach: cheap check, enqueue if passes ---
-	try {
-		if (hour >= 10 && hour <= 19 && Math.random() <= 0.05) {
-			const today = londonTime.toISOString().split('T')[0]!;
-			const outreachKey = `spontaneous_${today}`;
-			if (!await env.CHAT_KV.get(outreachKey)) {
-				await env.TASK_QUEUE.send({ type: 'spontaneous_outreach', chatId });
-				await env.CHAT_KV.put(outreachKey, '1', { expirationTtl: 86400 });
+		// Memory consolidation
+		try {
+			await checkConsolidation(env, userId, localTime);
+		} catch (e) { log.error('cron_consolidation_error', { userId, msg: (e as Error).message }); }
+
+		// Spontaneous outreach
+		try {
+			if (hour >= 10 && hour <= 19 && Math.random() <= 0.05) {
+				const key = `spontaneous_${userId}_${today}`;
+				if (!await env.CHAT_KV.get(key)) {
+					await env.TASK_QUEUE.send({ type: 'spontaneous_outreach', userId, chatId: userId });
+					await env.CHAT_KV.put(key, '1', { expirationTtl: 86400 });
+				}
 			}
-		}
-	} catch (e) {
-		log.error('cron_outreach_error', { msg: (e as Error).message });
-	}
+		} catch (e) { log.error('cron_outreach_error', { userId, msg: (e as Error).message }); }
 
-	// --- Reminders: deliver due reminders ---
-	try {
-		await deliverReminders(env, chatId);
-	} catch (e) {
-		log.error('cron_reminders_error', { msg: (e as Error).message });
+		// Reminders
+		try {
+			await deliverReminders(env, userId);
+		} catch (e) { log.error('cron_reminders_error', { userId, msg: (e as Error).message }); }
 	}
 }
 
-// --- Health check-in scheduling ---
+async function enqueueHealthTasks(
+	env: Env, userId: number, hour: number, minute: number, today: string
+): Promise<void> {
+	if (minute !== 0) return;
 
-async function enqueueHealthTasks(env: Env, chatId: number, hour: number, minute: number): Promise<void> {
-	if (minute !== 0) return; // Only check on the hour
-
-	const scheduleKey = (name: string) => `schedule_${name}`;
-
-	// Morning check-in
-	const morningSchedule = await getSchedule(env, scheduleKey('morning_checkin'), { hour: 8, minute: 0 });
-	if (hour === morningSchedule.hour) {
-		const todayKey = `checkin_morning_${new Date().toISOString().split('T')[0]}`;
-		if (!await env.CHAT_KV.get(todayKey)) {
-			await env.TASK_QUEUE.send({ type: 'health_checkin', period: 'morning', chatId });
-			await env.CHAT_KV.put(todayKey, '1', { expirationTtl: 86400 });
+	const morningHour = (await getSchedule(env, `schedule_${userId}_morning`, { hour: 8, minute: 0 })).hour;
+	if (hour === morningHour) {
+		const key = `checkin_${userId}_morning_${today}`;
+		if (!await env.CHAT_KV.get(key)) {
+			await env.TASK_QUEUE.send({ type: 'health_checkin', period: 'morning', userId, chatId: userId });
+			await env.CHAT_KV.put(key, '1', { expirationTtl: 86400 });
 		}
 	}
 
-	// Evening mood poll
-	const eveningSchedule = await getSchedule(env, scheduleKey('evening_checkin'), { hour: 21, minute: 0 });
-	if (hour === eveningSchedule.hour) {
-		const todayKey = `checkin_evening_${new Date().toISOString().split('T')[0]}`;
-		if (!await env.CHAT_KV.get(todayKey)) {
-			await env.TASK_QUEUE.send({ type: 'mood_poll', chatId });
-			await env.CHAT_KV.put(todayKey, '1', { expirationTtl: 86400 });
+	const eveningHour = (await getSchedule(env, `schedule_${userId}_evening`, { hour: 21, minute: 0 })).hour;
+	if (hour === eveningHour) {
+		const key = `checkin_${userId}_evening_${today}`;
+		if (!await env.CHAT_KV.get(key)) {
+			await env.TASK_QUEUE.send({ type: 'mood_poll', userId, chatId: userId });
+			await env.CHAT_KV.put(key, '1', { expirationTtl: 86400 });
 		}
 	}
 }
@@ -91,56 +81,36 @@ async function getSchedule(env: Env, key: string, defaults: ScheduleConfig): Pro
 	return stored ?? defaults;
 }
 
-// --- Monthly memory consolidation ---
-
-async function checkConsolidation(env: Env, chatId: number, now: Date): Promise<void> {
-	if (now.getDate() !== 1 || now.getHours() !== 3) return; // 1st of month, 3 AM
-
+async function checkConsolidation(env: Env, userId: number, now: Date): Promise<void> {
+	if (now.getDate() !== 1 || now.getHours() !== 3) return;
 	const month = now.toISOString().split('-').slice(0, 2).join('-');
-	const runKey = `consolidation_${month}`;
-	if (await env.CHAT_KV.get(runKey)) return;
-
-	await env.CHAT_KV.put(runKey, '1', { expirationTtl: 86400 * 5 });
+	const key = `consolidation_${userId}_${month}`;
+	if (await env.CHAT_KV.get(key)) return;
+	await env.CHAT_KV.put(key, '1', { expirationTtl: 86400 * 5 });
 
 	if (env.MEMORY_WORKFLOW) {
-		await env.MEMORY_WORKFLOW.create({
-			id: `consolidation-${month}`,
-			params: { chatId },
-		});
-		log.info('workflow_triggered', { workflow: 'memory-consolidation', month });
+		await env.MEMORY_WORKFLOW.create({ id: `consolidation-${userId}-${month}`, params: { chatId: userId } });
+		log.info('workflow_triggered', { workflow: 'memory-consolidation', userId, month });
 	}
 }
 
-// --- Reminder delivery ---
-
-async function deliverReminders(env: Env, chatId: number): Promise<void> {
+async function deliverReminders(env: Env, userId: number): Promise<void> {
 	const nowUnix = Math.floor(Date.now() / 1000);
 	const { results } = await env.DB.prepare(
-		"SELECT id, text, thread_id, recurrence_type FROM reminders WHERE recipient_chat_id = ? AND status = 'pending' AND due_at <= ? LIMIT 5"
-	).bind(chatId, nowUnix).all();
+		"SELECT id, text, chat_id, thread_id FROM reminders WHERE user_id = ? AND status = 'pending' AND due_at <= ? LIMIT 5"
+	).bind(userId, nowUnix).all();
 
 	if (!results?.length) return;
-
 	const token = env.TELEGRAM_TOKEN;
 	for (const r of results) {
-		const reminder = r as { id: number; text: string; thread_id: string; recurrence_type: string };
-
-		// Send reminder
+		const reminder = r as { id: number; text: string; chat_id: number; thread_id: string };
 		await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				chat_id: chatId,
-				text: `⏰ <b>Reminder:</b> ${reminder.text}`,
-				parse_mode: 'HTML',
-			}),
+			body: JSON.stringify({ chat_id: reminder.chat_id, text: `⏰ <b>Reminder:</b> ${reminder.text}`, parse_mode: 'HTML' }),
 		}).catch(() => {});
-
-		// Mark as delivered
-		await env.DB.prepare(
-			"UPDATE reminders SET status = 'delivered', updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-		).bind(reminder.id).run();
-
-		log.info('reminder_delivered', { id: reminder.id });
+		await env.DB.prepare("UPDATE reminders SET status = 'delivered', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?")
+			.bind(reminder.id, userId).run();
+		log.info('reminder_delivered', { id: reminder.id, userId });
 	}
 }

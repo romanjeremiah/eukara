@@ -1,4 +1,4 @@
-// Memory & Episode Tools
+// Memory & Episode Tools — all data keyed by ctx.userId
 
 import { defineTool, ok } from './factory';
 import * as memory from '../services/memory';
@@ -14,32 +14,29 @@ export const saveMemory = defineTool(
 	},
 	['category', 'fact'],
 	async (args, env, ctx) => {
-		await memory.saveMemory(env, ctx.chatId, args.category as string, args.fact as string, (args.importance as number) ?? 1);
+		await memory.saveMemory(env, ctx.userId, args.category as string, args.fact as string, (args.importance as number) ?? 1);
 		return ok({ category: args.category, importance: args.importance ?? 1 });
 	}
 );
 
 export const saveEpisode = defineTool(
 	'save_episode',
-	'Record a structured episode from a significant interaction. Captures trigger, emotions, intervention, outcome, and lesson for future reference.',
+	'Record a structured episode from a significant interaction.',
 	{
 		type: { type: 'string', enum: ['crisis', 'breakthrough', 'pattern', 'checkin', 'conversation'] },
 		trigger: { type: 'string', description: 'What prompted this episode' },
-		emotions: { type: 'array', items: { type: 'string' }, description: 'Emotions present' },
+		emotions: { type: 'array', items: { type: 'string' } },
 		intervention: { type: 'string', description: 'What you did/suggested' },
 		outcome: { type: 'string', enum: ['positive', 'negative', 'neutral', 'pending'] },
 		lesson: { type: 'string', description: 'What was learned' },
-		mood_score: { type: 'integer', description: 'Mood score at time (0-10)' },
+		mood_score: { type: 'integer' },
 	},
 	['type', 'trigger'],
 	async (args, env, ctx) => {
-		await episodeSvc.saveEpisode(env, ctx.chatId, {
-			type: args.type as string,
-			trigger: args.trigger as string,
-			emotions: args.emotions as string[] ?? [],
-			intervention: args.intervention as string,
-			outcome: args.outcome as string,
-			lesson: args.lesson as string,
+		await episodeSvc.saveEpisode(env, ctx.userId, {
+			type: args.type as string, trigger: args.trigger as string,
+			emotions: args.emotions as string[] ?? [], intervention: args.intervention as string,
+			outcome: args.outcome as string, lesson: args.lesson as string,
 			moodScore: args.mood_score as number,
 		});
 		return ok();
@@ -48,15 +45,16 @@ export const saveEpisode = defineTool(
 
 export const updateEpisodeOutcome = defineTool(
 	'update_episode_outcome',
-	'Update a previous episode with its outcome and lesson learned. Use after following up on a pending episode.',
+	'Update a previous episode with its outcome and lesson learned.',
 	{
-		episode_id: { type: 'integer', description: 'The episode ID to update' },
+		episode_id: { type: 'integer' },
 		outcome: { type: 'string', enum: ['positive', 'negative', 'neutral'] },
-		lesson: { type: 'string', description: 'What was learned from this episode' },
+		lesson: { type: 'string' },
 	},
 	['episode_id', 'outcome', 'lesson'],
-	async (args, env) => {
-		await episodeSvc.updateEpisodeOutcome(env, args.episode_id as number, args.outcome as string, args.lesson as string);
+	async (args, env, ctx) => {
+		// Uses userId + episodeId to prevent cross-user modification
+		await episodeSvc.updateEpisodeOutcome(env, ctx.userId, args.episode_id as number, args.outcome as string, args.lesson as string);
 		return ok();
 	}
 );

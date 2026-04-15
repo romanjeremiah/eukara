@@ -1,9 +1,8 @@
 // ============================================================
 // Memory Service
 //
-// Long-term fact storage about the user. Categorised memories
-// with importance scoring, formatted context for AI prompts,
-// and Vectorize indexing for semantic search.
+// All memory operations keyed by user_id (not chat_id).
+// Each user has their own isolated memory space.
 // ============================================================
 
 import type { MemoryRow } from '../types/db';
@@ -16,51 +15,38 @@ const THERAPEUTIC_CATEGORIES = [
 ] as const;
 
 export async function saveMemory(
-	env: Env,
-	chatId: number,
-	category: string,
-	fact: string,
-	importance = 1
+	env: Env, userId: number, category: string, fact: string, importance = 1
 ): Promise<void> {
-	// Ensure user_profiles entry exists (prevents FOREIGN KEY errors)
 	await env.DB.prepare(
-		'INSERT OR IGNORE INTO user_profiles (chat_id) VALUES (?)'
-	).bind(chatId).run();
+		'INSERT OR IGNORE INTO user_profiles (user_id) VALUES (?)'
+	).bind(userId).run();
 
 	const result = await env.DB.prepare(
-		'INSERT INTO memories (chat_id, category, fact, importance_score) VALUES (?, ?, ?, ?)'
-	).bind(chatId, category.toLowerCase(), fact, importance).run();
+		'INSERT INTO memories (user_id, category, fact, importance_score) VALUES (?, ?, ?, ?)'
+	).bind(userId, category.toLowerCase(), fact, importance).run();
 
-	// Index in Vectorize for semantic search (fire-and-forget)
 	const memoryId = result?.meta?.last_row_id ?? Date.now();
-	indexInVectorize(env, chatId, category, fact, memoryId).catch(
+	indexInVectorize(env, userId, category, fact, memoryId).catch(
 		e => log.error('vectorize_index_error', { msg: (e as Error).message })
 	);
 }
 
-export async function getMemories(env: Env, chatId: number, limit = 30): Promise<MemoryRow[]> {
+export async function getMemories(env: Env, userId: number, limit = 30): Promise<MemoryRow[]> {
 	return queryAll<MemoryRow>(env.DB.prepare(
-		'SELECT id, category, fact, importance_score, created_at FROM memories WHERE chat_id = ? ORDER BY importance_score DESC, created_at DESC LIMIT ?'
-	).bind(chatId, limit));
+		'SELECT id, user_id, category, fact, importance_score, created_at FROM memories WHERE user_id = ? ORDER BY importance_score DESC, created_at DESC LIMIT ?'
+	).bind(userId, limit));
 }
 
 export async function getMemoriesByCategory(
-	env: Env,
-	chatId: number,
-	category: string,
-	limit = 10
+	env: Env, userId: number, category: string, limit = 10
 ): Promise<MemoryRow[]> {
 	return queryAll<MemoryRow>(env.DB.prepare(
-		'SELECT id, category, fact, importance_score, created_at FROM memories WHERE chat_id = ? AND category = ? ORDER BY created_at DESC LIMIT ?'
-	).bind(chatId, category.toLowerCase(), limit));
+		'SELECT id, user_id, category, fact, importance_score, created_at FROM memories WHERE user_id = ? AND category = ? ORDER BY created_at DESC LIMIT ?'
+	).bind(userId, category.toLowerCase(), limit));
 }
 
-/**
- * Build formatted memory context for injection into AI prompts.
- * Groups memories by type with relative timestamps.
- */
-export async function getFormattedContext(env: Env, chatId: number): Promise<string> {
-	const all = await getMemories(env, chatId, 40);
+export async function getFormattedContext(env: Env, userId: number): Promise<string> {
+	const all = await getMemories(env, userId, 40);
 	if (!all.length) return '- No facts saved yet.';
 
 	const therapeutic: MemoryRow[] = [];
@@ -89,24 +75,18 @@ export async function getFormattedContext(env: Env, chatId: number): Promise<str
 		ctx += 'Facts about the user:\n';
 		for (const m of factual) ctx += `- [${m.category}] ${m.fact}\n`;
 	}
-
 	if (therapeutic.length) {
 		ctx += '\nTherapeutic observations:\n';
-		for (const m of therapeutic) {
-			ctx += `- [${m.category}] ${m.fact} (${getRelativeAge(m.created_at)})\n`;
-		}
+		for (const m of therapeutic) ctx += `- [${m.category}] ${m.fact} (${getRelativeAge(m.created_at)})\n`;
 	}
-
 	if (learned.length) {
 		ctx += '\nRecent independent learning:\n';
 		for (const m of learned.slice(0, 8)) ctx += `- ${m.fact}\n`;
 	}
-
 	if (feedback.length) {
 		ctx += '\nUser reaction feedback:\n';
 		for (const m of feedback.slice(0, 5)) ctx += `- ${m.fact}\n`;
 	}
-
 	if (triples.length) {
 		ctx += '\nKnowledge Graph (relational connections):\n';
 		for (const m of triples.slice(0, 15)) ctx += `- ${m.fact}\n`;
@@ -116,21 +96,19 @@ export async function getFormattedContext(env: Env, chatId: number): Promise<str
 }
 
 export async function getRecentTherapeuticMemories(
-	env: Env, chatId: number, days = 7
+	env: Env, userId: number, days = 7
 ): Promise<MemoryRow[]> {
-	const since = new Date(Date.now() - days * 86400000).toISOString().split('T')[0];
+	const since = new Date(Date.now() - days * 86400000).toISOString().split('T')[0]!;
 	return queryAll<MemoryRow>(env.DB.prepare(`
 		SELECT category, fact, importance_score, created_at FROM memories
-		WHERE chat_id = ? AND category IN ('homework','coping','growth','idea','brain_dump','insight')
+		WHERE user_id = ? AND category IN ('homework','coping','growth','idea','brain_dump','insight')
 		AND created_at > ? ORDER BY created_at DESC LIMIT 30
-	`).bind(chatId, since));
+	`).bind(userId, since));
 }
 
-export async function deleteAllMemories(env: Env, chatId: number): Promise<void> {
-	await env.DB.prepare('DELETE FROM memories WHERE chat_id = ?').bind(chatId).run();
+export async function deleteAllMemories(env: Env, userId: number): Promise<void> {
+	await env.DB.prepare('DELETE FROM memories WHERE user_id = ?').bind(userId).run();
 }
-
-// --- Helpers ---
 
 function getRelativeAge(dateStr: string): string {
 	const created = new Date(dateStr + 'Z');
@@ -143,7 +121,7 @@ function getRelativeAge(dateStr: string): string {
 }
 
 async function indexInVectorize(
-	env: Env, chatId: number, category: string, fact: string, memoryId: number
+	env: Env, userId: number, category: string, fact: string, memoryId: number
 ): Promise<void> {
 	if (!env.VECTORIZE || !env.AI) return;
 	try {
@@ -154,7 +132,7 @@ async function indexInVectorize(
 			await env.VECTORIZE.upsert([{
 				id: String(memoryId),
 				values: vector,
-				metadata: { chatId, category, fact: fact.slice(0, 200), preview: fact.slice(0, 100) },
+				metadata: { userId, category, fact: fact.slice(0, 200), preview: fact.slice(0, 100) },
 			}]);
 		}
 	} catch (e) {

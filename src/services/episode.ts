@@ -1,8 +1,6 @@
 // ============================================================
 // Episode Service — CoALA Episodic Memory
-//
-// Records structured episodes from significant interactions.
-// Enables: "Last time you felt X, we tried Y and it worked."
+// All data keyed by user_id for per-user isolation.
 // ============================================================
 
 import type { EpisodeRow, Episode } from '../types/db';
@@ -20,7 +18,7 @@ interface EpisodeInput {
 	metadata?: Record<string, unknown>;
 }
 
-export async function saveEpisode(env: Env, chatId: number, episode: EpisodeInput): Promise<void> {
+export async function saveEpisode(env: Env, userId: number, episode: EpisodeInput): Promise<void> {
 	const {
 		type = 'conversation', trigger = null, emotions = [],
 		intervention = null, outcome = null, lesson = null,
@@ -28,24 +26,21 @@ export async function saveEpisode(env: Env, chatId: number, episode: EpisodeInpu
 	} = episode;
 
 	await env.DB.prepare(`
-		INSERT INTO episodes (chat_id, episode_type, trigger_context, emotions, intervention, outcome, lesson, mood_score, related_memory_ids, metadata)
+		INSERT INTO episodes (user_id, episode_type, trigger_context, emotions, intervention, outcome, lesson, mood_score, related_memory_ids, metadata)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`).bind(
-		chatId, type, trigger, JSON.stringify(emotions), intervention,
+		userId, type, trigger, JSON.stringify(emotions), intervention,
 		outcome, lesson, moodScore, JSON.stringify(relatedMemoryIds),
 		JSON.stringify(metadata)
 	).run();
 }
 
 export async function getRecentEpisodes(
-	env: Env, chatId: number, limit = 10, type?: string
+	env: Env, userId: number, limit = 10, type?: string
 ): Promise<Episode[]> {
-	let query = 'SELECT * FROM episodes WHERE chat_id = ?';
-	const params: (number | string)[] = [chatId];
-	if (type) {
-		query += ' AND episode_type = ?';
-		params.push(type);
-	}
+	let query = 'SELECT * FROM episodes WHERE user_id = ?';
+	const params: (number | string)[] = [userId];
+	if (type) { query += ' AND episode_type = ?'; params.push(type); }
 	query += ' ORDER BY created_at DESC LIMIT ?';
 	params.push(limit);
 	const rows = await queryAll<EpisodeRow>(env.DB.prepare(query).bind(...params));
@@ -53,32 +48,38 @@ export async function getRecentEpisodes(
 }
 
 export async function searchEpisodes(
-	env: Env, chatId: number, keyword: string, limit = 5
+	env: Env, userId: number, keyword: string, limit = 5
 ): Promise<Episode[]> {
 	const safe = safeLike(keyword);
 	if (!safe) return [];
 	const pattern = `%${safe}%`;
 	const rows = await queryAll<EpisodeRow>(env.DB.prepare(`
-		SELECT * FROM episodes WHERE chat_id = ?
+		SELECT * FROM episodes WHERE user_id = ?
 		AND (trigger_context LIKE ? OR intervention LIKE ? OR lesson LIKE ? OR emotions LIKE ?)
 		ORDER BY created_at DESC LIMIT ?
-	`).bind(chatId, pattern, pattern, pattern, pattern, limit));
+	`).bind(userId, pattern, pattern, pattern, pattern, limit));
 	return rows.map(parseEpisode);
 }
 
 export async function updateEpisodeOutcome(
-	env: Env, episodeId: number, outcome: string, lesson: string
+	env: Env, userId: number, episodeId: number, outcome: string, lesson: string
 ): Promise<void> {
+	// Filter by BOTH user_id AND id to prevent cross-user modification
 	await env.DB.prepare(
-		'UPDATE episodes SET outcome = ?, lesson = ? WHERE id = ?'
-	).bind(outcome, lesson, episodeId).run();
+		'UPDATE episodes SET outcome = ?, lesson = ? WHERE id = ? AND user_id = ?'
+	).bind(outcome, lesson, episodeId, userId).run();
 }
 
-export async function getPendingEpisodes(env: Env, chatId: number, limit = 5): Promise<Episode[]> {
+export async function getPendingEpisodes(env: Env, userId: number, limit = 5): Promise<Episode[]> {
 	const rows = await queryAll<EpisodeRow>(env.DB.prepare(
-		"SELECT * FROM episodes WHERE chat_id = ? AND outcome = 'pending' ORDER BY created_at DESC LIMIT ?"
-	).bind(chatId, limit));
+		"SELECT * FROM episodes WHERE user_id = ? AND outcome = 'pending' ORDER BY created_at DESC LIMIT ?"
+	).bind(userId, limit));
 	return rows.map(parseEpisode);
+}
+
+export interface ProceduralInsights {
+	worked: ProceduralInsight[];
+	didntWork: ProceduralInsight[];
 }
 
 interface ProceduralInsight {
@@ -88,23 +89,18 @@ interface ProceduralInsight {
 	type: string;
 }
 
-export interface ProceduralInsights {
-	worked: ProceduralInsight[];
-	didntWork: ProceduralInsight[];
-}
-
-export async function getProceduralInsights(env: Env, chatId: number): Promise<ProceduralInsights> {
+export async function getProceduralInsights(env: Env, userId: number): Promise<ProceduralInsights> {
 	const [positive, negative] = await Promise.all([
 		env.DB.prepare(`
 			SELECT intervention, lesson, emotions, episode_type FROM episodes
-			WHERE chat_id = ? AND outcome = 'positive' AND intervention IS NOT NULL
+			WHERE user_id = ? AND outcome = 'positive' AND intervention IS NOT NULL
 			ORDER BY created_at DESC LIMIT 10
-		`).bind(chatId).all(),
+		`).bind(userId).all(),
 		env.DB.prepare(`
 			SELECT intervention, lesson, emotions, episode_type FROM episodes
-			WHERE chat_id = ? AND outcome = 'negative' AND intervention IS NOT NULL
+			WHERE user_id = ? AND outcome = 'negative' AND intervention IS NOT NULL
 			ORDER BY created_at DESC LIMIT 10
-		`).bind(chatId).all(),
+		`).bind(userId).all(),
 	]);
 
 	const mapRow = (r: Record<string, unknown>): ProceduralInsight => ({
@@ -119,8 +115,6 @@ export async function getProceduralInsights(env: Env, chatId: number): Promise<P
 		didntWork: (negative.results ?? []).map(mapRow),
 	};
 }
-
-// --- Formatting for AI Context ---
 
 export function formatEpisodesForContext(episodes: Episode[], maxLen = 2000): string {
 	if (!episodes.length) return '';
@@ -144,28 +138,17 @@ export function formatProceduralContext(insights: ProceduralInsights): string {
 	let ctx = 'PROCEDURAL MEMORY (learned from past experience):\n';
 	if (insights.worked.length) {
 		ctx += 'What has WORKED:\n';
-		for (const w of insights.worked) {
-			ctx += `- ${w.intervention} -> ${w.lesson ?? 'positive outcome'}\n`;
-		}
+		for (const w of insights.worked) ctx += `- ${w.intervention} -> ${w.lesson ?? 'positive outcome'}\n`;
 	}
 	if (insights.didntWork.length) {
 		ctx += 'What has NOT WORKED:\n';
-		for (const w of insights.didntWork) {
-			ctx += `- ${w.intervention} -> ${w.lesson ?? 'negative outcome'}\n`;
-		}
+		for (const w of insights.didntWork) ctx += `- ${w.intervention} -> ${w.lesson ?? 'negative outcome'}\n`;
 	}
 	return ctx;
 }
 
-// --- Helpers ---
-
 function parseEpisode(row: EpisodeRow): Episode {
-	return {
-		...row,
-		emotions: safeJsonParse(row.emotions, []),
-		related_memory_ids: safeJsonParse(row.related_memory_ids, []),
-		metadata: safeJsonParse(row.metadata, {}),
-	};
+	return { ...row, emotions: safeJsonParse(row.emotions, []), related_memory_ids: safeJsonParse(row.related_memory_ids, []), metadata: safeJsonParse(row.metadata, {}) };
 }
 
 function safeJsonParse<T>(str: string | null, fallback: T): T {

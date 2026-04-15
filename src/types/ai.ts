@@ -22,10 +22,14 @@ export interface ToolSchema {
 }
 
 export interface ToolContext {
+	/** Telegram user ID (from.id) — owner of all personal data */
+	userId: number;
+	/** Telegram chat ID — where the message was sent */
 	chatId: number;
+	/** Thread ID within the chat */
 	threadId: string;
+	/** Message ID being responded to */
 	messageId?: number;
-	userId?: number;
 }
 
 export interface ToolResult {

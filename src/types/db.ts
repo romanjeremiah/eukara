@@ -1,22 +1,39 @@
 // ============================================================
 // D1 Database Row Types
 //
-// These map directly to the schema.sql tables.
-// Every D1 query result should be typed with these.
+// All personal data keyed by user_id (Telegram from.id).
+// chat_id only used for delivery targets (reminders, summaries).
 // ============================================================
 
 export interface UserProfileRow {
-	chat_id: number;
+	user_id: number;
 	first_name: string | null;
+	username: string | null;
+	language_code: string;
+	timezone: string;
 	communication_preference: string;
 	known_hobbies: string | null;
 	core_traits: string | null;
+	first_seen_at: string;
+	updated_at: string;
+}
+
+export interface PersonaConfigRow {
+	user_id: number;
+	tone: string;
+	formality: string;
+	humour_level: string;
+	emoji_style: string;
+	therapeutic_approach: string;
+	topics_of_interest: string | null;
+	communication_notes: string | null;
+	evolved_traits: string | null;
 	updated_at: string;
 }
 
 export interface MemoryRow {
 	id: number;
-	chat_id: number;
+	user_id: number;
 	category: string;
 	fact: string;
 	importance_score: number;
@@ -25,8 +42,8 @@ export interface MemoryRow {
 
 export interface ReminderRow {
 	id: number;
-	creator_chat_id: number;
-	recipient_chat_id: number;
+	user_id: number;
+	chat_id: number;
 	text: string;
 	due_at: number;
 	original_message_id: number | null;
@@ -37,42 +54,51 @@ export interface ReminderRow {
 	updated_at: string;
 }
 
-export interface ChatSummaryRow {
-	id: number;
-	chat_id: number;
-	summary_text: string;
-	date_range: string;
-	created_at: string;
-}
-
 export interface EpisodeRow {
 	id: number;
-	chat_id: number;
-	episode_type: string; // 'crisis' | 'breakthrough' | 'pattern' | 'checkin' | 'conversation'
+	user_id: number;
+	episode_type: string;
 	trigger_context: string | null;
-	emotions: string | null; // JSON array
+	emotions: string | null;
 	intervention: string | null;
-	outcome: string | null; // 'positive' | 'negative' | 'neutral' | 'pending'
+	outcome: string | null;
 	lesson: string | null;
 	mood_score: number | null;
-	related_memory_ids: string | null; // JSON array
-	metadata: string | null; // JSON
+	related_memory_ids: string | null;
+	metadata: string | null;
 	created_at: string;
 }
 
 export interface KnowledgeGraphRow {
 	id: number;
-	chat_id: number;
+	user_id: number;
 	subject: string;
 	predicate: string;
 	object: string;
 	context: string | null;
 	confidence: number;
-	source: string | null; // 'observation' | 'conversation' | 'consolidation'
+	source: string | null;
 	created_at: string;
 }
 
-// Parsed episode with typed JSON fields
+export interface MoodJournalRow {
+	id: number;
+	user_id: number;
+	date: string;
+	entry_type: string;
+	mood_score: number | null;
+	emotions: string | null;
+	sleep_hours: number | null;
+	sleep_quality: string | null;
+	medication_taken: number;
+	medication_notes: string | null;
+	activities: string | null;
+	note: string | null;
+	ai_observation: string | null;
+	clinical_tags: string | null;
+	created_at: string;
+}
+
 export interface Episode extends Omit<EpisodeRow, 'emotions' | 'related_memory_ids' | 'metadata'> {
 	emotions: string[];
 	related_memory_ids: number[];
