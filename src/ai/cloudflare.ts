@@ -44,6 +44,14 @@ export class CloudflareProvider implements AIProvider {
 				max_tokens: config?.maxTokens ?? 2048,
 			});
 
+			// Debug: log raw response shape
+			log.info('cf_ai_raw', {
+				type: typeof result,
+				keys: result ? Object.keys(result) : [],
+				response: typeof result === 'string' ? result.slice(0, 200) : (result?.response ?? '').slice(0, 200),
+				hasToolCalls: result && 'tool_calls' in result,
+			});
+
 			return this.parseResponse(result);
 		} catch (err) {
 			const error = err as Error;
