@@ -7,19 +7,19 @@ export const readRepoFile = defineTool(
 	'Read a file from the GitHub repository. Use to check current code before proposing changes.',
 	{
 		path: { type: 'string', description: 'File path relative to repo root (e.g. src/index.ts)' },
-		repo: { type: 'string', description: 'Repo in owner/name format. Default: romanjeremiah/my-ai-bot' },
+		repo: { type: 'string', description: 'Repo in owner/name format. Default: romanjeremiah/eukara' },
 	},
 	['path'],
 	async (args, env) => {
 		if (!env.GITHUB_TOKEN) return err('GitHub token not configured.');
-		const repo = (args.repo as string) || 'romanjeremiah/my-ai-bot';
+		const repo = (args.repo as string) || 'romanjeremiah/eukara';
 		const path = args.path as string;
 		try {
 			const res = await fetch(`https://api.github.com/repos/${repo}/contents/${path}`, {
 				headers: {
 					Authorization: `Bearer ${env.GITHUB_TOKEN}`,
 					Accept: 'application/vnd.github.v3.raw',
-					'User-Agent': 'my-ai-bot',
+					'User-Agent': 'Eukara',
 				},
 			});
 			if (!res.ok) return err(`GitHub ${res.status}: ${res.statusText}`);
@@ -43,13 +43,13 @@ export const patchRepoFile = defineTool(
 	['path', 'content', 'message'],
 	async (args, env) => {
 		if (!env.GITHUB_TOKEN) return err('GitHub token not configured.');
-		const repo = (args.repo as string) || 'romanjeremiah/my-ai-bot';
+		const repo = (args.repo as string) || 'romanjeremiah/eukara';
 		const path = args.path as string;
 
 		try {
 			// Get current file SHA if it exists
 			const getRes = await fetch(`https://api.github.com/repos/${repo}/contents/${path}`, {
-				headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, 'User-Agent': 'my-ai-bot' },
+				headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, 'User-Agent': 'Eukara' },
 			});
 			let sha: string | undefined;
 			if (getRes.ok) {
@@ -69,7 +69,7 @@ export const patchRepoFile = defineTool(
 				headers: {
 					Authorization: `Bearer ${env.GITHUB_TOKEN}`,
 					'Content-Type': 'application/json',
-					'User-Agent': 'my-ai-bot',
+					'User-Agent': 'Eukara',
 				},
 				body: JSON.stringify(body),
 			});

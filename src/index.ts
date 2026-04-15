@@ -1,5 +1,5 @@
 // ============================================================
-// my-ai-bot — Entry Point
+// Tenon — Entry Point
 //
 // Minimal router. Delegates to specialised handlers.
 // No business logic lives here.
@@ -63,7 +63,7 @@ export default {
 			return new Response('OK');
 		}
 
-		return new Response('my-ai-bot is running', { status: 200 });
+		return new Response('Tenon is running', { status: 200 });
 	},
 
 	async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
@@ -107,7 +107,7 @@ async function handleSetupWebhook(env: Env): Promise<Response> {
 	const token = env.TELEGRAM_TOKEN;
 	if (!token) return new Response('TELEGRAM_TOKEN not set', { status: 500 });
 
-	const webhookUrl = 'https://my-ai-bot.roman-jeremiah.workers.dev/';
+	const webhookUrl = 'https://eukara.roman-jeremiah.workers.dev/';
 	const allowedUpdates = JSON.stringify([
 		'message', 'edited_message', 'callback_query',
 		'inline_query', 'message_reaction', 'poll_answer',

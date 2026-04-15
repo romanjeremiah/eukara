@@ -1,6 +1,6 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "my-ai-bot",
+	"name": "eukara",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-04-14",
 	"observability": {
@@ -61,13 +61,13 @@
 	"queues": {
 		"producers": [
 			{
-				"queue": "my-ai-bot-tasks",
+				"queue": "eukara-tasks",
 				"binding": "TASK_QUEUE"
 			}
 		],
 		"consumers": [
 			{
-				"queue": "my-ai-bot-tasks",
+				"queue": "eukara-tasks",
 				"max_batch_size": 1,
 				"max_batch_timeout": 5
 			}

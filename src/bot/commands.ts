@@ -26,7 +26,7 @@ export async function handleCommand(
 	switch (cmd) {
 		case '/start':
 			await telegram.sendMessage(chatId, threadId,
-				'<b>Welcome to my-ai-bot</b>\n\nI am your AI companion, running on Cloudflare edge infrastructure.',
+				'<b>Welcome to Tenon</b>\n\nI am your AI companion, running on Cloudflare edge infrastructure.',
 				env);
 			return true;
 
