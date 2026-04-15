@@ -14,6 +14,7 @@ declare global {
 		OWNER_ID: string;
 		TAVILY_API_KEY?: string;
 		GITHUB_TOKEN?: string;
+		GCP_TTS_API_KEY?: string;
 
 		// Workflow bindings (auto-generated types may lag behind wrangler.jsonc)
 		MEMORY_WORKFLOW: Workflow;

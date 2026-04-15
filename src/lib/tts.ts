@@ -17,7 +17,7 @@ export async function generateSpeech(
 	text: string,
 	env: Env
 ): Promise<ArrayBuffer> {
-	const apiKey = (env as any).GCP_TTS_API_KEY ?? env.GEMINI_API_KEY;
+	const apiKey = env.GCP_TTS_API_KEY ?? env.GEMINI_API_KEY;
 	if (!apiKey) throw new Error('No TTS API key available');
 
 	const url = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`;
