@@ -44,12 +44,11 @@ export class CloudflareProvider implements AIProvider {
 				max_tokens: config?.maxTokens ?? 2048,
 			});
 
-			// Debug: log raw response shape
 			log.info('cf_ai_raw', {
 				type: typeof result,
-				keys: result ? Object.keys(result) : [],
-				response: typeof result === 'string' ? result.slice(0, 200) : (result?.response ?? '').slice(0, 200),
-				hasToolCalls: result && 'tool_calls' in result,
+				keys: result ? Object.keys(result as object) : [],
+				hasChoices: result ? 'choices' in (result as object) : false,
+				hasResponse: result ? 'response' in (result as object) : false,
 			});
 
 			return this.parseResponse(result);
@@ -158,26 +157,44 @@ export class CloudflareProvider implements AIProvider {
 	}
 
 	private parseResponse(result: AiTextGenerationOutput): AIResponse {
-		// Handle both string and object responses
 		if (typeof result === 'string') {
 			return { text: result };
 		}
 
-		const text = result?.response ?? '';
+		let text = '';
 		const toolCalls: AIToolCall[] = [];
 
-		// Parse tool calls from the response
-		if (result && 'tool_calls' in result && Array.isArray((result as any).tool_calls)) {
-			for (const tc of (result as any).tool_calls) {
-				toolCalls.push({
-					name: tc.name ?? tc.function?.name ?? '',
-					args: tc.arguments ?? tc.function?.arguments ?? {},
-					id: tc.id ?? `call_${Date.now()}`,
-				});
+		// Gemma 4+ returns OpenAI-compatible format with `choices`
+		if (result && 'choices' in result && Array.isArray((result as any).choices)) {
+			const message = (result as any).choices[0]?.message;
+			if (message?.content) text = message.content;
+
+			if (message?.tool_calls && Array.isArray(message.tool_calls)) {
+				for (const tc of message.tool_calls) {
+					const args = typeof tc.function?.arguments === 'string'
+						? JSON.parse(tc.function.arguments) : tc.function?.arguments ?? {};
+					toolCalls.push({
+						name: tc.function?.name ?? '',
+						args,
+						id: tc.id ?? `call_${Date.now()}`,
+					});
+				}
+			}
+		} else {
+			// Legacy Workers AI format
+			text = (result as any)?.response ?? '';
+			if (result && 'tool_calls' in result && Array.isArray((result as any).tool_calls)) {
+				for (const tc of (result as any).tool_calls) {
+					toolCalls.push({
+						name: tc.name ?? tc.function?.name ?? '',
+						args: tc.arguments ?? tc.function?.arguments ?? {},
+						id: tc.id ?? `call_${Date.now()}`,
+					});
+				}
 			}
 		}
 
-		return { text, toolCalls: toolCalls.length ? toolCalls : undefined };
+		return { text: text.trim(), toolCalls: toolCalls.length ? toolCalls : undefined };
 	}
 }
 
