@@ -7,6 +7,7 @@
 
 import type { TelegramCallbackQuery } from '../types/telegram';
 import * as telegram from '../lib/telegram';
+import { generateSpeech } from '../lib/tts';
 import { log } from '../lib/logger';
 
 export async function handleCallback(
@@ -26,10 +27,20 @@ export async function handleCallback(
 
 	// --- Voice ---
 	if (data === 'action_voice') {
+		const botText = query.message?.text;
+		if (!botText) {
+			await telegram.answerCallbackQuery(query.id, env, { text: 'No text to convert.' });
+			return;
+		}
 		await telegram.answerCallbackQuery(query.id, env, { text: '🔊 Generating voice...' });
-		await telegram.sendChatAction(chatId, threadId, 'record_voice', env);
-		// TODO Phase 5: Generate TTS from message text
-		await telegram.answerCallbackQuery(query.id, env, { text: 'Voice generation coming soon.' });
+		await telegram.sendChatAction(chatId, threadId, 'upload_voice', env);
+		try {
+			const audio = await generateSpeech(botText, env);
+			await telegram.sendVoice(chatId, threadId, audio, env, msgId);
+		} catch (e) {
+			log.error('voice_error', { msg: (e as Error).message });
+			await telegram.sendMessage(chatId, threadId, '⚠️ Voice generation failed.', env);
+		}
 
 	// --- Delete message ---
 	} else if (data === 'action_delete_msg') {
