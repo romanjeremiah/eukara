@@ -144,9 +144,28 @@ export class CloudflareProvider implements AIProvider {
 		}
 
 		for (const msg of messages) {
-			const content = typeof msg.content === 'string'
-				? msg.content
-				: JSON.stringify(msg.content);
+			let content: string;
+
+			if (typeof msg.content === 'string') {
+				content = msg.content;
+			} else if (Array.isArray(msg.content)) {
+				// Multimodal: flatten to text only. Workers AI chat models
+				// cannot ingest inline_data. The router should avoid sending
+				// multimodal turns here, but we degrade gracefully if it does.
+				const textParts: string[] = [];
+				let droppedMedia = false;
+				for (const part of msg.content) {
+					if (part.type === 'text') textParts.push(part.text);
+					else if (part.type === 'inline_data') droppedMedia = true;
+				}
+				if (droppedMedia) {
+					log.warn('cf_ai_multimodal_dropped', { model: this.model });
+					textParts.push('[media attached — not processable by this model]');
+				}
+				content = textParts.join('\n');
+			} else {
+				content = JSON.stringify(msg.content);
+			}
 
 			const role = msg.role === 'model' ? 'assistant' : msg.role;
 			result.push({ role: role as 'system' | 'user' | 'assistant' | 'tool', content });

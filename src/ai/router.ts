@@ -24,7 +24,18 @@ export interface RouterContext {
  * Returns which provider + model + thinking level to use.
  */
 export function routeMessage(ctx: RouterContext): ModelRoute {
-	const { userText, healthCheckinActive } = ctx;
+	const { userText, healthCheckinActive, hasMedia } = ctx;
+
+	// Media present: must route to Gemini. Workers AI chat models are
+	// text-only and would silently drop the media content.
+	if (hasMedia) {
+		return {
+			provider: 'gemini',
+			model: GEMINI_MODELS.pro,
+			thinkingEffort: 'medium',
+			reason: 'multimodal_input',
+		};
+	}
 
 	// Active health check-in: needs Gemini Pro for therapeutic depth
 	if (healthCheckinActive) {

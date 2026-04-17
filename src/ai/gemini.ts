@@ -124,17 +124,35 @@ export class GeminiProvider implements AIProvider {
 
 	// --- Internal converters ---
 
-	private convertMessages(messages: AIMessage[]): Array<{ role: string; parts: Array<{ text: string }> }> {
+	private convertMessages(messages: AIMessage[]): Array<{ role: string; parts: Array<Record<string, unknown>> }> {
 		return messages
 			.filter(m => m.role !== 'system') // System instruction handled separately
-			.map(msg => ({
-				role: msg.role === 'model' ? 'model' : 'user',
-				parts: [{
-					text: typeof msg.content === 'string'
-						? msg.content
-						: JSON.stringify(msg.content),
-				}],
-			}));
+			.map(msg => {
+				const parts: Array<Record<string, unknown>> = [];
+
+				if (typeof msg.content === 'string') {
+					parts.push({ text: msg.content });
+				} else if (Array.isArray(msg.content)) {
+					// Multimodal: unpack each part into Gemini's format.
+					for (const part of msg.content) {
+						if (part.type === 'text') {
+							parts.push({ text: part.text });
+						} else if (part.type === 'inline_data') {
+							parts.push({
+								inlineData: { mimeType: part.mimeType, data: part.data },
+							});
+						}
+					}
+				} else {
+					// tool_use / tool_result — stringify as fallback
+					parts.push({ text: JSON.stringify(msg.content) });
+				}
+
+				return {
+					role: msg.role === 'model' ? 'model' : 'user',
+					parts,
+				};
+			});
 	}
 
 	private convertTools(tools: AITool[]): Array<{ functionDeclarations: Array<Record<string, unknown>> }> {

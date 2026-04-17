@@ -34,6 +34,46 @@ export interface TelegramVoice {
 	file_size?: number;
 }
 
+export interface TelegramAudio {
+	file_id: string;
+	file_unique_id: string;
+	duration: number;
+	performer?: string;
+	title?: string;
+	mime_type?: string;
+	file_size?: number;
+}
+
+export interface TelegramVideo {
+	file_id: string;
+	file_unique_id: string;
+	width: number;
+	height: number;
+	duration: number;
+	mime_type?: string;
+	file_size?: number;
+}
+
+export interface TelegramVideoNote {
+	file_id: string;
+	file_unique_id: string;
+	length: number;
+	duration: number;
+	file_size?: number;
+}
+
+export interface TelegramSticker {
+	file_id: string;
+	file_unique_id: string;
+	type: 'regular' | 'mask' | 'custom_emoji';
+	width: number;
+	height: number;
+	is_animated: boolean;
+	is_video: boolean;
+	emoji?: string;
+	file_size?: number;
+}
+
 export interface TelegramDocument {
 	file_id: string;
 	file_unique_id: string;
@@ -52,6 +92,10 @@ export interface TelegramMessage {
 	caption?: string;
 	photo?: TelegramPhotoSize[];
 	voice?: TelegramVoice;
+	audio?: TelegramAudio;
+	video?: TelegramVideo;
+	video_note?: TelegramVideoNote;
+	sticker?: TelegramSticker;
 	document?: TelegramDocument;
 	reply_to_message?: TelegramMessage;
 	entities?: Array<{

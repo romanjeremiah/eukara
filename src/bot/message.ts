@@ -6,17 +6,28 @@
 // ============================================================
 
 import type { TelegramMessage } from '../types/telegram';
-import type { AIMessage, AITool, ToolContext } from '../types/ai';
+import type { AIMessage, AIMessagePart, AITool, ToolContext } from '../types/ai';
 import { getProvider } from '../ai/router';
 import * as telegram from '../lib/telegram';
 import { stripLeakedThoughts, splitMessage } from '../lib/formatting';
 import { log } from '../lib/logger';
 import { loadHistory, saveHistory } from '../lib/history';
+import {
+	extractMediaFromMessage,
+	mediaPlaceholder,
+	arrayBufferToBase64,
+	type MediaRef,
+} from '../lib/media';
 import * as memory from '../services/memory';
 import * as episode from '../services/episode';
 import * as knowledgeGraph from '../services/knowledge-graph';
 import * as vector from '../services/vector';
 import * as persona from '../services/persona';
+
+// Telegram's Bot API caps file downloads at 20MB. Anything larger would
+// need the Gemini Files API path, which is not implemented yet — we fail
+// gracefully with a user-visible message instead.
+const TELEGRAM_DOWNLOAD_LIMIT_BYTES = 20 * 1024 * 1024;
 
 export async function handleMessage(
 	msg: TelegramMessage,
@@ -31,23 +42,36 @@ export async function handleMessage(
 	const userText = msg.text ?? msg.caption ?? '';
 	const messageId = msg.message_id;
 
-	if (!userText.trim()) return;
+	// A message is processable if it has text OR a supported media attachment.
+	const media = extractMediaFromMessage(msg);
+	if (!userText.trim() && !media) return;
 
 	// Ensure user profile + persona config exist
 	await persona.ensureUser(env, userId, msg.from?.first_name, msg.from?.username, msg.from?.language_code);
 
 	const isOwner = env.OWNER_ID && String(userId) === String(env.OWNER_ID);
 
-	await telegram.sendChatAction(chatId, threadId, 'typing', env);
+	// Pick a chat action that reflects what we're actually doing — media
+	// messages visibly signal the bot is processing something heavier.
+	const chatAction = media
+		? (media.kind === 'voice' || media.kind === 'audio' ? 'record_voice' : 'upload_photo')
+		: 'typing';
+	await telegram.sendChatAction(chatId, threadId, chatAction, env);
 
 	// Check health check-in state (keyed by userId)
 	const healthCheckin = isOwner
 		? await env.CHAT_KV.get(`health_checkin_active_${userId}`)
 		: null;
 
-	// Route to AI provider
+	// Route to AI provider. Media presence forces Gemini routing
+	// because Workers AI chat models are text-only.
 	const { provider, route } = getProvider(
-		{ userText, isOwner: !!isOwner, healthCheckinActive: healthCheckin },
+		{
+			userText,
+			isOwner: !!isOwner,
+			healthCheckinActive: healthCheckin,
+			hasMedia: !!media,
+		},
 		env
 	);
 
@@ -98,12 +122,21 @@ export async function handleMessage(
 	// Build per-user system instruction (persona evolves per user)
 	const systemInstruction = await persona.buildSystemInstruction(env, userId, dynamicContext);
 
-	// Load prior conversation history — the persistent turn-by-turn log
-	// gets sanitised on load (tool calls dropped, first turn coerced to user).
+	// Load prior conversation history — sanitised on load, tool-loop
+	// entries stripped. History is always text-only; the current turn
+	// may be multimodal.
 	const priorHistory = await loadHistory(env, chatId, threadId);
+
+	// Build the current user turn. If media is present, download it,
+	// convert to base64, and send as multimodal parts. If the download
+	// fails (size limit, API error), degrade to a text-only turn that
+	// tells the user and the model what happened.
+	const currentUserContent = await buildUserTurnContent(userText, media, env, chatId, threadId, messageId);
+	if (!currentUserContent) return; // unrecoverable media error, already messaged the user
+
 	const messages: AIMessage[] = [
 		...priorHistory,
-		{ role: 'user', content: userText },
+		{ role: 'user', content: currentUserContent },
 	];
 
 	// --- AI Call with tool loop ---
@@ -174,19 +207,34 @@ export async function handleMessage(
 	}
 
 	// --- Persist turn to conversation history ---
-	// Only save if the AI actually responded with text. The loader will
-	// sanitise tool_use/tool_result entries on the next load, so they
-	// can be kept in the in-memory messages array during the tool loop
-	// without polluting the stored log.
+	// History is always stored as plain strings — media turns are
+	// replaced with a text placeholder ("[user sent a voice note]")
+	// so the model gets continuity without us having to serialise
+	// base64 blobs into KV.
 	if (fullText.trim()) {
-		messages.push({ role: 'model', content: fullText });
-		await saveHistory(env, chatId, threadId, messages);
+		const historyTurnText = media
+			? mediaPlaceholder(media.kind, userText)
+			: userText;
+
+		// Rebuild the messages array with the text-only version of the
+		// current user turn so sanitizeHistory in lib/history.ts stores it
+		// cleanly. The tool-loop entries already in `messages` will be
+		// dropped by the sanitiser on next load.
+		const historyMessages: AIMessage[] = [
+			...priorHistory,
+			{ role: 'user', content: historyTurnText },
+			{ role: 'model', content: fullText },
+		];
+		await saveHistory(env, chatId, threadId, historyMessages);
 	}
 
 	// --- Background: silent observation (uses userId) ---
-	if (userText.length > 20 && fullText.length > 20) {
+	// Only runs when the user sent real text content — media-only turns
+	// don't yield useful observation text for the CF AI extractor.
+	const observationInput = userText || (media ? mediaPlaceholder(media.kind) : '');
+	if (observationInput.length > 20 && fullText.length > 20) {
 		import('../ai/background').then(async ({ extractObservation }) => {
-			const obs = await extractObservation(env.AI, userText, fullText);
+			const obs = await extractObservation(env.AI, observationInput, fullText);
 			if (!obs || obs.includes('NOTHING_NEW')) return;
 
 			const obsMatch = obs.match(/OBSERVATION:\s*(.+)/);
@@ -211,5 +259,99 @@ export async function handleMessage(
 		thinking: route.thinkingEffort,
 		inputLen: userText.length,
 		outputLen: fullText.length,
+		hasMedia: !!media,
+		mediaKind: media?.kind,
 	});
+}
+
+
+/**
+ * Build the `content` field for the current user turn.
+ *
+ * - No media → returns the plain user text string.
+ * - Media within the 20MB limit → downloads, converts to base64,
+ *   returns multimodal parts (text prompt + inline_data).
+ * - Media too large or download fails → messages the user directly,
+ *   returns null so the caller can bail out.
+ *
+ * When the media is present but the user sent no caption, we inject
+ * a short default prompt so the model always has something to respond
+ * to ("Describe this image", "Transcribe this voice note", etc).
+ */
+async function buildUserTurnContent(
+	userText: string,
+	media: MediaRef | null,
+	env: Env,
+	chatId: number,
+	threadId: string,
+	messageId: number
+): Promise<string | AIMessagePart[] | null> {
+	if (!media) {
+		return userText;
+	}
+
+	// Enforce the 20MB Telegram bot download cap up-front.
+	if (media.fileSize && media.fileSize > TELEGRAM_DOWNLOAD_LIMIT_BYTES) {
+		const mb = (media.fileSize / 1024 / 1024).toFixed(1);
+		await telegram.sendMessage(chatId, threadId,
+			`⚠️ That ${media.kind} is ${mb}MB, which is over my 20MB processing limit. Could you send a smaller version?`,
+			env, { replyId: messageId });
+		return null;
+	}
+
+	let buffer: ArrayBuffer | null;
+	try {
+		buffer = await telegram.downloadFile(media.fileId, env);
+	} catch (e) {
+		log.error('media_download_error', { kind: media.kind, msg: (e as Error).message });
+		buffer = null;
+	}
+
+	if (!buffer) {
+		await telegram.sendMessage(chatId, threadId,
+			`⚠️ I couldn't download that ${media.kind}. Could you try sending it again?`,
+			env, { replyId: messageId });
+		return null;
+	}
+
+	const base64 = arrayBufferToBase64(buffer);
+
+	// Fire-and-forget: store the raw bytes in R2 for future recall.
+	// MEDIA_BUCKET binding is in wrangler.jsonc but may be absent locally.
+	if (env.MEDIA_BUCKET) {
+		const key = `media/${chatId}/${messageId}-${media.kind}`;
+		env.MEDIA_BUCKET.put(key, buffer, {
+			httpMetadata: { contentType: media.mimeType },
+			customMetadata: { chatId: String(chatId), kind: media.kind },
+		}).catch(e => log.warn('r2_store_error', { key, msg: (e as Error).message }));
+	}
+
+	// Always include a text prompt — if the user sent no caption, pick
+	// a sensible default based on media kind so the model has direction.
+	const promptText = userText.trim() || defaultPromptFor(media.kind);
+
+	return [
+		{ type: 'text', text: promptText },
+		{ type: 'inline_data', mimeType: media.mimeType, data: base64 },
+	];
+}
+
+/**
+ * Default prompt injected when the user sends media without a caption.
+ * Keeps the prompt conversational rather than command-like.
+ */
+function defaultPromptFor(kind: MediaRef['kind']): string {
+	switch (kind) {
+		case 'voice':
+		case 'audio':
+			return 'Transcribe this and respond to whatever was said.';
+		case 'video':
+		case 'video_note':
+			return 'Watch this and share what stands out. Comment on anything noteworthy.';
+		case 'photo':
+		case 'sticker':
+			return 'Describe what you see, and respond to it as if I had shared it in conversation.';
+		case 'document':
+			return 'Read this and respond to whatever it contains.';
+	}
 }

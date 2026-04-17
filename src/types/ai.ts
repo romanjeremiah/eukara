@@ -49,8 +49,20 @@ export interface AITool {
 
 // --- AI Message Types ---
 
+/**
+ * A single part of a multimodal message. A user turn can mix text and
+ * media parts (e.g. a voice note with a caption). Providers that don't
+ * support multimodal input (Cloudflare Workers AI chat models) will
+ * flatten these to text-only, dropping media — the router is
+ * responsible for never sending multimodal turns there.
+ */
+export type AIMessagePart =
+	| { type: 'text'; text: string }
+	| { type: 'inline_data'; mimeType: string; data: string }; // data = base64
+
 export type AIMessageContent =
 	| string
+	| AIMessagePart[]
 	| { type: 'tool_result'; toolCallId: string; content: string }
 	| { type: 'tool_use'; name: string; args: Record<string, unknown>; id: string };
 
