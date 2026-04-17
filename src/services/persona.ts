@@ -7,6 +7,12 @@
 
 import type { PersonaConfigRow, UserProfileRow } from '../types/db';
 import { log } from '../lib/logger';
+import {
+	BASE_INSTRUCTION,
+	MENTAL_HEALTH_DIRECTIVE,
+	FORMATTING_RULES,
+	SECOND_BRAIN_DIRECTIVE,
+} from '../config/personas';
 
 const DEFAULT_PERSONA: PersonaConfigRow = {
 	user_id: 0,
@@ -78,8 +84,16 @@ export async function updatePersonaConfig(
 }
 
 /**
- * Build the dynamic system instruction for a specific user.
- * Combines the base persona with per-user adaptations.
+ * Build the full system instruction for a specific user.
+ *
+ * Composition order (important — earlier layers set the frame,
+ * later layers refine):
+ *   1. BASE_INSTRUCTION           — identity, voice, therapeutic frameworks
+ *   2. USER CONTEXT + PERSONA OVERLAY — who the user is, how Eukara speaks to them
+ *   3. MENTAL_HEALTH_DIRECTIVE    — clinical protocol
+ *   4. FORMATTING_RULES           — typography and HTML rules
+ *   5. SECOND_BRAIN_DIRECTIVE     — accountability, note-taking, actions
+ *   6. DYNAMIC CONTEXT            — per-turn memory, time, episodes, etc.
  */
 export async function buildSystemInstruction(
 	env: Env, userId: number, dynamicContext: string
@@ -94,47 +108,41 @@ export async function buildSystemInstruction(
 		? Math.floor((Date.now() - new Date(profile.first_seen_at + 'Z').getTime()) / 86400000)
 		: 0;
 
-	const personaTraits = [
+	// Per-user persona overlay — tone, formality, humour, evolved traits
+	const personaOverlay = [
 		`Tone: ${persona.tone}`,
 		`Formality: ${persona.formality}`,
 		`Humour: ${persona.humour_level}`,
 		`Emoji usage: ${persona.emoji_style}`,
 		`Therapeutic approach: ${persona.therapeutic_approach}`,
 		persona.communication_notes ? `Communication notes: ${persona.communication_notes}` : '',
-		persona.evolved_traits ? `Evolved personality traits: ${persona.evolved_traits}` : '',
-		persona.topics_of_interest ? `User's interests: ${persona.topics_of_interest}` : '',
+		persona.evolved_traits ? `Evolved personality traits (learned from this user): ${persona.evolved_traits}` : '',
+		persona.topics_of_interest ? `User's stated interests: ${persona.topics_of_interest}` : '',
 	].filter(Boolean).join('\n');
 
+	// Stable profile facts worth knowing every turn
 	const userContext = [
 		profile?.known_hobbies ? `Known hobbies: ${profile.known_hobbies}` : '',
 		profile?.core_traits ? `Core traits: ${profile.core_traits}` : '',
 		profile?.communication_preference ? `Preferred style: ${profile.communication_preference}` : '',
 	].filter(Boolean).join('\n');
 
-	return `You are Eukara, a genuine AI companion. You adapt your personality to each person you talk to.
-
+	const userBlock = `
 CURRENT USER: ${userName} (known for ${daysKnown} days)
 ${userContext}
 
-YOUR PERSONALITY FOR THIS USER:
-${personaTraits}
+YOUR PERSONALITY CALIBRATION FOR THIS USER:
+${personaOverlay}
+`.trim();
 
-FORMATTING RULES:
-1. Use double spacing between distinct thoughts.
-2. NEVER use bracketed actions like [Adjusting sensors...]. Speak naturally.
-3. Use <blockquote expandable>content</blockquote> for insights, research, structured sections.
-4. Use emojis dynamically to match tone. Vary choices.
-5. Allowed HTML: <b>, <i>, <u>, <s>, <code>, <pre>, <a href="...">, <tg-spoiler>, <blockquote>, <blockquote expandable>.
-6. Use . for bullet lists, numbered lines for ordered lists.
-
-THERAPEUTIC GUIDELINES:
-- Be compassionate, not clinical.
-- Notice patterns across conversations.
-- Reference past episodes and knowledge graph connections naturally.
-- If the user's mood score is 0-1 or 9-10, acknowledge compassionately and suggest professional contact.
-- Use the user's name naturally in conversation.
-
-${dynamicContext}`;
+	return [
+		BASE_INSTRUCTION,
+		userBlock,
+		MENTAL_HEALTH_DIRECTIVE,
+		FORMATTING_RULES,
+		SECOND_BRAIN_DIRECTIVE,
+		dynamicContext,
+	].join('\n\n');
 }
 
 /**
