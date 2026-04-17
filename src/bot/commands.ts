@@ -37,10 +37,16 @@ export async function handleCommand(
 			await telegram.sendMessage(chatId, threadId, 'Conversation cleared. What is on your mind?', env);
 			return true;
 
-		case '/mood':
-			// TODO Phase 5: Send mood poll
-			await telegram.sendMessage(chatId, threadId, 'Mood tracking coming soon.', env);
+		case '/mood': {
+			const fromId = msg.from?.id;
+			if (!fromId) return true;
+			// Enqueue a mood_poll task — the queue consumer already knows
+			// how to send the 0-10 poll and wire the KV context for the
+			// poll_answer webhook to find. Using the queue keeps the
+			// webhook path fast and isolates the Telegram API call.
+			await env.TASK_QUEUE.send({ type: 'mood_poll', userId: fromId, chatId });
 			return true;
+		}
 
 		case '/architect': {
 			if (!env.OWNER_ID || String(msg.from?.id) !== String(env.OWNER_ID)) {
@@ -78,15 +84,51 @@ export async function handleCommand(
 			return true;
 		}
 
-		case '/listen':
-			// TODO Phase 5: Start brain dump mode
-			await telegram.sendMessage(chatId, threadId, 'Brain dump mode coming soon.', env);
+		case '/listen': {
+			const userId = msg.from?.id;
+			if (!userId) return true;
+			await env.CHAT_KV.put(`listening_mode_${userId}`, '1', { expirationTtl: 86400 });
+			await env.CHAT_KV.delete(`listen_buffer_${userId}`);
+			await telegram.sendMessage(chatId, threadId,
+				'<b>Deep Listening Mode</b>\n\nTake all the space you need. Send as many messages or voice notes as you want — I will listen without interrupting, just acknowledging with a reaction.\n\nType /done when you are finished and I will synthesise everything you shared.',
+				env);
 			return true;
+		}
 
-		case '/done':
-			// TODO Phase 5: End brain dump mode
-			await telegram.sendMessage(chatId, threadId, 'Session ended.', env);
-			return true;
+		case '/done': {
+			const userId = msg.from?.id;
+			if (!userId) return true;
+			const listening = await env.CHAT_KV.get(`listening_mode_${userId}`);
+			if (!listening) {
+				await telegram.sendMessage(chatId, threadId,
+					'We are not in listening mode. Use /listen to start a brain dump.',
+					env);
+				return true;
+			}
+			await env.CHAT_KV.delete(`listening_mode_${userId}`);
+
+			const bufferStr = await env.CHAT_KV.get(`listen_buffer_${userId}`) ?? '[]';
+			const buffer: string[] = JSON.parse(bufferStr);
+			await env.CHAT_KV.delete(`listen_buffer_${userId}`);
+
+			if (buffer.length === 0) {
+				await telegram.sendMessage(chatId, threadId,
+					'You did not send anything during this session, but I am always here when you need me.',
+					env);
+				return true;
+			}
+
+			await telegram.sendMessage(chatId, threadId,
+				'<i>Synthesising what you shared...</i>',
+				env);
+
+			// Rewrite the incoming message so the normal message handler
+			// treats this as the synthesis prompt. Mutation is safe here —
+			// the msg object is a request-scoped payload and won't be reused.
+			// Returning false causes index.ts to fall through to handleMessage.
+			msg.text = `I have just completed a Deep Listening brain dump. Here are my raw thoughts across ${buffer.length} messages, in order:\n\n${buffer.join('\n\n')}\n\nPlease synthesise this. Identify core themes, active schemas, or actionable steps. Proactively save any important patterns or ideas to memory, then give me a cohesive, compassionate response.`;
+			return false;
+		}
 
 		case '/persona':
 			// TODO Phase 5: Persona switching

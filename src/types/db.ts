@@ -91,12 +91,15 @@ export interface MoodJournalRow {
 	sleep_hours: number | null;
 	sleep_quality: string | null;
 	medication_taken: number;
+	medication_time: string | null;
 	medication_notes: string | null;
 	activities: string | null;
 	note: string | null;
 	ai_observation: string | null;
+	photo_r2_key: string | null;
 	clinical_tags: string | null;
 	created_at: string;
+	updated_at: string;
 }
 
 export interface Episode extends Omit<EpisodeRow, 'emotions' | 'related_memory_ids' | 'metadata'> {

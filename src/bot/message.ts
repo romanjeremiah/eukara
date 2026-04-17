@@ -59,9 +59,43 @@ export async function handleMessage(
 	await telegram.sendChatAction(chatId, threadId, chatAction, env);
 
 	// Check health check-in state (keyed by userId)
-	const healthCheckin = isOwner
+	let healthCheckin = isOwner
 		? await env.CHAT_KV.get(`health_checkin_active_${userId}`)
 		: null;
+
+	// B6: Context gating. If a check-in is pending but the user is
+	// clearly changing topic (longer, non-health-related message),
+	// drop the check-in flag so the bot doesn't nag them about mood
+	// mid-conversation. Short acknowledgements still count as
+	// engagement.
+	if (healthCheckin && userText.trim()) {
+		const isHealthRelated = /\b(sleep|mood|medication|med|meds|anxious|anxiety|depressed|depress|feel|feeling|emotion|check.?in|tired|exhaust|rest)\b/i.test(userText);
+		if (!isHealthRelated && userText.length > 10) {
+			await env.CHAT_KV.delete(`health_checkin_active_${userId}`);
+			healthCheckin = null;
+			log.info('checkin_dropped_topic_change', { userId, userTextPreview: userText.slice(0, 50) });
+		}
+	}
+
+	// B5: Conversational medication detection. If a `med_pending_*`
+	// flag is set and the user's message matches confirmation phrases,
+	// clear the flag and log the medication to today's mood entry.
+	// Fires alongside the AI response, not instead of it.
+	if (isOwner && userText.trim()) {
+		const medPending = await env.CHAT_KV.get(`med_pending_${userId}`);
+		if (medPending && /\b(took|taken|yes|yep|yeah|done|had them|swallowed|popped|sorted)\b/i.test(userText)) {
+			await env.CHAT_KV.delete(`med_pending_${userId}`);
+			await env.CHAT_KV.delete(`nudge_pending_${medPending}_${userId}`);
+			// Log to mood journal — best effort, don't block the AI call
+			import('../services/mood').then(async (mood) => {
+				await mood.upsertEntry(env, userId, mood.todayLondon(), medPending as 'morning' | 'midday' | 'evening', {
+					medication_taken: 1,
+					medication_notes: `Confirmed conversationally: "${userText.slice(0, 100)}"`,
+				});
+				log.info('med_confirmed_conversational', { userId, period: medPending });
+			}).catch(e => log.error('med_log_error', { msg: (e as Error).message }));
+		}
+	}
 
 	// Route to AI provider. Media presence forces Gemini routing
 	// because Workers AI chat models are text-only.
