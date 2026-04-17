@@ -8,6 +8,7 @@
 
 import type { TelegramMessage } from '../types/telegram';
 import * as telegram from '../lib/telegram';
+import { clearHistory } from '../lib/history';
 import { log } from '../lib/logger';
 
 export async function handleCommand(
@@ -31,8 +32,9 @@ export async function handleCommand(
 			return true;
 
 		case '/clear':
+			await clearHistory(env, chatId, threadId);
 			await env.CHAT_KV.delete(`persona_${chatId}_${threadId}`);
-			await telegram.sendMessage(chatId, threadId, 'Context cleared.', env);
+			await telegram.sendMessage(chatId, threadId, 'Conversation cleared. What is on your mind?', env);
 			return true;
 
 		case '/mood':

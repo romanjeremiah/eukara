@@ -11,6 +11,7 @@ import { getProvider } from '../ai/router';
 import * as telegram from '../lib/telegram';
 import { stripLeakedThoughts, splitMessage } from '../lib/formatting';
 import { log } from '../lib/logger';
+import { loadHistory, saveHistory } from '../lib/history';
 import * as memory from '../services/memory';
 import * as episode from '../services/episode';
 import * as knowledgeGraph from '../services/knowledge-graph';
@@ -97,7 +98,11 @@ export async function handleMessage(
 	// Build per-user system instruction (persona evolves per user)
 	const systemInstruction = await persona.buildSystemInstruction(env, userId, dynamicContext);
 
+	// Load prior conversation history — the persistent turn-by-turn log
+	// gets sanitised on load (tool calls dropped, first turn coerced to user).
+	const priorHistory = await loadHistory(env, chatId, threadId);
 	const messages: AIMessage[] = [
+		...priorHistory,
 		{ role: 'user', content: userText },
 	];
 
@@ -166,6 +171,16 @@ export async function handleMessage(
 				markup: btns,
 			});
 		}
+	}
+
+	// --- Persist turn to conversation history ---
+	// Only save if the AI actually responded with text. The loader will
+	// sanitise tool_use/tool_result entries on the next load, so they
+	// can be kept in the in-memory messages array during the tool loop
+	// without polluting the stored log.
+	if (fullText.trim()) {
+		messages.push({ role: 'model', content: fullText });
+		await saveHistory(env, chatId, threadId, messages);
 	}
 
 	// --- Background: silent observation (uses userId) ---
