@@ -7,7 +7,11 @@
 // ============================================================
 
 import type { TelegramMessage } from '../types/telegram';
+import type { MemoryRow, PersonaConfigRow } from '../types/db';
 import * as telegram from '../lib/telegram';
+import * as memory from '../services/memory';
+import * as persona from '../services/persona';
+import { PERSONA_PRESETS, type PersonaPreset } from '../config/persona-presets';
 import { clearHistory } from '../lib/history';
 import { log } from '../lib/logger';
 
@@ -131,12 +135,142 @@ export async function handleCommand(
 			return false;
 		}
 
-		case '/persona':
-			// TODO Phase 5: Persona switching
-			await telegram.sendMessage(chatId, threadId, 'Persona switching coming soon.', env);
+		case '/persona': {
+			const userId = msg.from?.id;
+			if (!userId) return true;
+			await persona.ensureUser(env, userId, msg.from?.first_name, msg.from?.username, msg.from?.language_code);
+			const current = await persona.getPersonaConfig(env, userId);
+			// Infer which preset (if any) matches the user's current config.
+			// Matching is best-effort — evolved_traits and communication_notes
+			// can drift without breaking the match.
+			const currentPreset = inferCurrentPreset(current);
+			const header = currentPreset
+				? `<b>Your current mode: ${currentPreset.emoji} ${currentPreset.label}</b>\n\n<i>${currentPreset.description}</i>\n\nPick a new one:`
+				: `<b>Pick a conversational mode</b>\n\nYour current settings don't match any preset exactly — choose one below to reset.`;
+			const rows = PERSONA_PRESETS.map(p => [{
+				text: `${p.emoji} ${p.label}${currentPreset?.id === p.id ? ' ✓' : ''}`,
+				callback_data: `persona_preset_${p.id}`,
+			}]);
+			await telegram.sendMessage(chatId, threadId, header, env, {
+				markup: { inline_keyboard: rows },
+			});
 			return true;
+		}
+
+		case '/memories': {
+			const userId = msg.from?.id;
+			if (!userId) return true;
+			const rows = await memory.getMemories(env, userId, 100);
+			if (!rows.length) {
+				await telegram.sendMessage(chatId, threadId,
+					"I haven't saved anything about you yet. As we talk, I'll pick up on things — facts, patterns, things that matter — and remember them.",
+					env);
+				return true;
+			}
+			const formatted = formatMemoriesForDisplay(rows);
+			await telegram.sendMessage(chatId, threadId, formatted, env);
+			return true;
+		}
+
+		case '/forget': {
+			const userId = msg.from?.id;
+			if (!userId) return true;
+			const rows = await memory.getMemories(env, userId, 500);
+			if (!rows.length) {
+				await telegram.sendMessage(chatId, threadId,
+					"Nothing to forget — I haven't saved anything about you yet.",
+					env);
+				return true;
+			}
+			// Group by category so the buttons can target whole groups.
+			const counts = new Map<string, number>();
+			for (const m of rows) counts.set(m.category, (counts.get(m.category) ?? 0) + 1);
+
+			const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
+			// One button per category, two per row for readability.
+			const entries = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+			for (let i = 0; i < entries.length; i += 2) {
+				const row: Array<{ text: string; callback_data: string }> = [];
+				for (let j = i; j < Math.min(i + 2, entries.length); j++) {
+					const [cat, n] = entries[j]!;
+					row.push({
+						text: `🗑️ ${cat} (${n})`,
+						callback_data: `forget_cat_${cat}`,
+					});
+				}
+				buttons.push(row);
+			}
+			// Trailing danger-zone actions
+			buttons.push([{ text: '💣 Forget EVERYTHING', callback_data: 'forget_all_confirm' }]);
+			buttons.push([{ text: '✖️ Cancel', callback_data: 'forget_cancel' }]);
+
+			await telegram.sendMessage(chatId, threadId,
+				`<b>What should I forget?</b>\n\nI currently have <b>${rows.length}</b> memories across ${entries.length} categories. Tap a category to wipe just that group, or use the red button to wipe everything.\n\n<i>Deletions are permanent.</i>`,
+				env, { markup: { inline_keyboard: buttons } });
+			return true;
+		}
 
 		default:
 			return false; // Unknown command, pass to message handler
 	}
+}
+
+// ============================================================
+// Command helpers
+// ============================================================
+
+/**
+ * Guess which preset the user's current persona_config matches.
+ * Returns the preset if all five knobs match exactly, else undefined.
+ * We ignore communication_notes, topics_of_interest, evolved_traits —
+ * those drift through observation and don't define the preset.
+ */
+function inferCurrentPreset(config: PersonaConfigRow): PersonaPreset | undefined {
+	return PERSONA_PRESETS.find(p =>
+		p.tone === config.tone &&
+		p.formality === config.formality &&
+		p.humour_level === config.humour_level &&
+		p.emoji_style === config.emoji_style &&
+		p.therapeutic_approach === config.therapeutic_approach
+	);
+}
+
+/**
+ * Format the full list of memories grouped by category.
+ * Telegram message limit is ~4000 chars — if we exceed, truncate
+ * and note the total count.
+ */
+function formatMemoriesForDisplay(rows: MemoryRow[]): string {
+	const byCategory = new Map<string, MemoryRow[]>();
+	for (const m of rows) {
+		if (!byCategory.has(m.category)) byCategory.set(m.category, []);
+		byCategory.get(m.category)!.push(m);
+	}
+
+	// Sort categories by count, desc
+	const sorted = Array.from(byCategory.entries())
+		.sort((a, b) => b[1].length - a[1].length);
+
+	const header = `<b>What I remember about you</b>\n\n<i>${rows.length} memories across ${sorted.length} categories.</i>\n\n`;
+	let body = '';
+	let truncated = false;
+
+	for (const [category, memories] of sorted) {
+		const block = `<b>${category}</b> (${memories.length})\n` +
+			memories.slice(0, 10).map(m => `• ${m.fact}`).join('\n') +
+			(memories.length > 10 ? `\n<i>... and ${memories.length - 10} more</i>` : '') +
+			'\n\n';
+
+		if ((header + body + block).length > 3800) {
+			truncated = true;
+			break;
+		}
+		body += block;
+	}
+
+	if (truncated) {
+		body += `<i>Output truncated — use /forget to clear space or ask me to list a specific category.</i>`;
+	}
+
+	return (header + body).trim();
 }

@@ -128,7 +128,9 @@ async function handleRegisterCommands(env: Env): Promise<Response> {
 		{ command: 'listen', description: 'Start a brain dump session' },
 		{ command: 'done', description: 'End listening / brain dump' },
 		{ command: 'architect', description: 'Run an innovation review' },
-		{ command: 'persona', description: 'Switch AI personality' },
+		{ command: 'persona', description: 'Change conversational mode' },
+		{ command: 'memories', description: 'Show what I remember about you' },
+		{ command: 'forget', description: 'Delete memories (category or all)' },
 		{ command: 'clear', description: 'Clear conversation context' },
 		{ command: 'start', description: 'Welcome message' },
 	];
