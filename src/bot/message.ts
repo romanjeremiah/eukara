@@ -46,6 +46,44 @@ export async function handleMessage(
 	const media = extractMediaFromMessage(msg);
 	if (!userText.trim() && !media) return;
 
+	// B7: Listening mode. If the user started a brain-dump session
+	// via /listen, buffer their message and react with 👀 — DON'T run
+	// the AI pipeline. The buffered messages will be synthesised as a
+	// single prompt when they send /done.
+	//
+	// Cap the buffer at 100 entries so a forgotten `/listen` doesn't
+	// accumulate unboundedly in KV. Gemini-bot learned this one the
+	// hard way.
+	const listening = await env.CHAT_KV.get(`listening_mode_${userId}`);
+	if (listening) {
+		const bufferKey = `listen_buffer_${userId}`;
+		const bufferRaw = await env.CHAT_KV.get(bufferKey) ?? '[]';
+		let buffer: string[];
+		try {
+			const parsed = JSON.parse(bufferRaw);
+			buffer = Array.isArray(parsed) ? parsed.map(String) : [];
+		} catch {
+			buffer = [];
+		}
+
+		const timestamp = new Date().toLocaleTimeString('en-GB', {
+			timeZone: 'Europe/London',
+			hour12: false,
+		});
+		const entry = media
+			? `[${timestamp}] ${mediaPlaceholder(media.kind, userText)}`
+			: `[${timestamp}] ${userText}`;
+
+		buffer.push(entry);
+		if (buffer.length > 100) buffer = buffer.slice(-100);
+
+		await env.CHAT_KV.put(bufferKey, JSON.stringify(buffer), { expirationTtl: 86400 });
+		await telegram.sendReaction(chatId, messageId, '👀', env).catch(() => {});
+
+		log.info('listen_buffered', { userId, entryCount: buffer.length, hasMedia: !!media });
+		return;
+	}
+
 	// Ensure user profile + persona config exist
 	await persona.ensureUser(env, userId, msg.from?.first_name, msg.from?.username, msg.from?.language_code);
 
