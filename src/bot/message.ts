@@ -208,8 +208,22 @@ export async function handleMessage(
 			break;
 		}
 	} catch (err) {
-		log.error('ai_chat_error', { msg: (err as Error).message, provider: route.provider, model: route.model });
-		fullText = "Sorry, I hit a snag processing that. Could you try again?";
+		const error = err as Error;
+		log.error('ai_chat_error', {
+			msg: error.message,
+			stack: error.stack?.slice(0, 500),
+			provider: route.provider,
+			model: route.model,
+			messagesCount: messages.length,
+			firstContentType: typeof messages[0]?.content,
+			lastContentType: typeof messages[messages.length - 1]?.content,
+			hasMedia: !!media,
+		});
+		// Surface the actual error in Telegram during debugging — much
+		// more useful than the generic "snag" message. Prefix with ⚠️ so
+		// it's obviously a failure mode, and truncate the stack so we
+		// don't flood the chat.
+		fullText = `⚠️ <b>AI call failed</b>\n<code>${(error.message || 'unknown').slice(0, 300)}</code>\n\n<i>provider: ${route.provider} · model: ${route.model}</i>`;
 	}
 
 	// --- Send final response ---

@@ -4,14 +4,19 @@
 // Implements AIProvider using Workers AI models.
 // Primary provider for ~80% of traffic (free tier).
 // Uses OpenAI-compatible function calling format.
+//
+// Workers AI calls go through runAI() from lib/ai-gateway.ts
+// which transparently falls back to direct invocation if the
+// AI Gateway is unavailable.
 // ============================================================
 
 import type {
 	AIProvider, AIMessage, AITool, AIProviderConfig,
 	AIResponse, AIStreamChunk, AIToolCall, AIMessageContent,
 } from '../types/ai';
-import { CF_MODELS, AI_GATEWAY } from '../config/models';
+import { CF_MODELS } from '../config/models';
 import { log } from '../lib/logger';
+import { runAI } from '../lib/ai-gateway';
 
 export class CloudflareProvider implements AIProvider {
 	readonly name = 'cloudflare';
@@ -25,11 +30,11 @@ export class CloudflareProvider implements AIProvider {
 
 	// Cast model string for env.AI.run() which expects keyof AiModels
 	private runModel(input: Record<string, unknown>): Promise<AiTextGenerationOutput> {
-		return this.ai.run(
+		return runAI<AiTextGenerationOutput>(
+			this.ai,
 			this.model as unknown as keyof AiModels,
-			input,
-			{ gateway: AI_GATEWAY }
-		) as Promise<AiTextGenerationOutput>;
+			input
+		);
 	}
 
 	async chat(
@@ -71,15 +76,15 @@ export class CloudflareProvider implements AIProvider {
 		const cfMessages = this.convertMessages(messages, config?.systemInstruction);
 
 		try {
-			const stream = await this.ai.run(
+			const stream = await runAI<ReadableStream | unknown>(
+				this.ai,
 				this.model as unknown as keyof AiModels,
 				{
 					messages: cfMessages,
 					temperature: config?.temperature ?? 1.0,
 					max_tokens: config?.maxTokens ?? 2048,
 					stream: true,
-				},
-				{ gateway: AI_GATEWAY }
+				}
 			);
 
 			// CF AI streaming returns an EventSource-like stream
@@ -117,11 +122,11 @@ export class CloudflareProvider implements AIProvider {
 
 	async embed(text: string): Promise<number[]> {
 		try {
-			const result = await this.ai.run(
+			const result = await runAI<EmbeddingResponse>(
+				this.ai,
 				CF_MODELS.embedding as unknown as keyof AiModels,
-				{ text: [text] },
-				{ gateway: AI_GATEWAY }
-			) as EmbeddingResponse;
+				{ text: [text] }
+			);
 
 			return result?.data?.[0] ?? [];
 		} catch (err) {

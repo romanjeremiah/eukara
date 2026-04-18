@@ -5,8 +5,9 @@
 // Uses the cheapest models within the free neuron budget.
 // ============================================================
 
-import { CF_MODELS, AI_GATEWAY } from '../config/models';
+import { CF_MODELS } from '../config/models';
 import { log } from '../lib/logger';
+import { runAI } from '../lib/ai-gateway';
 
 /**
  * Run a simple text generation on a CF AI model.
@@ -22,10 +23,11 @@ async function generate(
 		if (system) messages.push({ role: 'system', content: system });
 		messages.push({ role: 'user', content: prompt });
 
-		const result = await ai.run(model as unknown as keyof AiModels, {
-			messages,
-			max_tokens: 512,
-		}, { gateway: AI_GATEWAY }) as { response?: string } | string;
+		const result = await runAI<{ response?: string } | string>(
+			ai,
+			model as unknown as keyof AiModels,
+			{ messages, max_tokens: 512 }
+		);
 
 		if (typeof result === 'string') return result;
 		return result?.response ?? null;

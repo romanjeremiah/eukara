@@ -3,17 +3,20 @@
 // Semantic search keyed by userId for per-user isolation.
 // ============================================================
 
-import { CF_MODELS, AI_GATEWAY } from '../config/models';
+import { CF_MODELS } from '../config/models';
 import { log } from '../lib/logger';
+import { runAI } from '../lib/ai-gateway';
 
 export async function semanticSearch(
 	env: Env, userId: number, query: string, topK = 10
 ): Promise<Array<{ id: string; score: number; metadata: Record<string, unknown> }>> {
 	if (!env.VECTORIZE || !env.AI || !query.trim()) return [];
 	try {
-		const result = await env.AI.run(CF_MODELS.embedding as unknown as keyof AiModels, {
-			text: [query],
-		}, { gateway: AI_GATEWAY }) as { data?: number[][] };
+		const result = await runAI<{ data?: number[][] }>(
+			env.AI,
+			CF_MODELS.embedding as unknown as keyof AiModels,
+			{ text: [query] }
+		);
 		const vector = result?.data?.[0];
 		if (!vector?.length) return [];
 
@@ -44,9 +47,11 @@ export async function rerank(
 			.map(text => ({ text }));
 		if (!contexts.length) return results;
 
-		const reranked = await env.AI.run(CF_MODELS.reranker as unknown as keyof AiModels, {
-			query, contexts,
-		}, { gateway: AI_GATEWAY }) as { data?: Array<{ index: number; score: number }> };
+		const reranked = await runAI<{ data?: Array<{ index: number; score: number }> }>(
+			env.AI,
+			CF_MODELS.reranker as unknown as keyof AiModels,
+			{ query, contexts }
+		);
 		if (!reranked?.data?.length) return results;
 
 		return reranked.data

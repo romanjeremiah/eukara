@@ -5,7 +5,8 @@
 // ============================================================
 
 import { log } from '../lib/logger';
-import { CF_MODELS, AI_GATEWAY } from '../config/models';
+import { CF_MODELS } from '../config/models';
+import { runAI } from '../lib/ai-gateway';
 
 interface QueueTask {
 	type: string;
@@ -40,13 +41,17 @@ async function processTask(task: QueueTask, env: Env): Promise<void> {
 				? 'Generate a 1-2 sentence morning greeting. Ask how they slept and casually ask if they took their morning medication.'
 				: 'Generate a 1-2 sentence midday check-in. Casually ask if they took their meds.';
 
-			const result = await env.AI.run(CF_MODELS.chat as unknown as keyof AiModels, {
-				messages: [
-					{ role: 'system', content: 'You are a caring AI companion. Be warm, brief, natural.' },
-					{ role: 'user', content: prompt },
-				],
-				max_tokens: 200,
-			}, { gateway: AI_GATEWAY }) as any;
+			const result = await runAI<any>(
+				env.AI,
+				CF_MODELS.chat as unknown as keyof AiModels,
+				{
+					messages: [
+						{ role: 'system', content: 'You are a caring AI companion. Be warm, brief, natural.' },
+						{ role: 'user', content: prompt },
+					],
+					max_tokens: 200,
+				}
+			);
 
 			const greeting = extractText(result) ?? (task.period === 'morning'
 				? 'Morning! How did you sleep? Have you taken your meds?' : 'Quick check — have you taken your meds?');
@@ -92,26 +97,34 @@ async function processTask(task: QueueTask, env: Env): Promise<void> {
 			const pending = await env.CHAT_KV.get(`med_pending_${userId}`);
 			if (!pending) break;
 
-			const result = await env.AI.run(CF_MODELS.chat as unknown as keyof AiModels, {
-				messages: [
-					{ role: 'system', content: 'You are a caring AI companion.' },
-					{ role: 'user', content: 'Send a brief, gentle 1-sentence medication follow-up.' },
-				],
-				max_tokens: 100,
-			}, { gateway: AI_GATEWAY }) as any;
+			const result = await runAI<any>(
+				env.AI,
+				CF_MODELS.chat as unknown as keyof AiModels,
+				{
+					messages: [
+						{ role: 'system', content: 'You are a caring AI companion.' },
+						{ role: 'user', content: 'Send a brief, gentle 1-sentence medication follow-up.' },
+					],
+					max_tokens: 100,
+				}
+			);
 
 			await sendTelegram(token, chatId, extractText(result) ?? 'Just checking — did you manage to take your meds?');
 			break;
 		}
 
 		case 'spontaneous_outreach': {
-			const result = await env.AI.run(CF_MODELS.chat as unknown as keyof AiModels, {
-				messages: [
-					{ role: 'system', content: 'You are a caring AI companion who occasionally checks in.' },
-					{ role: 'user', content: 'Send a spontaneous, brief 1-2 sentence check-in message.' },
-				],
-				max_tokens: 200,
-			}, { gateway: AI_GATEWAY }) as any;
+			const result = await runAI<any>(
+				env.AI,
+				CF_MODELS.chat as unknown as keyof AiModels,
+				{
+					messages: [
+						{ role: 'system', content: 'You are a caring AI companion who occasionally checks in.' },
+						{ role: 'user', content: 'Send a spontaneous, brief 1-2 sentence check-in message.' },
+					],
+					max_tokens: 200,
+				}
+			);
 
 			const message = extractText(result);
 			if (message) await sendTelegram(token, chatId, message);
