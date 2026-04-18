@@ -118,9 +118,10 @@ export async function handleCommand(
 				return true;
 			}
 
-			await telegram.sendMessage(chatId, threadId,
-				'<i>Synthesising what you shared...</i>',
-				env);
+			// No placeholder message — Telegram's typing indicator
+			// (sent by handleMessage) signals the bot is working, and
+			// the final synthesis will be the only new message in the
+			// chat, which is cleaner UX.
 
 			// Rewrite the incoming message so the normal message handler
 			// treats this as the synthesis prompt. Mutation is safe here —
