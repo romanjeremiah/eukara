@@ -113,6 +113,24 @@ export async function deleteMessage(chatId: number, msgId: number, env: Env): Pr
 	await tgApi('deleteMessage', env, { chat_id: chatId, message_id: msgId });
 }
 
+/**
+ * Strip (or replace) the inline keyboard on an existing message without
+ * touching its text. Pass null for markup to remove the keyboard entirely.
+ */
+export async function editMessageReplyMarkup(
+	chatId: number,
+	msgId: number,
+	markup: Record<string, unknown> | null,
+	env: Env
+): Promise<void> {
+	const payload: Record<string, unknown> = {
+		chat_id: chatId,
+		message_id: msgId,
+	};
+	if (markup) payload.reply_markup = markup;
+	await tgApi('editMessageReplyMarkup', env, payload);
+}
+
 export async function answerCallbackQuery(
 	callbackQueryId: string,
 	env: Env,

@@ -7,6 +7,7 @@
 
 import { log } from './lib/logger';
 import { handleMessage, handleCallback, handleCommand } from './bot';
+import { handlePollAnswer } from './bot/poll';
 import { handleCron } from './router/cron';
 import { handleQueue } from './router/queue';
 import * as telegram from './lib/telegram';
@@ -92,9 +93,7 @@ function routeUpdate(update: TelegramUpdate, env: Env): Promise<void> | null {
 	}
 
 	if (update.poll_answer) {
-		// TODO Phase 5: Handle mood poll answers
-		log.info('poll_answer', { pollId: update.poll_answer.poll_id });
-		return null;
+		return handlePollAnswer(update.poll_answer, env);
 	}
 
 	return null;
