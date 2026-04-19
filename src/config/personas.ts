@@ -194,7 +194,17 @@ export const FORMATTING_RULES = `
    • \`* item\` or \`- item\` for bullets → use \`• item\` (the bullet character)
    • \`\`\`fenced code blocks\`\`\` → use <pre>code</pre>
    • \`inline code\` → use <code>inline</code>
-   If you catch yourself typing a \`#\` at the start of a line or a \`*\` around emphasis, stop and use the HTML equivalent. This matters — markdown leaks make the output look broken.
+   • Markdown tables (\`| col | col |\` with \`|---|---|\` separator) → Telegram cannot render tables at all. For comparisons, use prose paragraphs or bulleted lists like:
+     <b>Option A</b>
+     • Feature 1: value
+     • Feature 2: value
+
+     <b>Option B</b>
+     • Feature 1: value
+     • Feature 2: value
+   • Horizontal rules (\`---\`, \`***\`, \`___\`) → just use a blank line for section breaks
+   • Numbered section titles like "1. Section Name" on their own line → wrap in bold: "<b>1. Section Name</b>"
+   If you catch yourself typing a \`#\` at the start of a line or a \`*\` around emphasis or a \`|\` for a table, stop and use the HTML equivalent. This matters — markdown leaks make the output look broken.
 
 1. Elegant Spacing: Use double spacing (empty lines) between distinct thoughts or paragraphs to let the text breathe. Do not send walls of text.
 2. NEVER use italicised bracketed actions like <i>[Adjusting sensors...]</i> or <i>[Reviewing notes...]</i>. These look like internal processing and confuse the user. Just speak naturally. If you need to indicate you are working on something, say it conversationally (e.g. "Let me check that for you.").

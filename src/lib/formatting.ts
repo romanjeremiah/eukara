@@ -117,7 +117,76 @@ export function normaliseMarkdown(text: string): string {
 	//    bullet character the FORMATTING_RULES tells the model to use.
 	out = out.replace(/^(\s*)[*\-]\s+/gm, '$1• ');
 
+	// 7. Horizontal rules (---, ***, ___) → blank line.
+	//    Telegram has no <hr> equivalent. The rule was separating
+	//    sections; a blank line does the same job visually.
+	out = out.replace(/^[ \t]*([-*_])\1{2,}[ \t]*$/gm, '');
+
+	// 8. Pipe tables → bullet rows. Telegram HTML has NO table support,
+	//    so the cleanest fallback is to flatten each data row into a
+	//    single bullet line with pipe separators. The header row and
+	//    the separator row (|:---|) are dropped; data rows are kept.
+	//    This handles the shape the model typically produces:
+	//      | Col | Col |
+	//      | :-- | :-- |
+	//      | val | val |
+	out = convertPipeTables(out);
+
+	// 9. Final whitespace pass — collapse runs of 3+ blank lines that
+	//    the substitutions above may have introduced.
+	out = out.replace(/\n{3,}/g, '\n\n');
+
 	return out;
+}
+
+/**
+ * Convert markdown pipe-tables to a bullet-row representation.
+ *
+ * Pattern detected:
+ *   | Header1 | Header2 |
+ *   | :--- | :--- |     ← separator (may have :, -, or spaces)
+ *   | data | data |
+ *   | data | data |
+ *
+ * Output:
+ *   <b>Header1 | Header2</b>
+ *   • data | data
+ *   • data | data
+ *
+ * The header is bolded so the section still has visual hierarchy
+ * even without a real table.
+ */
+function convertPipeTables(text: string): string {
+	const lines = text.split('\n');
+	const out: string[] = [];
+	let i = 0;
+
+	while (i < lines.length) {
+		const line = lines[i]!;
+		// Detect the header row: starts and ends with `|`, has at least one interior `|`.
+		const isTableRow = /^\s*\|.+\|\s*$/.test(line);
+		// The next line should be the separator: |:---|---|:---:|
+		const nextLine = lines[i + 1];
+		const isSeparator = nextLine !== undefined && /^\s*\|[\s\-:|]+\|\s*$/.test(nextLine);
+
+		if (isTableRow && isSeparator) {
+			// Extract header cells
+			const headerCells = line.trim().slice(1, -1).split('|').map(s => s.trim());
+			out.push(`<b>${headerCells.join(' | ')}</b>`);
+			// Skip the separator row
+			i += 2;
+			// Process data rows
+			while (i < lines.length && /^\s*\|.+\|\s*$/.test(lines[i]!)) {
+				const cells = lines[i]!.trim().slice(1, -1).split('|').map(s => s.trim());
+				out.push(`• ${cells.join(' | ')}`);
+				i++;
+			}
+			continue;
+		}
+		out.push(line);
+		i++;
+	}
+	return out.join('\n');
 }
 
 /**
