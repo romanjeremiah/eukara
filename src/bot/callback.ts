@@ -15,6 +15,7 @@ import {
 	emotionButtonRows,
 } from '../config/emotions';
 import { getPresetById } from '../config/persona-presets';
+import { findPresetByTz } from '../config/timezone-presets';
 import { handleEmotionToggle, handleEmotionsDone } from './mood-callbacks';
 import * as persona from '../services/persona';
 import * as memory from '../services/memory';
@@ -194,6 +195,32 @@ export async function handleCallback(
 			`<b>Cancelled.</b>\n\nNothing was deleted. Your memories are safe.`,
 			env);
 		await telegram.answerCallbackQuery(query.id, env).catch(() => {});
+
+	// --- Timezone preset selection ---
+	// Tapped from the /timezone picker. Sets the user's timezone in
+	// both user_profiles (source of truth) and the KV mirror, then
+	// confirms by showing the current local time in the new zone.
+	} else if (data.startsWith('tz_set_')) {
+		const tz = data.replace('tz_set_', '');
+		const userId = query.from.id;
+		try {
+			await persona.setUserTimezone(env, userId, tz);
+			const preset = findPresetByTz(tz);
+			const nowLocal = new Date().toLocaleString('en-GB', { timeZone: tz });
+			const label = preset ? `${preset.flag} ${preset.label}` : tz;
+			await telegram.editMessage(chatId, msgId,
+				`<b>Timezone set to ${label}</b>\n<code>${tz}</code>\n\nYour local time is now <b>${nowLocal}</b>.`,
+				env);
+			await telegram.answerCallbackQuery(query.id, env, {
+				text: `✓ ${preset?.label ?? tz}`,
+			}).catch(() => {});
+			log.info('timezone_set_from_picker', { userId, tz });
+		} catch (e) {
+			log.error('timezone_set_error', { userId, tz, msg: (e as Error).message });
+			await telegram.answerCallbackQuery(query.id, env, {
+				text: 'Failed to set timezone',
+			}).catch(() => {});
+		}
 
 	// --- Noop (dismiss buttons) ---
 	} else if (data === 'noop') {

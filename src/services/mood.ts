@@ -18,12 +18,27 @@ import { log } from '../lib/logger';
 export type EntryType = 'morning' | 'midday' | 'evening';
 
 /**
- * Return today's date in London time as an ISO date string (YYYY-MM-DD).
- * All mood entries are keyed by London-local date for consistency with
- * scheduled check-ins and weekly/monthly aggregation windows.
+ * Return today's date in the user's local timezone as an ISO date
+ * string (YYYY-MM-DD). All mood entries are keyed by the user's
+ * local date so that "today's check-in" matches their sense of
+ * the day, regardless of where the server or the user is.
+ *
+ * Callers should read the user's timezone from user_profiles via
+ * persona.getProfile() or persona.getUserTimezone() and pass it in.
+ * Defaults to 'Europe/London' for safety during the migration —
+ * remove once all callers are passing a tz explicitly.
+ */
+export function todayLocal(timezone = 'Europe/London'): string {
+	return new Date().toLocaleDateString('en-CA', { timeZone: timezone });
+}
+
+/**
+ * @deprecated Use todayLocal(timezone) instead. Retained for
+ * backwards compatibility — behaves identically but ignores the
+ * user's chosen timezone.
  */
 export function todayLondon(): string {
-	return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
+	return todayLocal('Europe/London');
 }
 
 /**
@@ -41,13 +56,14 @@ export async function getEntry(
 /**
  * Has the user checked in at all today for the given slot?
  * Cheaper than getEntry when you only need a boolean.
+ * Callers pass the user's timezone so "today" is evaluated locally.
  */
 export async function hasCheckedInToday(
-	env: Env, userId: number, entryType: EntryType
+	env: Env, userId: number, entryType: EntryType, timezone = 'Europe/London'
 ): Promise<boolean> {
 	const row = await env.DB.prepare(
 		'SELECT id FROM mood_journal WHERE user_id = ? AND date = ? AND entry_type = ? LIMIT 1'
-	).bind(userId, todayLondon(), entryType).first();
+	).bind(userId, todayLocal(timezone), entryType).first();
 	return !!row;
 }
 

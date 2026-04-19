@@ -87,6 +87,12 @@ export async function handleMessage(
 	// Ensure user profile + persona config exist
 	await persona.ensureUser(env, userId, msg.from?.first_name, msg.from?.username, msg.from?.language_code);
 
+	// Read the user's timezone once per request — every time-aware
+	// operation below (mood entry keys, dynamic context clock, B5
+	// medication log) uses this. Reading once and passing in avoids
+	// repeated DB hits for the same value.
+	const userTz = await persona.getUserTimezone(env, userId);
+
 	const isOwner = env.OWNER_ID && String(userId) === String(env.OWNER_ID);
 
 	// Pick a chat action that reflects what we're actually doing — media
@@ -124,9 +130,10 @@ export async function handleMessage(
 		if (medPending && /\b(took|taken|yes|yep|yeah|done|had them|swallowed|popped|sorted)\b/i.test(userText)) {
 			await env.CHAT_KV.delete(`med_pending_${userId}`);
 			await env.CHAT_KV.delete(`nudge_pending_${medPending}_${userId}`);
-			// Log to mood journal — best effort, don't block the AI call
+			// Log to mood journal — best effort, don't block the AI call.
+			// Uses the user's timezone so the entry lands on the right day.
 			import('../services/mood').then(async (mood) => {
-				await mood.upsertEntry(env, userId, mood.todayLondon(), medPending as 'morning' | 'midday' | 'evening', {
+				await mood.upsertEntry(env, userId, mood.todayLocal(userTz), medPending as 'morning' | 'midday' | 'evening', {
 					medication_taken: 1,
 					medication_notes: `Confirmed conversationally: "${userText.slice(0, 100)}"`,
 				});
@@ -181,9 +188,11 @@ export async function handleMessage(
 		}
 	}
 
-	// Dynamic context
+	// Dynamic context — clock rendered in the user's local timezone
+	// so the model's sense of "now" matches the user's.
+	const localNow = new Date().toLocaleString('en-GB', { timeZone: userTz });
 	const dynamicContext = [
-		`London Time: ${new Date().toLocaleString('en-GB', { timeZone: 'Europe/London' })} | Unix: ${Math.floor(Date.now() / 1000)}`,
+		`Local Time (${userTz}): ${localNow} | Unix: ${Math.floor(Date.now() / 1000)}`,
 		memCtx ? `\nMEMORY:\n${memCtx}` : '',
 		semanticCtx,
 		episodeCtx ? `\n${episodeCtx}` : '',

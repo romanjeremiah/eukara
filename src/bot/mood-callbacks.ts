@@ -28,6 +28,7 @@ import * as mood from '../services/mood';
 import * as memory from '../services/memory';
 import * as episode from '../services/episode';
 import * as vector from '../services/vector';
+import * as persona from '../services/persona';
 
 /**
  * Toggle a single emotion in/out of the user's selection.
@@ -113,8 +114,10 @@ export async function handleEmotionsDone(
 	} catch { /* empty selection is fine */ }
 	await env.CHAT_KV.delete(key);
 
-	// Persist emotions against today's evening entry
-	const today = mood.todayLondon();
+	// Persist emotions against today's evening entry, using the
+	// user's local timezone to determine "today".
+	const tz = await persona.getUserTimezone(env, userId);
+	const today = mood.todayLocal(tz);
 	if (selected.length) {
 		await mood.upsertEntry(env, userId, today, 'evening', {
 			emotions: JSON.stringify(selected),

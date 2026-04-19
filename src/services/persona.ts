@@ -56,6 +56,53 @@ export async function getProfile(env: Env, userId: number): Promise<UserProfileR
 }
 
 /**
+ * Get the user's IANA timezone string (e.g. 'Europe/London',
+ * 'America/New_York'). Falls back to 'Europe/London' for users
+ * without a profile row or a null column. This is the single
+ * source of truth — every time/date computation that should
+ * feel local to the user goes through here.
+ *
+ * Also mirrors the value into KV under `timezone_${userId}` so
+ * that cron.ts (which runs outside a request lifecycle and wants
+ * to avoid DB round-trips per cron tick) can read it cheaply.
+ * The mirror is best-effort; a stale KV entry only affects
+ * proactive scheduling, never user-facing data.
+ */
+export async function getUserTimezone(env: Env, userId: number): Promise<string> {
+	try {
+		const row = await env.DB.prepare(
+			'SELECT timezone FROM user_profiles WHERE user_id = ?'
+		).bind(userId).first<{ timezone: string | null }>();
+		return row?.timezone ?? 'Europe/London';
+	} catch (e) {
+		log.warn('timezone_fetch_error', { userId, msg: (e as Error).message });
+		return 'Europe/London';
+	}
+}
+
+/**
+ * Update the user's timezone. Writes to both user_profiles (source
+ * of truth) and the KV mirror used by cron.ts.
+ *
+ * Callers should validate the timezone string before calling —
+ * Intl.supportedValuesOf('timeZone') gives the canonical list in
+ * modern runtimes. Passing an invalid tz won't throw here but will
+ * break downstream toLocaleDateString calls that use it.
+ */
+export async function setUserTimezone(
+	env: Env, userId: number, timezone: string
+): Promise<void> {
+	await env.DB.prepare(
+		'UPDATE user_profiles SET timezone = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?'
+	).bind(timezone, userId).run();
+	// Mirror to KV for cron.ts — best effort, don't block on failure.
+	await env.CHAT_KV.put(`timezone_${userId}`, timezone).catch(e =>
+		log.warn('timezone_kv_mirror_error', { userId, msg: (e as Error).message })
+	);
+	log.info('timezone_updated', { userId, timezone });
+}
+
+/**
  * Get user's persona configuration.
  */
 export async function getPersonaConfig(env: Env, userId: number): Promise<PersonaConfigRow> {

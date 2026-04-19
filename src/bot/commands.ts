@@ -12,7 +12,9 @@ import * as telegram from '../lib/telegram';
 import * as memory from '../services/memory';
 import * as persona from '../services/persona';
 import { PERSONA_PRESETS, type PersonaPreset } from '../config/persona-presets';
+import { TIMEZONE_PRESETS, findPresetByTz, isValidTimezone } from '../config/timezone-presets';
 import { clearHistory } from '../lib/history';
+import { escapeHtml } from '../lib/formatting';
 import { log } from '../lib/logger';
 
 export async function handleCommand(
@@ -207,6 +209,64 @@ export async function handleCommand(
 			await telegram.sendMessage(chatId, threadId,
 				`<b>What should I forget?</b>\n\nI currently have <b>${rows.length}</b> memories across ${entries.length} categories. Tap a category to wipe just that group, or use the red button to wipe everything.\n\n<i>Deletions are permanent.</i>`,
 				env, { markup: { inline_keyboard: buttons } });
+			return true;
+		}
+
+		case '/timezone': {
+			const userId = msg.from?.id;
+			if (!userId) return true;
+			await persona.ensureUser(env, userId, msg.from?.first_name, msg.from?.username, msg.from?.language_code);
+
+			// Parse an optional argument: /timezone Europe/Berlin
+			// Accepts both IANA strings and preset labels (case-insensitive).
+			const arg = text.split(/\s+/).slice(1).join(' ').trim();
+			if (arg) {
+				// Try matching a preset label first — friendlier for users
+				// typing "Tokyo" instead of "Asia/Tokyo".
+				const presetByLabel = TIMEZONE_PRESETS.find(
+					p => p.label.toLowerCase() === arg.toLowerCase()
+				);
+				const candidate = presetByLabel?.tz ?? arg;
+
+				if (!isValidTimezone(candidate)) {
+					await telegram.sendMessage(chatId, threadId,
+						`<b>Unknown timezone:</b> <code>${escapeHtml(arg)}</code>\n\nUse a valid IANA identifier like <code>Europe/Berlin</code> or <code>America/New_York</code>, or use /timezone without arguments to pick from a list.`,
+						env);
+					return true;
+				}
+
+				await persona.setUserTimezone(env, userId, candidate);
+				const preset = findPresetByTz(candidate);
+				const nowLocal = new Date().toLocaleString('en-GB', { timeZone: candidate });
+				await telegram.sendMessage(chatId, threadId,
+					`<b>Timezone set${preset ? ` to ${preset.flag} ${preset.label}` : ''}</b>\n\n<code>${candidate}</code>\n\nYour local time is now <b>${nowLocal}</b>.`,
+					env);
+				return true;
+			}
+
+			// No arg → show picker
+			const current = await persona.getUserTimezone(env, userId);
+			const currentPreset = findPresetByTz(current);
+			const header = currentPreset
+				? `<b>Your timezone: ${currentPreset.flag} ${currentPreset.label}</b>\n<code>${current}</code>\n\nPick a new one:`
+				: `<b>Your timezone: ${current}</b>\n\nPick from the common list below, or type <code>/timezone Region/City</code> for anything else.`;
+
+			// Two buttons per row for readability
+			const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+			for (let i = 0; i < TIMEZONE_PRESETS.length; i += 2) {
+				const row = [];
+				for (let j = i; j < Math.min(i + 2, TIMEZONE_PRESETS.length); j++) {
+					const p = TIMEZONE_PRESETS[j]!;
+					row.push({
+						text: `${p.flag} ${p.label}${current === p.tz ? ' ✓' : ''}`,
+						callback_data: `tz_set_${p.tz}`,
+					});
+				}
+				rows.push(row);
+			}
+			await telegram.sendMessage(chatId, threadId, header, env, {
+				markup: { inline_keyboard: rows },
+			});
 			return true;
 		}
 

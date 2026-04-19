@@ -24,6 +24,7 @@ import * as mood from '../services/mood';
 import * as memory from '../services/memory';
 import * as episode from '../services/episode';
 import * as vector from '../services/vector';
+import * as persona from '../services/persona';
 import type { AIMessage } from '../types/ai';
 
 interface PollContext {
@@ -60,8 +61,10 @@ export async function handlePollAnswer(
 	log.info('mood_score_received', { userId, score });
 
 	// Persist the score. upsertEntry handles insert-or-merge so repeated
-	// polls on the same day update the existing row.
-	const today = mood.todayLondon();
+	// polls on the same day update the existing row. Uses the user's
+	// local timezone to determine what "today" means.
+	const tz = await persona.getUserTimezone(env, userId);
+	const today = mood.todayLocal(tz);
 	await mood.upsertEntry(env, userId, today, 'evening', { mood_score: score });
 
 	// Clinical concern range — still respond, but prioritise safety.

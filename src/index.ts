@@ -131,6 +131,7 @@ async function handleRegisterCommands(env: Env): Promise<Response> {
 		{ command: 'persona', description: 'Change conversational mode' },
 		{ command: 'memories', description: 'Show what I remember about you' },
 		{ command: 'forget', description: 'Delete memories (category or all)' },
+		{ command: 'timezone', description: 'Set your local timezone' },
 		{ command: 'clear', description: 'Clear conversation context' },
 		{ command: 'start', description: 'Welcome message' },
 	];
