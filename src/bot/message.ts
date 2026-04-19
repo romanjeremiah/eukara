@@ -9,7 +9,7 @@ import type { TelegramMessage } from '../types/telegram';
 import type { AIMessage, AIMessagePart, AITool, ToolContext } from '../types/ai';
 import { getProvider } from '../ai/router';
 import * as telegram from '../lib/telegram';
-import { stripLeakedThoughts, splitMessage } from '../lib/formatting';
+import { stripLeakedThoughts, splitMessage, normaliseMarkdown } from '../lib/formatting';
 import { log } from '../lib/logger';
 import { loadHistory, saveHistory } from '../lib/history';
 import {
@@ -267,6 +267,11 @@ export async function handleMessage(
 	// --- Send final response ---
 	if (fullText.trim()) {
 		fullText = stripLeakedThoughts(fullText);
+		// Model sometimes slips into markdown despite the HTML-only
+		// directive in FORMATTING_RULES. Convert common markdown
+		// syntax (###, **bold**, *italic*, `code`, - bullets) to
+		// Telegram HTML equivalents before sending.
+		fullText = normaliseMarkdown(fullText);
 
 		const btns = {
 			inline_keyboard: [[

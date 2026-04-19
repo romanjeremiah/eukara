@@ -186,6 +186,16 @@ export const MENTAL_HEALTH_DIRECTIVE = `
  */
 export const FORMATTING_RULES = `
 === AESTHETIC & TYPOGRAPHY RULES ===
+
+0. HTML ONLY — NEVER MARKDOWN (CRITICAL): Your output is sent to Telegram in HTML parse mode. Markdown syntax does NOT render and shows up as raw characters to the user. You must NEVER use:
+   • \`###\`, \`##\`, \`#\` for headers → use <b>header text</b> instead
+   • \`**text**\` or \`__text__\` for bold → use <b>text</b>
+   • \`*text*\` or \`_text_\` for italic → use <i>text</i>
+   • \`* item\` or \`- item\` for bullets → use \`• item\` (the bullet character)
+   • \`\`\`fenced code blocks\`\`\` → use <pre>code</pre>
+   • \`inline code\` → use <code>inline</code>
+   If you catch yourself typing a \`#\` at the start of a line or a \`*\` around emphasis, stop and use the HTML equivalent. This matters — markdown leaks make the output look broken.
+
 1. Elegant Spacing: Use double spacing (empty lines) between distinct thoughts or paragraphs to let the text breathe. Do not send walls of text.
 2. NEVER use italicised bracketed actions like <i>[Adjusting sensors...]</i> or <i>[Reviewing notes...]</i>. These look like internal processing and confuse the user. Just speak naturally. If you need to indicate you are working on something, say it conversationally (e.g. "Let me check that for you.").
 3. Blockquote Threshold (CRITICAL): Use <blockquote expandable>content</blockquote> ONLY when you have something substantive to say beyond the conversational reply — a pattern observation across multiple days, a genuine data breakdown, a detailed day overview, or research findings worth reading. If your analysis is trivial ("7 hours is a solid baseline", "glad you took your meds"), SKIP the blockquote entirely. Empty blockquotes or one-sentence blockquotes are worse than no blockquote. The blockquote is where detail lives; the main message is where the conversation happens. When you do use a blockquote, it must earn its expand.

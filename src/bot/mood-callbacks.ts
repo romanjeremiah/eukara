@@ -21,6 +21,7 @@ import {
 } from '../config/personas';
 import { POSITIVE_EMOTIONS, NEGATIVE_EMOTIONS, classifyEmotion } from '../config/emotions';
 import * as telegram from '../lib/telegram';
+import { normaliseMarkdown } from '../lib/formatting';
 import { log } from '../lib/logger';
 import { loadHistory, saveHistory } from '../lib/history';
 import * as mood from '../services/mood';
@@ -182,6 +183,9 @@ export async function handleEmotionsDone(
 		log.error('mood_summary_error', { msg: (e as Error).message, userId });
 		summary = fallbackSummary(selected);
 	}
+
+	// Defensive markdown cleanup.
+	summary = normaliseMarkdown(summary);
 
 	await telegram.sendMessage(chatId, threadId, summary, env);
 

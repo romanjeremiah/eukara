@@ -17,6 +17,7 @@ import { GeminiProvider } from '../ai/gemini';
 import { GEMINI_MODELS } from '../config/models';
 import { BASE_INSTRUCTION, MENTAL_HEALTH_DIRECTIVE, FORMATTING_RULES } from '../config/personas';
 import * as telegram from '../lib/telegram';
+import { normaliseMarkdown } from '../lib/formatting';
 import { log } from '../lib/logger';
 import { saveHistory, loadHistory } from '../lib/history';
 import * as mood from '../services/mood';
@@ -120,6 +121,10 @@ export async function handlePollAnswer(
 		analysis = fallbackAnalysis(score);
 	}
 
+	// Defensive markdown cleanup — the system prompt is HTML-only
+	// but the model slips occasionally.
+	analysis = normaliseMarkdown(analysis);
+
 	// Send the analysis + emotion category buttons
 	const btns = {
 		inline_keyboard: [[
@@ -191,6 +196,9 @@ async function handleClinicalConcern(
 		log.error('mood_concern_error', { msg: (e as Error).message });
 		response = fallbackAnalysis(score);
 	}
+
+	// Defensive markdown cleanup.
+	response = normaliseMarkdown(response);
 
 	const btns = {
 		inline_keyboard: [[
