@@ -82,16 +82,32 @@ export function normaliseMarkdown(text: string): string {
 	if (!text) return text;
 	let out = text;
 
-	// 1. Fenced code blocks ```lang\n...\n``` → <pre>...</pre>
-	//    Must run first so their contents don't get touched by the
-	//    bullet/emphasis passes below.
+	// Code blocks need protection from subsequent passes. Without this,
+	// a fenced code block containing template literals like
+	//   return `/api/posts/${id}`;
+	// has its backticks eaten by the inline-code regex, which then wraps
+	// the template literal as <code> INSIDE the <pre> — broken HTML
+	// that Telegram rejects. The stash-placeholder-restore pattern
+	// keeps code contents opaque to later transforms.
+	const stashed: string[] = [];
+	const stash = (html: string): string => {
+		const idx = stashed.length;
+		stashed.push(html);
+		// NUL sentinels: will never appear in model output, so safe as a
+		// placeholder token that nothing else in this function will touch.
+		return `\x00STASH${idx}\x00`;
+	};
+
+	// 1. Fenced code blocks ```lang\n...\n``` → <pre>...</pre>, stashed.
 	out = out.replace(/```(?:[a-z]*\n)?([\s\S]*?)```/gi, (_, code) => {
-		return `<pre>${code.trim()}</pre>`;
+		return stash(`<pre>${code.trim()}</pre>`);
 	});
 
-	// 2. Inline code `foo` → <code>foo</code>.
+	// 2. Inline code `foo` → <code>foo</code>, stashed.
 	//    Single backticks only — must not greedy-match across lines.
-	out = out.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+	out = out.replace(/`([^`\n]+)`/g, (_, code) => {
+		return stash(`<code>${code}</code>`);
+	});
 
 	// 3. Markdown headers (###, ##, #) → bold on their own line.
 	//    Telegram has no headers, so bold is the closest equivalent.
@@ -135,6 +151,10 @@ export function normaliseMarkdown(text: string): string {
 	// 9. Final whitespace pass — collapse runs of 3+ blank lines that
 	//    the substitutions above may have introduced.
 	out = out.replace(/\n{3,}/g, '\n\n');
+
+	// 10. Restore stashed code blocks. Do this LAST so every other
+	//     transformation has run on the non-code text.
+	out = out.replace(/\x00STASH(\d+)\x00/g, (_, idx) => stashed[Number(idx)] ?? '');
 
 	return out;
 }
