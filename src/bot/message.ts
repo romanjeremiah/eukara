@@ -23,6 +23,7 @@ import * as episode from '../services/episode';
 import * as knowledgeGraph from '../services/knowledge-graph';
 import * as vector from '../services/vector';
 import * as persona from '../services/persona';
+import { getWeather, formatWeatherForContext } from '../services/weather';
 
 // Telegram's Bot API caps file downloads at 20MB. Anything larger would
 // need the Gemini Files API path, which is not implemented yet — we fail
@@ -154,11 +155,15 @@ export async function handleMessage(
 		env
 	);
 
-	// Build context — all queries use userId
+	// Build context — all queries use userId. Weather runs alongside
+	// memory/semantic fetches so it doesn't serialise latency; it
+	// degrades to null (empty string) on any failure so a weather API
+	// outage never blocks message handling.
 	const isSubstantive = userText.length > 5;
-	const [memCtx, semanticCtx] = await Promise.all([
+	const [memCtx, semanticCtx, weather] = await Promise.all([
 		isSubstantive ? memory.getFormattedContext(env, userId) : Promise.resolve(''),
 		isSubstantive ? vector.getSemanticContext(env, userId, userText) : Promise.resolve(''),
+		getWeather(env, userId, userTz).catch(() => null),
 	]);
 
 	// CoALA: batch episode + procedural queries
@@ -189,10 +194,13 @@ export async function handleMessage(
 	}
 
 	// Dynamic context — clock rendered in the user's local timezone
-	// so the model's sense of "now" matches the user's.
+	// so the model's sense of "now" matches the user's. Weather is
+	// optional ambient context; null when the user's timezone isn't
+	// in the coords lookup or the API fetch failed.
 	const localNow = new Date().toLocaleString('en-GB', { timeZone: userTz });
 	const dynamicContext = [
 		`Local Time (${userTz}): ${localNow} | Unix: ${Math.floor(Date.now() / 1000)}`,
+		formatWeatherForContext(weather),
 		memCtx ? `\nMEMORY:\n${memCtx}` : '',
 		semanticCtx,
 		episodeCtx ? `\n${episodeCtx}` : '',

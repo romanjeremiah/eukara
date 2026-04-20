@@ -106,6 +106,20 @@ export async function getRecentTherapeuticMemories(
 	`).bind(userId, since));
 }
 
+/**
+ * Return all memories created within the last N days, regardless of
+ * category. Used by the weekly report to show what Eukara learned
+ * about the user this week. Ordered by creation time, newest first.
+ */
+export async function getMemoriesSince(
+	env: Env, userId: number, days: number, limit = 50
+): Promise<MemoryRow[]> {
+	const since = new Date(Date.now() - days * 86400000).toISOString().split('T')[0]!;
+	return queryAll<MemoryRow>(env.DB.prepare(
+		'SELECT id, user_id, category, fact, importance_score, created_at FROM memories WHERE user_id = ? AND created_at > ? ORDER BY created_at DESC LIMIT ?'
+	).bind(userId, since, limit));
+}
+
 export async function deleteAllMemories(env: Env, userId: number): Promise<void> {
 	await env.DB.prepare('DELETE FROM memories WHERE user_id = ?').bind(userId).run();
 }

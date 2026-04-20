@@ -8,6 +8,7 @@
 import { log } from '../lib/logger';
 import { formatTime } from '../lib/formatting';
 import * as telegram from '../lib/telegram';
+import * as persona from '../services/persona';
 
 interface ScheduleConfig { hour: number; minute: number }
 
@@ -19,7 +20,13 @@ export async function handleCron(env: Env): Promise<void> {
 	const userIds = [Number(env.OWNER_ID)];
 
 	for (const userId of userIds) {
-		const tz = await env.CHAT_KV.get(`timezone_${userId}`) ?? 'Europe/London';
+		// Read timezone from user_profiles.timezone (DB source of truth).
+		// persona.getUserTimezone falls back to 'Europe/London' on error
+		// or missing profile row, so cron never crashes on a fresh user.
+		// Previously this read from CHAT_KV.get(`timezone_${userId}`),
+		// which is the KV mirror — reading from the source is correct
+		// now that setUserTimezone writes to both.
+		const tz = await persona.getUserTimezone(env, userId);
 		const now = new Date();
 		const localTime = new Date(now.toLocaleString('en-US', { timeZone: tz }));
 		const hour = localTime.getHours();
@@ -51,6 +58,13 @@ export async function handleCron(env: Env): Promise<void> {
 		try {
 			await deliverReminders(env, userId);
 		} catch (e) { log.error('cron_reminders_error', { userId, msg: (e as Error).message }); }
+
+		// Weekly report: Sunday evening (day 0 in JS Date, 19:00 local)
+		// Idempotency via KV key scoped to ISO week so a late cron tick
+		// on the boundary doesn't double-fire.
+		try {
+			await enqueueWeeklyReport(env, userId, localTime);
+		} catch (e) { log.error('cron_weekly_report_error', { userId, msg: (e as Error).message }); }
 	}
 }
 
@@ -94,6 +108,57 @@ async function checkConsolidation(env: Env, userId: number, now: Date): Promise<
 		await env.MEMORY_WORKFLOW.create({ id: `consolidation-${userId}-${month}`, params: { chatId: userId } });
 		log.info('workflow_triggered', { workflow: 'memory-consolidation', userId, month });
 	}
+}
+
+/**
+ * Fire the weekly report task on Sunday at 19:00 local time.
+ *
+ * JS Date.getDay(): 0 = Sunday, 1 = Monday, ...
+ *
+ * Idempotency: keyed by ISO week (year + week number), so even if
+ * cron fires multiple times in the 19:00 hour (shouldn't, but), we
+ * only enqueue once. The KV entry expires after 7 days.
+ *
+ * The report is ONLY sent if there's data worth reporting on — the
+ * queue handler (processTask → generateAndSendWeeklyReport) bails
+ * silently when check-ins, memories, and episodes are all empty,
+ * so users who haven't engaged this week don't get a pointless
+ * "you did nothing" message.
+ */
+async function enqueueWeeklyReport(
+	env: Env, userId: number, localTime: Date
+): Promise<void> {
+	const isSunday = localTime.getDay() === 0;
+	const is19hSharp = localTime.getHours() === 19 && localTime.getMinutes() === 0;
+	if (!isSunday || !is19hSharp) return;
+
+	const weekKey = isoWeekKey(localTime);
+	const key = `weekly_report_${userId}_${weekKey}`;
+	if (await env.CHAT_KV.get(key)) return;
+	await env.CHAT_KV.put(key, '1', { expirationTtl: 86400 * 7 });
+
+	await env.TASK_QUEUE.send({ type: 'weekly_report', userId, chatId: userId });
+	log.info('weekly_report_enqueued', { userId, weekKey });
+}
+
+/**
+ * ISO week identifier: YYYY-Www (e.g. "2026-W16").
+ *
+ * Used only as an idempotency key — we don't parse it back. Computed
+ * via ISO 8601: Thursday-based week numbering. Good enough for
+ * Sunday-sent reports where the ambiguous boundary (Sat/Sun night)
+ * doesn't affect us.
+ */
+function isoWeekKey(date: Date): string {
+	// Clone so we don't mutate caller's date
+	const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+	// ISO week: Thursday determines the year. Shift date to nearest Thursday.
+	const dayNum = (d.getUTCDay() + 6) % 7; // 0=Mon..6=Sun
+	d.setUTCDate(d.getUTCDate() - dayNum + 3);
+	const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+	const diffDays = (d.getTime() - firstThursday.getTime()) / 86400000;
+	const week = 1 + Math.round((diffDays - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
+	return `${d.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
 }
 
 async function deliverReminders(env: Env, userId: number): Promise<void> {
