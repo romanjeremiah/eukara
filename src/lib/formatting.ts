@@ -210,6 +210,141 @@ function convertPipeTables(text: string): string {
 }
 
 /**
+ * Enforce Telegram's tag-nesting rules.
+ *
+ * Per https://core.telegram.org/bots/api#html-style:
+ *   - <pre> and <code> cannot contain any other entities.
+ *   - <blockquote> and <blockquote expandable> cannot be nested.
+ *   - Other tags nest freely provided one fully contains the other.
+ *
+ * Violating these rules returns HTTP 400 from Telegram — a silent
+ * message drop from the user's perspective. The model occasionally
+ * produces illegal nesting (most often inline formatting inside
+ * <pre> blocks from normaliseMarkdown's inline-code pass).
+ *
+ * Strategy: strip any opening/closing tag found INSIDE <code> or
+ * <pre> content, leaving the text intact. This is lossy (bold
+ * inside a code block becomes plain text) but the code block
+ * remains renderable and the message delivers.
+ *
+ * For blockquote nesting, we flatten: if a <blockquote> contains
+ * another <blockquote>, we remove the inner opener and closer.
+ * The text content is preserved.
+ */
+export function enforceTagNesting(text: string): string {
+	if (!text) return text;
+	let out = text;
+
+	// Strip formatting tags from inside <pre>...</pre> and <code>...</code>.
+	// Non-greedy match, dotall-equivalent [\s\S] so content can span lines.
+	const stripInnerTags = (content: string): string =>
+		content.replace(/<\/?(?:b|strong|i|em|u|ins|s|strike|del|a|tg-spoiler|tg-emoji|tg-time|blockquote)(?:\s[^>]*)?>/gi, '');
+
+	// <pre>...</pre> — outermost first. The special case <pre><code class="language-x">
+	// is allowed (it's how Telegram specifies code block languages), so we
+	// preserve that inner <code> tag but strip anything else inside the <pre>.
+	out = out.replace(/<pre>([\s\S]*?)<\/pre>/gi, (_, inner) => {
+		// Preserve <code class="language-..."> wrapper if present
+		const langMatch = inner.match(/^\s*<code(\s+class=["']language-[^"']+["'])?\s*>([\s\S]*?)<\/code>\s*$/i);
+		if (langMatch) {
+			const attr = langMatch[1] ?? '';
+			return `<pre><code${attr}>${stripInnerTags(langMatch[2] ?? '')}</code></pre>`;
+		}
+		return `<pre>${stripInnerTags(inner)}</pre>`;
+	});
+
+	// Bare <code>...</code> (not inside a <pre>). After the <pre> pass above,
+	// any remaining <code> is inline. Strip formatting from its contents.
+	out = out.replace(/<code>([\s\S]*?)<\/code>/gi, (_, inner) => `<code>${stripInnerTags(inner)}</code>`);
+
+	// Flatten nested blockquotes. Telegram rejects any blockquote
+	// nested inside another blockquote. We can't use a naive regex
+	// for this because non-greedy matching finds the INNER pair first
+	// and leaves the outer closer dangling. Instead, walk the string
+	// and track blockquote depth: emit only the outermost opener and
+	// closer of each top-level group, strip inner ones.
+	out = flattenNestedBlockquotes(out);
+
+	return out;
+}
+
+/**
+ * Walk the string, track blockquote depth, strip inner
+ * blockquote tags. Preserves the outermost opener's attributes
+ * (so <blockquote expandable> remains expandable after flattening).
+ *
+ * Approach: scan for opening/closing blockquote tags in order.
+ * For each opening tag at depth 0, emit it as-is and increment.
+ * For each opening tag at depth > 0, drop it. For each closing tag
+ * at depth 1, emit it; at depth > 1, drop it. Text between tags
+ * passes through unchanged.
+ */
+function flattenNestedBlockquotes(text: string): string {
+	const BLOCKQUOTE_TAG_RE = /<(\/?)blockquote(\s+expandable)?>/gi;
+	let out = '';
+	let lastIndex = 0;
+	let depth = 0;
+	let match: RegExpExecArray | null;
+
+	BLOCKQUOTE_TAG_RE.lastIndex = 0;
+	while ((match = BLOCKQUOTE_TAG_RE.exec(text)) !== null) {
+		// Append any text since the previous tag
+		out += text.slice(lastIndex, match.index);
+		lastIndex = match.index + match[0].length;
+
+		const isClosing = match[1] === '/';
+		if (isClosing) {
+			if (depth === 1) {
+				out += '</blockquote>';
+			}
+			// Don't let depth go negative on unbalanced input
+			if (depth > 0) depth--;
+		} else {
+			if (depth === 0) {
+				out += match[0]; // preserve attributes like 'expandable'
+			}
+			depth++;
+		}
+	}
+	// Tail after last match
+	out += text.slice(lastIndex);
+	return out;
+}
+
+/**
+ * Build a <tg-time> tag for a Unix timestamp.
+ *
+ * Telegram renders this as a formatted date/time in the user's own
+ * locale and timezone — so a message composed here in UTC appears
+ * to the user in their local time without us needing their timezone
+ * at send time.
+ *
+ * @param unix Unix timestamp in seconds (not milliseconds!)
+ * @param format One of:
+ *   - 't'   → time only, e.g. "22:45"
+ *   - 'r'   → relative, e.g. "in 2 hours", "3 days ago"
+ *   - 'wDT' → weekday + date + time, e.g. "Sat 22 Apr 22:45"
+ *   - undefined → default format, roughly "22:45 tomorrow"
+ * @param label Human-readable fallback shown by older clients that
+ *   don't support tg-time yet, or in contexts where the entity
+ *   can't render. Should describe the time in plain words.
+ *
+ * Supported in Bot API 9.5+ (March 2026).
+ */
+export function formatTime(
+	unix: number,
+	label: string,
+	format?: 't' | 'r' | 'wDT'
+): string {
+	// Guard: tg-time expects seconds, not milliseconds. If someone passes
+	// a millisecond timestamp by mistake the entity renders nonsense dates.
+	// A heuristic: any value > 10^12 is almost certainly ms.
+	const seconds = unix > 1e12 ? Math.floor(unix / 1000) : Math.floor(unix);
+	const fmtAttr = format ? ` format="${format}"` : '';
+	return `<tg-time unix="${seconds}"${fmtAttr}>${escapeHtml(label)}</tg-time>`;
+}
+
+/**
  * Escape HTML special characters for Telegram HTML parse mode.
  * Used when inserting user-provided or uncontrolled text into HTML output.
  * Do NOT apply to text that already contains intentional HTML (like model

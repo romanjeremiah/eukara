@@ -119,11 +119,22 @@ async function tgApi<T = unknown>(
 // Note: <blockquote expandable> is valid — the expandable attribute
 // is permitted on blockquote. The regex handles it via the
 // whitespace-or-close character class after the tag name.
+// Telegram's complete HTML tag allowlist, maintained in sync with
+// https://core.telegram.org/bots/api#html-style as of Bot API 9.6.
+// Any tag name NOT in this list will be stripped by the sanitiser
+// below, because Telegram responds with HTTP 400 when unknown tags
+// appear in parse_mode=HTML messages — which silently drops the
+// message from the user's perspective.
+//
+// tg-time (new in Bot API 9.5, March 2026) renders formatted
+// timestamps that update live in Telegram clients — used by
+// formatTime() in lib/formatting.ts for reminder messages and
+// mood entry timestamps.
 const ALLOWED_TAGS = [
 	'b', 'strong', 'i', 'em', 'u', 'ins',
 	's', 'strike', 'del',
 	'code', 'pre', 'a',
-	'tg-spoiler', 'tg-emoji', 'blockquote',
+	'tg-spoiler', 'tg-emoji', 'tg-time', 'blockquote',
 ].join('|');
 
 // Matches any opening/closing tag whose name is NOT in the allowed
@@ -137,7 +148,22 @@ const DISALLOWED_TAG_RE = new RegExp(
 
 function sanitizeHtml(text: string): string {
 	return text
-		// Strip any tag not in the allowlist
+		// Normalise: <span class="tg-spoiler">content</span> is Telegram's
+		// long-form spoiler syntax, equivalent to <tg-spoiler>content</tg-spoiler>.
+		// Convert the whole unit (opening + content + closing) atomically so
+		// we can't end up with an orphaned </span> that the allowlist would
+		// strip and leave a dangling </tg-spoiler>.
+		//
+		// The non-greedy [\s\S]*? is deliberate: it stops at the FIRST </span>,
+		// which is correct as long as tg-spoiler isn't nested inside another
+		// <span>. Telegram doesn't permit nested spoilers anyway (per the
+		// nesting rules in the docs), so this is safe in practice.
+		.replace(
+			/<span\s+class=["']tg-spoiler["']\s*>([\s\S]*?)<\/span>/gi,
+			'<tg-spoiler>$1</tg-spoiler>'
+		)
+		// Strip any tag not in the allowlist. Any remaining <span> and
+		// </span> (i.e. ones that weren't tg-spoiler) get stripped here.
 		.replace(DISALLOWED_TAG_RE, '')
 		// Strip <a> tags that are missing href (Telegram rejects these)
 		.replace(/<a(?![^>]*href)[^>]*>/gi, '');

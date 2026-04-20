@@ -167,3 +167,34 @@ export interface TelegramApiResponse<T = unknown> {
 		migrate_to_chat_id?: number;
 	};
 }
+
+// Inline keyboard button. Shape per Bot API 9.6 — only the fields
+// Eukara actually uses are typed strictly; everything else is
+// allowed through via `[key: string]: unknown`. This gives us
+// autocomplete and typo-prevention on `style` and the common
+// action fields without needing to model every Telegram button
+// variant (Pay, WebApp, SwitchInlineQuery...).
+//
+// Button styling (Bot API 9.4, Feb 2026):
+//   - style: visual colour. 'danger' (red) for destructive actions,
+//     'success' (green) for confirmations, 'primary' (blue) for the
+//     main CTA in a group, or omit for the default neutral style.
+//   - icon_custom_emoji_id: leading custom emoji sticker id. Only
+//     rendered if the bot owner has Telegram Premium (Roma does).
+//     The emoji id is a string from Telegram's custom emoji sticker
+//     sets; getting one requires a sticker pack lookup.
+export type ButtonStyle = 'danger' | 'success' | 'primary';
+
+export interface TelegramInlineKeyboardButton {
+	text: string;
+	callback_data?: string;
+	url?: string;
+	style?: ButtonStyle;
+	icon_custom_emoji_id?: string;
+	// Escape hatch for button variants we don't strictly type.
+	[key: string]: unknown;
+}
+
+export interface TelegramInlineKeyboardMarkup {
+	inline_keyboard: TelegramInlineKeyboardButton[][];
+}

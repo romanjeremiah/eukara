@@ -6,7 +6,7 @@
 // regular message handler.
 // ============================================================
 
-import type { TelegramMessage } from '../types/telegram';
+import type { TelegramMessage, TelegramInlineKeyboardButton } from '../types/telegram';
 import type { MemoryRow, PersonaConfigRow } from '../types/db';
 import * as telegram from '../lib/telegram';
 import * as memory from '../services/memory';
@@ -66,7 +66,7 @@ export async function handleCommand(
 				await telegram.sendMessage(chatId, threadId,
 					`⚙️ <b>Architecture review already running</b> (${age}s ago).`,
 					env, { markup: { inline_keyboard: [[
-						{ text: '🔄 Kill & Restart', callback_data: 'architect_kill' },
+						{ text: '🔄 Kill & Restart', callback_data: 'architect_kill', style: 'danger' },
 						{ text: '⏳ Wait', callback_data: 'noop' },
 					]] } });
 				return true;
@@ -188,11 +188,11 @@ export async function handleCommand(
 			const counts = new Map<string, number>();
 			for (const m of rows) counts.set(m.category, (counts.get(m.category) ?? 0) + 1);
 
-			const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
+			const buttons: TelegramInlineKeyboardButton[][] = [];
 			// One button per category, two per row for readability.
 			const entries = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
 			for (let i = 0; i < entries.length; i += 2) {
-				const row: Array<{ text: string; callback_data: string }> = [];
+				const row: TelegramInlineKeyboardButton[] = [];
 				for (let j = i; j < Math.min(i + 2, entries.length); j++) {
 					const [cat, n] = entries[j]!;
 					row.push({
@@ -203,7 +203,7 @@ export async function handleCommand(
 				buttons.push(row);
 			}
 			// Trailing danger-zone actions
-			buttons.push([{ text: '💣 Forget EVERYTHING', callback_data: 'forget_all_confirm' }]);
+			buttons.push([{ text: '💣 Forget EVERYTHING', callback_data: 'forget_all_confirm', style: 'danger' }]);
 			buttons.push([{ text: '✖️ Cancel', callback_data: 'forget_cancel' }]);
 
 			await telegram.sendMessage(chatId, threadId,
@@ -252,9 +252,9 @@ export async function handleCommand(
 				: `<b>Your timezone: ${current}</b>\n\nPick from the common list below, or type <code>/timezone Region/City</code> for anything else.`;
 
 			// Two buttons per row for readability
-			const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+			const rows: TelegramInlineKeyboardButton[][] = [];
 			for (let i = 0; i < TIMEZONE_PRESETS.length; i += 2) {
-				const row = [];
+				const row: TelegramInlineKeyboardButton[] = [];
 				for (let j = i; j < Math.min(i + 2, TIMEZONE_PRESETS.length); j++) {
 					const p = TIMEZONE_PRESETS[j]!;
 					row.push({

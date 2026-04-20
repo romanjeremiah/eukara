@@ -9,7 +9,7 @@ import type { TelegramMessage } from '../types/telegram';
 import type { AIMessage, AIMessagePart, AITool, ToolContext } from '../types/ai';
 import { getProvider } from '../ai/router';
 import * as telegram from '../lib/telegram';
-import { stripLeakedThoughts, splitMessage, normaliseMarkdown } from '../lib/formatting';
+import { stripLeakedThoughts, splitMessage, normaliseMarkdown, enforceTagNesting } from '../lib/formatting';
 import { log } from '../lib/logger';
 import { loadHistory, saveHistory } from '../lib/history';
 import {
@@ -291,11 +291,16 @@ export async function handleMessage(
 		// syntax (###, **bold**, *italic*, `code`, - bullets) to
 		// Telegram HTML equivalents before sending.
 		fullText = normaliseMarkdown(fullText);
+		// Fix illegal tag nesting (formatting inside <pre>/<code>,
+		// nested blockquotes). Telegram returns HTTP 400 for these
+		// and drops the message silently — this pass strips the
+		// inner tags but keeps the text, so the message delivers.
+		fullText = enforceTagNesting(fullText);
 
 		const btns = {
 			inline_keyboard: [[
 				{ text: '🔊 Voice', callback_data: 'action_voice' },
-				{ text: '🗑️ Delete', callback_data: 'action_delete_msg' },
+				{ text: '🗑️ Delete', callback_data: 'action_delete_msg', style: 'danger' as const },
 			]],
 		};
 

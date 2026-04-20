@@ -160,7 +160,7 @@ export async function handleCallback(
 			env, {
 				markup: {
 					inline_keyboard: [[
-						{ text: '🔥 Yes, forget everything', callback_data: 'forget_all_execute' },
+						{ text: '🔥 Yes, forget everything', callback_data: 'forget_all_execute', style: 'danger' },
 						{ text: '✖️ Cancel', callback_data: 'forget_cancel' },
 					]],
 				},
