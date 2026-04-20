@@ -10,32 +10,136 @@ import { log } from './logger';
 
 // --- Core API call ---
 
+// Maximum number of retries on retriable failures (429 rate limit,
+// transient 5xx). Each retry honours the Retry-After header or uses
+// exponential backoff. Two retries is enough for typical rate limit
+// windows without making the user wait forever.
+const MAX_RETRIES = 2;
+
 async function tgApi<T = unknown>(
 	method: string,
 	env: Env,
-	payload: Record<string, unknown>
+	payload: Record<string, unknown>,
+	attempt = 0
 ): Promise<TelegramApiResponse<T>> {
-	const res = await fetch(
-		`https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/${method}`,
-		{
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(payload),
-		}
-	);
-	const data = await res.json() as TelegramApiResponse<T>;
-	if (!data.ok && !data.description?.includes('message is not modified')) {
-		log.error('telegram_api_error', { method, description: data.description });
+	let res: Response;
+	try {
+		res = await fetch(
+			`https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/${method}`,
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload),
+			}
+		);
+	} catch (err) {
+		// Network-level failure (DNS, connection reset, fetch abort).
+		// Distinct from API-level errors — Telegram never saw this.
+		log.error('telegram_fetch_failed', {
+			method,
+			attempt,
+			msg: (err as Error).message,
+		});
+		// Rethrow so callers know the send didn't happen. handleMessage's
+		// wrapper can attempt a fallback.
+		throw err;
 	}
+
+	// Parse response body. If JSON parsing fails, Telegram returned
+	// something unexpected (HTML error page, truncated response).
+	let data: TelegramApiResponse<T>;
+	try {
+		data = await res.json() as TelegramApiResponse<T>;
+	} catch (err) {
+		log.error('telegram_response_not_json', {
+			method,
+			attempt,
+			httpStatus: res.status,
+			msg: (err as Error).message,
+		});
+		throw new Error(`Telegram returned non-JSON response: HTTP ${res.status}`);
+	}
+
+	// Handle the no-op case: editing a message to identical content
+	// returns an error that we intentionally ignore.
+	if (data.ok) return data;
+	if (data.description?.includes('message is not modified')) return data;
+
+	// 429 Too Many Requests — honour retry_after and back off.
+	const retryAfter = data.parameters?.retry_after;
+	if (res.status === 429 && retryAfter && attempt < MAX_RETRIES) {
+		log.warn('telegram_rate_limited', {
+			method,
+			attempt,
+			retryAfter,
+			description: data.description,
+		});
+		await new Promise(r => setTimeout(r, retryAfter * 1000));
+		return tgApi<T>(method, env, payload, attempt + 1);
+	}
+
+	// Transient 5xx — exponential backoff, best-effort retry.
+	if (res.status >= 500 && res.status < 600 && attempt < MAX_RETRIES) {
+		const delay = 500 * Math.pow(2, attempt);
+		log.warn('telegram_transient_error', {
+			method,
+			attempt,
+			httpStatus: res.status,
+			description: data.description,
+			retryingAfterMs: delay,
+		});
+		await new Promise(r => setTimeout(r, delay));
+		return tgApi<T>(method, env, payload, attempt + 1);
+	}
+
+	// Non-retriable API error — log WITH httpStatus so we can
+	// distinguish 400 (bad HTML) from 403 (blocked) from 429 (give up
+	// after retries).
+	log.error('telegram_api_error', {
+		method,
+		httpStatus: res.status,
+		errorCode: data.error_code,
+		description: data.description,
+	});
 	return data;
 }
 
 // --- Sanitise HTML for Telegram parse mode ---
+//
+// Telegram's HTML parse mode accepts a specific allowlist of tags
+// (see https://core.telegram.org/bots/api#html-style). Any other
+// tag in the output causes a 400 Bad Request, which silently drops
+// the message from the user's perspective. We strip unsupported
+// tags before send.
+//
+// Allowed tags (maintained in sync with Bot API docs):
+//   b, strong, i, em, u, ins, s, strike, del,
+//   code, pre, a, tg-spoiler, tg-emoji, blockquote
+//
+// Note: <blockquote expandable> is valid — the expandable attribute
+// is permitted on blockquote. The regex handles it via the
+// whitespace-or-close character class after the tag name.
+const ALLOWED_TAGS = [
+	'b', 'strong', 'i', 'em', 'u', 'ins',
+	's', 'strike', 'del',
+	'code', 'pre', 'a',
+	'tg-spoiler', 'tg-emoji', 'blockquote',
+].join('|');
+
+// Matches any opening/closing tag whose name is NOT in the allowed
+// set. The [\s>\/] terminator is critical: it ensures we don't
+// false-match tags like <blockquote expandable> as the prefix
+// "blockquote" followed by something non-terminator.
+const DISALLOWED_TAG_RE = new RegExp(
+	`<(?!\\/?(?:${ALLOWED_TAGS})[\\s>\\/])[^>]+>`,
+	'gi'
+);
 
 function sanitizeHtml(text: string): string {
-	// Close unclosed tags and strip unsupported ones
 	return text
-		.replace(/<(?!\/?(b|i|u|s|code|pre|a|tg-spoiler|blockquote)[\s>\/])[^>]+>/gi, '')
+		// Strip any tag not in the allowlist
+		.replace(DISALLOWED_TAG_RE, '')
+		// Strip <a> tags that are missing href (Telegram rejects these)
 		.replace(/<a(?![^>]*href)[^>]*>/gi, '');
 }
 

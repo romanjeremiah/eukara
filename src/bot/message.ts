@@ -274,6 +274,16 @@ export async function handleMessage(
 	}
 
 	// --- Send final response ---
+	// Track whether delivery actually succeeded so we can:
+	//   (a) log it accurately in message_handled — previously this log
+	//       fired regardless of send outcome, giving false positives
+	//   (b) skip the history save when delivery failed (no point
+	//       poisoning the conversation with replies the user never saw)
+	//   (c) attempt a plain-text fallback on the first HTML failure
+	let sent = false;
+	let sendError: string | null = null;
+	let sendAttempts = 0;
+
 	if (fullText.trim()) {
 		fullText = stripLeakedThoughts(fullText);
 		// Model sometimes slips into markdown despite the HTML-only
@@ -289,19 +299,76 @@ export async function handleMessage(
 			]],
 		};
 
-		if (fullText.length > 3900) {
-			const chunks = splitMessage(fullText);
-			for (let i = 0; i < chunks.length; i++) {
-				const isLast = i === chunks.length - 1;
-				await telegram.sendMessage(chatId, threadId, chunks[i]!, env, {
-					replyId: i === 0 ? messageId : undefined,
-					markup: isLast ? btns : undefined,
+		// attemptSend: one delivery attempt with the given text. Returns
+		// true on success (Telegram ok=true), false on any failure.
+		// Logs the actual failure details so we can diagnose.
+		const attemptSend = async (body: string, asPlainText: boolean): Promise<boolean> => {
+			sendAttempts++;
+			try {
+				if (body.length > 3900) {
+					const chunks = splitMessage(body);
+					for (let i = 0; i < chunks.length; i++) {
+						const isLast = i === chunks.length - 1;
+						const res = await telegram.sendMessage(chatId, threadId, chunks[i]!, env, {
+							replyId: i === 0 ? messageId : undefined,
+							markup: isLast ? btns : undefined,
+						});
+						if (!res.ok) {
+							sendError = `chunk ${i}: ${res.description ?? 'unknown'}`;
+							return false;
+						}
+					}
+					return true;
+				}
+				const res = await telegram.sendMessage(chatId, threadId, body, env, {
+					replyId: messageId,
+					markup: btns,
 				});
+				if (!res.ok) {
+					sendError = res.description ?? 'unknown';
+					return false;
+				}
+				return true;
+			} catch (err) {
+				// Network-level / fetch failures thrown by tgApi
+				sendError = `${asPlainText ? 'plain ' : ''}fetch threw: ${(err as Error).message}`;
+				return false;
 			}
-		} else {
-			await telegram.sendMessage(chatId, threadId, fullText, env, {
-				replyId: messageId,
-				markup: btns,
+		};
+
+		// First try with the formatted HTML output.
+		sent = await attemptSend(fullText, false);
+
+		// Fallback: if the HTML send failed (typically a 400 "can't
+		// parse entities"), strip all tags and try plain text. The user
+		// gets something rather than nothing, and we capture the
+		// original failure in sendError for diagnosis.
+		if (!sent) {
+			log.warn('send_html_failed_trying_plain', {
+				chatId,
+				userId,
+				error: sendError,
+				textLen: fullText.length,
+			});
+			const plainText = fullText
+				.replace(/<[^>]+>/g, '')  // strip all tags
+				.replace(/&lt;/g, '<')
+				.replace(/&gt;/g, '>')
+				.replace(/&amp;/g, '&')
+				.replace(/&quot;/g, '"')
+				.trim();
+			if (plainText) {
+				sent = await attemptSend(plainText, true);
+			}
+		}
+
+		if (!sent) {
+			log.error('send_failed_fully', {
+				chatId,
+				userId,
+				error: sendError,
+				attempts: sendAttempts,
+				textLen: fullText.length,
 			});
 		}
 	}
@@ -311,7 +378,11 @@ export async function handleMessage(
 	// replaced with a text placeholder ("[user sent a voice note]")
 	// so the model gets continuity without us having to serialise
 	// base64 blobs into KV.
-	if (fullText.trim()) {
+	//
+	// Skip saving if delivery failed — saving a model response the
+	// user never saw would poison the conversation (subsequent turns
+	// would reference context the user didn't receive).
+	if (fullText.trim() && sent) {
 		const historyTurnText = media
 			? mediaPlaceholder(media.kind, userText)
 			: userText;
@@ -331,8 +402,11 @@ export async function handleMessage(
 	// --- Background: silent observation (uses userId) ---
 	// Only runs when the user sent real text content — media-only turns
 	// don't yield useful observation text for the CF AI extractor.
+	// Also skip if delivery failed: extracting observations from an
+	// undelivered reply would create memories grounded in context the
+	// user doesn't share.
 	const observationInput = userText || (media ? mediaPlaceholder(media.kind) : '');
-	if (observationInput.length > 20 && fullText.length > 20) {
+	if (sent && observationInput.length > 20 && fullText.length > 20) {
 		import('../ai/background').then(async ({ extractObservation }) => {
 			const obs = await extractObservation(env.AI, observationInput, fullText);
 			if (!obs || obs.includes('NOTHING_NEW')) return;
@@ -361,6 +435,9 @@ export async function handleMessage(
 		outputLen: fullText.length,
 		hasMedia: !!media,
 		mediaKind: media?.kind,
+		sent,
+		sendAttempts,
+		...(sendError ? { sendError } : {}),
 	});
 }
 

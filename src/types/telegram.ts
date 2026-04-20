@@ -160,4 +160,10 @@ export interface TelegramApiResponse<T = unknown> {
 	result?: T;
 	description?: string;
 	error_code?: number;
+	// Present on 429 and some 400 responses. retry_after is seconds
+	// the client should wait before retrying (Telegram Bot API docs).
+	parameters?: {
+		retry_after?: number;
+		migrate_to_chat_id?: number;
+	};
 }
