@@ -21,7 +21,7 @@ import {
 } from '../config/personas';
 import { POSITIVE_EMOTIONS, NEGATIVE_EMOTIONS, classifyEmotion } from '../config/emotions';
 import * as telegram from '../lib/telegram';
-import { normaliseMarkdown } from '../lib/formatting';
+import { normaliseMarkdown, formatTime } from '../lib/formatting';
 import { log } from '../lib/logger';
 import { loadHistory, saveHistory } from '../lib/history';
 import * as mood from '../services/mood';
@@ -190,7 +190,14 @@ export async function handleEmotionsDone(
 	// Defensive markdown cleanup.
 	summary = normaliseMarkdown(summary);
 
-	await telegram.sendMessage(chatId, threadId, summary, env);
+	// Subtle footer showing when the check-in was logged. Uses tg-time
+	// so the client renders it in the user's local timezone. The italic
+	// + separator keeps it visually distinct from the AI prose above.
+	const nowUnix = Math.floor(Date.now() / 1000);
+	const footer = `\n\n<i>Logged at ${formatTime(nowUnix, new Date(nowUnix * 1000).toLocaleString('en-GB'), 't')}</i>`;
+	const summaryWithFooter = summary + footer;
+
+	await telegram.sendMessage(chatId, threadId, summaryWithFooter, env);
 
 	// Persist the summary in conversation history so subsequent replies
 	// have continuity. Using a synthetic user turn that labels the

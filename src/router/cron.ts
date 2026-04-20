@@ -6,6 +6,8 @@
 // ============================================================
 
 import { log } from '../lib/logger';
+import { formatTime } from '../lib/formatting';
+import * as telegram from '../lib/telegram';
 
 interface ScheduleConfig { hour: number; minute: number }
 
@@ -96,19 +98,43 @@ async function checkConsolidation(env: Env, userId: number, now: Date): Promise<
 
 async function deliverReminders(env: Env, userId: number): Promise<void> {
 	const nowUnix = Math.floor(Date.now() / 1000);
+	// Include due_at so we can show users the originally-scheduled time
+	// using a <tg-time> entity, which Telegram renders in the user's
+	// local timezone automatically (Bot API 9.5+).
 	const { results } = await env.DB.prepare(
-		"SELECT id, text, chat_id, thread_id FROM reminders WHERE user_id = ? AND status = 'pending' AND due_at <= ? LIMIT 5"
+		"SELECT id, text, chat_id, thread_id, due_at FROM reminders WHERE user_id = ? AND status = 'pending' AND due_at <= ? LIMIT 5"
 	).bind(userId, nowUnix).all();
 
 	if (!results?.length) return;
-	const token = env.TELEGRAM_TOKEN;
 	for (const r of results) {
-		const reminder = r as { id: number; text: string; chat_id: number; thread_id: string };
-		await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ chat_id: reminder.chat_id, text: `⏰ <b>Reminder:</b> ${reminder.text}`, parse_mode: 'HTML' }),
-		}).catch(() => {});
+		const reminder = r as { id: number; text: string; chat_id: number; thread_id: string; due_at: number };
+
+		// Format the original scheduled time with the tg-time entity.
+		// Falling back to showing nothing if due_at is somehow missing —
+		// the reminder text itself is the primary content.
+		const dueLabel = reminder.due_at
+			? formatTime(reminder.due_at, new Date(reminder.due_at * 1000).toLocaleString('en-GB'), 't')
+			: '';
+		const message = dueLabel
+			? `⏰ <b>Reminder</b> · ${dueLabel}\n${reminder.text}`
+			: `⏰ <b>Reminder:</b> ${reminder.text}`;
+
+		// Use the proper send wrapper so we get retries, error logging,
+		// and the plain-text fallback if HTML parsing fails. The old
+		// raw-fetch path here was bypassing all of that.
+		try {
+			const res = await telegram.sendMessage(
+				reminder.chat_id, reminder.thread_id || 'default', message, env
+			);
+			if (!res.ok) {
+				log.warn('reminder_send_failed', { id: reminder.id, userId, description: res.description });
+				continue; // Don't mark as delivered if the send failed
+			}
+		} catch (e) {
+			log.warn('reminder_send_threw', { id: reminder.id, userId, msg: (e as Error).message });
+			continue;
+		}
+
 		await env.DB.prepare("UPDATE reminders SET status = 'delivered', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?")
 			.bind(reminder.id, userId).run();
 		log.info('reminder_delivered', { id: reminder.id, userId });

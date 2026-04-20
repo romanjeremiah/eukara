@@ -14,7 +14,7 @@ import * as persona from '../services/persona';
 import { PERSONA_PRESETS, type PersonaPreset } from '../config/persona-presets';
 import { TIMEZONE_PRESETS, findPresetByTz, isValidTimezone } from '../config/timezone-presets';
 import { clearHistory } from '../lib/history';
-import { escapeHtml } from '../lib/formatting';
+import { escapeHtml, formatTime } from '../lib/formatting';
 import { log } from '../lib/logger';
 
 export async function handleCommand(
@@ -316,8 +316,21 @@ function formatMemoriesForDisplay(rows: MemoryRow[]): string {
 	let truncated = false;
 
 	for (const [category, memories] of sorted) {
+		const lines = memories.slice(0, 10).map(m => {
+			// Show a relative timestamp next to each memory so you can see
+			// at a glance what's recent vs. stale. tg-time with format 'r'
+			// renders as "2 weeks ago" / "yesterday" in the client's locale.
+			// created_at is a SQLite datetime string ("YYYY-MM-DD HH:MM:SS")
+			// which Date() can parse; we assume UTC because SQLite's
+			// CURRENT_TIMESTAMP is UTC.
+			const parsed = Date.parse(m.created_at + 'Z');
+			const relTime = !isNaN(parsed)
+				? ` <i>· ${formatTime(Math.floor(parsed / 1000), new Date(parsed).toLocaleDateString('en-GB'), 'r')}</i>`
+				: '';
+			return `• ${m.fact}${relTime}`;
+		});
 		const block = `<b>${category}</b> (${memories.length})\n` +
-			memories.slice(0, 10).map(m => `• ${m.fact}`).join('\n') +
+			lines.join('\n') +
 			(memories.length > 10 ? `\n<i>... and ${memories.length - 10} more</i>` : '') +
 			'\n\n';
 

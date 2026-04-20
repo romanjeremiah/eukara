@@ -305,6 +305,65 @@ export async function pinMessage(chatId: number, messageId: number, env: Env): P
 	});
 }
 
+// --- Sticker / Custom Emoji Discovery ---
+//
+// These endpoints let us look up custom emoji sticker IDs, which we
+// then use as icon_custom_emoji_id on buttons or as <tg-emoji> tags
+// in message text. Both require the bot owner to have Telegram Premium
+// for the emoji to actually render in bot messages (Bot API 9.4+).
+
+/**
+ * A single sticker as returned by Telegram. Only the fields we use
+ * are typed; additional fields (file_id, width, height, thumb, etc.)
+ * exist on the wire but aren't needed for ID discovery.
+ */
+export interface TelegramSticker {
+	file_id: string;
+	file_unique_id: string;
+	type: 'regular' | 'mask' | 'custom_emoji';
+	emoji?: string;
+	set_name?: string;
+	custom_emoji_id?: string;
+}
+
+/**
+ * Fetch a complete sticker set by name. For custom emoji sets,
+ * every returned sticker will have a `custom_emoji_id` that can be
+ * used with tg-emoji or on buttons.
+ *
+ * Common public sticker pack names with custom emoji:
+ *   - "RestrictedEmoji" — Telegram's built-in extras (paid)
+ *   - Any user-created pack via `t.me/addemoji/{name}`
+ */
+export async function getStickerSet(
+	name: string, env: Env
+): Promise<{ name: string; title: string; sticker_type: string; stickers: TelegramSticker[] } | null> {
+	const res = await tgApi<{
+		name: string;
+		title: string;
+		sticker_type: string;
+		stickers: TelegramSticker[];
+	}>('getStickerSet', env, { name });
+	return res.ok && res.result ? res.result : null;
+}
+
+/**
+ * Reverse lookup: given known custom_emoji_ids, fetch their sticker
+ * info. Useful for validating stored IDs or discovering what emoji
+ * a saved ID actually represents.
+ *
+ * Max 200 IDs per call per Bot API limits.
+ */
+export async function getCustomEmojiStickers(
+	customEmojiIds: string[], env: Env
+): Promise<TelegramSticker[]> {
+	if (customEmojiIds.length === 0) return [];
+	const res = await tgApi<TelegramSticker[]>('getCustomEmojiStickers', env, {
+		custom_emoji_ids: customEmojiIds.slice(0, 200),
+	});
+	return res.ok && res.result ? res.result : [];
+}
+
 // --- Media Methods ---
 
 export async function sendPhoto(

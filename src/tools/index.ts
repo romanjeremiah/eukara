@@ -12,7 +12,7 @@ import type { AITool } from '../types/ai';
 import { saveMemory, saveEpisode, updateEpisodeOutcome } from './memory-tools';
 
 // Telegram Interactions
-import { reactToMessage, pinMessage, sendLocation, sendDraft, replyWithQuote, sendVoiceNote } from './telegram-tools';
+import { reactToMessage, pinMessage, sendLocation, sendDraft, replyWithQuote, sendVoiceNote, lookupCustomEmoji } from './telegram-tools';
 
 // Reminders & Schedule
 import { setReminder, updateTimezone } from './reminder-tools';
@@ -51,6 +51,7 @@ export const allTools: AITool[] = [
 	sendDraft,
 	replyWithQuote,
 	sendVoiceNote,
+	lookupCustomEmoji,
 
 	// Scheduling
 	setReminder,
