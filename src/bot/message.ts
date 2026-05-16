@@ -6,8 +6,11 @@
 // ============================================================
 
 import type { TelegramMessage } from '../types/telegram';
-import type { AIMessage, AIMessagePart, AITool, ToolContext } from '../types/ai';
+import type { AIMessage, AIMessagePart, AIResponse, AITool, ModelRoute, ToolContext } from '../types/ai';
 import { getProvider } from '../ai/router';
+import { GeminiProvider } from '../ai/gemini';
+import { CloudflareProvider } from '../ai/cloudflare';
+import { GEMINI_MODELS, CF_MODELS } from '../config/models';
 import * as telegram from '../lib/telegram';
 import { stripLeakedThoughts, splitMessage, normaliseMarkdown, enforceTagNesting } from '../lib/formatting';
 import { log } from '../lib/logger';
@@ -25,6 +28,139 @@ import * as vector from '../services/vector';
 import * as persona from '../services/persona';
 import { getWeather, formatWeatherForContext } from '../services/weather';
 
+// ============================================================
+// Pro-lane cascade
+//
+// 2026-06-02 (afternoon): full reorder. Three different infrastructure
+// surfaces so a single provider failure can't break end-user replies.
+//
+//   Tier 1 (90s):  gemini-pro-latest        — best quality, Google Pro,
+//                                              auto-aliased to current latest
+//   Tier 2 (45s):  gemini-3.5-flash         — same family (thoughtSignature
+//                                              continuity), much faster
+//   Tier 3 (30s):  @cf/google/gemma-4-26b   — Cloudflare edge GPU, no
+//                                              Google dependency at all
+//
+// Per-tier timeouts via Promise.race (wall-clock), not AbortSignal:
+// provider-agnostic, no SDK-specific plumbing. Total worst-case 165s,
+// well within the queue consumer's 15-min wall-clock budget.
+//
+// Pattern lifted from Xaridotis B2C cascade (gemini-bot/src/config/
+// cascades.js LAYER_B2C_TIERS) minus OpenAI/Anthropic middle tiers.
+//
+// Activates for ANY Gemini route (emotional, multimodal, active checkin,
+// sticky context). Casual CF routes fail through to the outer catch.
+// ============================================================
+
+/**
+ * Wrap a promise with a wall-clock timeout via Promise.race.
+ * Provider-agnostic (works for Gemini SDK and CF AI binding alike).
+ * The underlying request continues in the background after timeout
+ * fires — but since we're not in waitUntil(), the Worker runtime
+ * cancels orphaned subrequests when the function returns.
+ */
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+	let timeoutId: ReturnType<typeof setTimeout> | null = null;
+	const timeoutPromise = new Promise<never>((_, reject) => {
+		timeoutId = setTimeout(
+			() => reject(new Error(`${label} timed out after ${ms}ms`)),
+			ms
+		);
+	});
+	try {
+		return await Promise.race([promise, timeoutPromise]);
+	} finally {
+		if (timeoutId !== null) clearTimeout(timeoutId);
+	}
+}
+
+type ChatArgs = {
+	messages: AIMessage[];
+	tools: AITool[];
+	systemInstruction: string;
+	thinkingEffort: ModelRoute['thinkingEffort'];
+	enableGrounding: boolean;
+};
+
+async function chatWithProLaneFallback(
+	route: ModelRoute,
+	provider: { chat: (m: AIMessage[], t: AITool[], c: { temperature: number; thinkingEffort: ModelRoute['thinkingEffort']; systemInstruction: string; enableGrounding?: boolean }) => Promise<AIResponse> },
+	args: ChatArgs,
+	env: Env,
+): Promise<{ response: AIResponse; tierUsed: string }> {
+	// Any Gemini route is Pro lane and cascades. Casual CF routes
+	// (Gemma/Qwen) don't — they re-throw to the outer handler.
+	const isProLane = route.provider === 'gemini';
+
+	// Tier 1: configured route (typically gemini-pro-latest), 90s budget.
+	try {
+		const response = await withTimeout(
+			provider.chat(args.messages, args.tools, {
+				temperature: 1.0,
+				thinkingEffort: args.thinkingEffort,
+				systemInstruction: args.systemInstruction,
+				enableGrounding: args.enableGrounding,
+			}),
+			90_000,
+			'tier1_pro_latest'
+		);
+		return { response, tierUsed: 'tier1_pro_latest' };
+	} catch (err) {
+		const error = err as Error;
+		if (!isProLane) {
+			// Non-Pro lanes don't cascade. Re-throw for the outer handler.
+			throw error;
+		}
+		log.warn('pro_lane_tier1_failed', { model: route.model, msg: error.message });
+	}
+
+	// Tier 2: gemini-3.5-flash, same family as Tier 1 so tool combination
+	// + thoughtSignature continuity keep working. 45s budget.
+	try {
+		const flash = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.flashLite);
+		const response = await withTimeout(
+			flash.chat(args.messages, args.tools, {
+				temperature: 1.0,
+				thinkingEffort: 'dynamic',
+				systemInstruction: args.systemInstruction,
+				enableGrounding: args.enableGrounding,
+			}),
+			45_000,
+			'tier2_gemini_flash'
+		);
+		log.info('pro_lane_tier2_recovered', { model: GEMINI_MODELS.flashLite });
+		return { response, tierUsed: 'tier2_gemini_flash' };
+	} catch (err) {
+		const error = err as Error;
+		log.warn('pro_lane_tier2_failed', { model: GEMINI_MODELS.flashLite, msg: error.message });
+	}
+
+	// Tier 3: Cloudflare Gemma 4 (edge GPU, no Google dependency), 30s
+	// budget. Grounding capability matches — CloudflareProvider passes
+	// web_search_options through when enableGrounding is set.
+	try {
+		const cfFallback = new CloudflareProvider(env.AI, CF_MODELS.chat);
+		const response = await withTimeout(
+			cfFallback.chat(args.messages, args.tools, {
+				temperature: 1.0,
+				thinkingEffort: 'medium',
+				systemInstruction: args.systemInstruction,
+				enableGrounding: args.enableGrounding,
+			}),
+			30_000,
+			'tier3_cf_gemma'
+		);
+		log.info('pro_lane_tier3_recovered', { model: CF_MODELS.chat });
+		return { response, tierUsed: 'tier3_cf_gemma' };
+	} catch (err) {
+		const error = err as Error;
+		log.error('pro_lane_tier3_failed', { model: CF_MODELS.chat, msg: error.message });
+		// All tiers exhausted — throw the last error so the outer catch
+		// surfaces it to the user with model info.
+		throw error;
+	}
+}
+
 // Telegram's Bot API caps file downloads at 20MB. Anything larger would
 // need the Gemini Files API path, which is not implemented yet — we fail
 // gracefully with a user-visible message instead.
@@ -33,7 +169,8 @@ const TELEGRAM_DOWNLOAD_LIMIT_BYTES = 20 * 1024 * 1024;
 export async function handleMessage(
 	msg: TelegramMessage,
 	env: Env,
-	tools: AITool[]
+	tools: AITool[],
+	options?: { forceProLane?: boolean }
 ): Promise<void> {
 	const chatId = msg.chat.id;
 	const userId = msg.from?.id;
@@ -145,12 +282,16 @@ export async function handleMessage(
 
 	// Route to AI provider. Media presence forces Gemini routing
 	// because Workers AI chat models are text-only.
+	// `options.forceProLane` is set by the webhook dispatcher when the
+	// sticky-Pro topic classifier decided the conversation should stay
+	// on Pro despite no emotional keywords in this turn.
 	const { provider, route } = getProvider(
 		{
 			userText,
 			isOwner: !!isOwner,
 			healthCheckinActive: healthCheckin,
 			hasMedia: !!media,
+			forceProLane: options?.forceProLane,
 		},
 		env
 	);
@@ -230,29 +371,81 @@ export async function handleMessage(
 
 	// --- AI Call with tool loop ---
 	let fullText = '';
+	let lastAnnotations: unknown[] | undefined;
+	let lastGroundingMetadata: any;
 	const toolContext: ToolContext = { userId, chatId, threadId, messageId };
 	const maxToolRounds = 5;
 
 	try {
 		for (let round = 0; round < maxToolRounds; round++) {
-			const response = await provider.chat(messages, tools, {
-				temperature: 1.0,
-				thinkingEffort: route.thinkingEffort,
+			const { response, tierUsed } = await chatWithProLaneFallback(route, provider, {
+				messages,
+				tools,
 				systemInstruction,
-			});
+				thinkingEffort: route.thinkingEffort,
+				enableGrounding: route.enableGrounding ?? false,
+			}, env);
 
-			log.info('ai_response', { round, textLen: response.text?.length ?? 0, toolCalls: response.toolCalls?.length ?? 0 });
+			log.info('ai_response', { round, tier: tierUsed, textLen: response.text?.length ?? 0, toolCalls: response.toolCalls?.length ?? 0 });
 
-			if (response.text) fullText += response.text;
+			// Capture grounding outputs for the most recent round; rendered
+			// once at the end as citations after the final reply.
+			if (response._annotations) lastAnnotations = response._annotations;
+			if (response._groundingMetadata) lastGroundingMetadata = response._groundingMetadata;
 
+			// 2026-06-02: only the FINAL round's text is shown to the user.
+			// Rounds that also call tools may emit planning/reasoning prose
+			// in the content stream (Gemma 4 with enable_thinking, Gemini
+			// 3.x with some grounded turns). That text is the model talking
+			// to itself about what tool to call, not the user-facing reply.
+			// Concatenating across rounds was leaking that reasoning into
+			// the chat. The model's actual response is whatever it produces
+			// in the round where it stops calling tools.
 			if (response.toolCalls?.length) {
+				// Tool-call round: DROP this round's text (treat as planning).
+				// The model's user-facing reply will come in the round where
+				// it stops calling tools (handled by the `break` below).
+
+				// Decision A: tool combination on Gemini Pro lane. When the
+				// provider returns _geminiRawContent, push the raw parts as
+				// a single model AIMessage with _rawProviderParts so the
+				// next iteration echoes back thoughtSignature / functionCall
+				// parts verbatim. Otherwise (non-Gemini providers), keep the
+				// previous synthesised {tool_use, tool_result} shape that
+				// stringifies for legacy providers.
+				const rawContent = response._geminiRawContent as { parts?: unknown[] } | undefined;
+				const usePreservedParts = route.provider === 'gemini' && rawContent?.parts && Array.isArray(rawContent.parts);
+
+				if (usePreservedParts) {
+					messages.push({ role: 'model', content: '', _rawProviderParts: rawContent!.parts });
+				} else {
+					for (const tc of response.toolCalls) {
+						messages.push({ role: 'model', content: { type: 'tool_use', name: tc.name, args: tc.args, id: tc.id } });
+					}
+				}
+
 				for (const tc of response.toolCalls) {
 					const tool = tools.find(t => t.schema.function.name === tc.name);
 					if (!tool) continue;
 					try {
 						const result = await tool.execute(tc.args, env, toolContext);
-						messages.push({ role: 'model', content: { type: 'tool_use', name: tc.name, args: tc.args, id: tc.id } });
-						messages.push({ role: 'tool', content: { type: 'tool_result', toolCallId: tc.id, content: JSON.stringify(result) } });
+						if (usePreservedParts) {
+							// Gemini expects functionResponse parts in a user
+							// role turn for tool combination.
+							messages.push({
+								role: 'user',
+								content: '',
+								_rawProviderParts: [{
+									functionResponse: {
+										name: tc.name,
+										id: tc.id,
+										response: { content: JSON.stringify(result) },
+									},
+								}],
+							});
+						} else {
+							messages.push({ role: 'tool', content: { type: 'tool_result', toolCallId: tc.id, content: JSON.stringify(result) } });
+						}
 						log.info('tool_executed', { tool: tc.name, status: result.status });
 					} catch (e) {
 						log.error('tool_error', { tool: tc.name, msg: (e as Error).message });
@@ -260,6 +453,9 @@ export async function handleMessage(
 				}
 				continue;
 			}
+
+			// Final round: no tool calls. This IS the user-facing reply.
+			if (response.text) fullText = response.text;
 			break;
 		}
 	} catch (err) {
@@ -304,6 +500,12 @@ export async function handleMessage(
 		// and drops the message silently — this pass strips the
 		// inner tags but keeps the text, so the message delivers.
 		fullText = enforceTagNesting(fullText);
+
+		// Append grounding citations (Decisions A + B). Rendered as a
+		// compact source list under the main reply so the model's
+		// natural text stays clean. Skipped if no grounding fired.
+		const citations = formatCitations(lastAnnotations, lastGroundingMetadata);
+		if (citations) fullText += citations;
 
 		const btns = {
 			inline_keyboard: [[
@@ -444,6 +646,8 @@ export async function handleMessage(
 		provider: route.provider,
 		model: route.model.split('/').pop(),
 		thinking: route.thinkingEffort,
+		route_reason: route.reason,
+		force_pro_lane: !!options?.forceProLane,
 		inputLen: userText.length,
 		outputLen: fullText.length,
 		hasMedia: !!media,
@@ -452,6 +656,35 @@ export async function handleMessage(
 		sendAttempts,
 		...(sendError ? { sendError } : {}),
 	});
+
+	// Sticky Pro routing (2026-06-02): write KV anchor after a successful
+	// Pro turn so the next user message can be content-classified against
+	// this topic by the webhook dispatcher (src/index.ts). The classifier
+	// (src/services/topicShift.ts) decides whether the next message stays
+	// on Pro or releases to normal routing.
+	//
+	// Only writes for the owner (single-user-feature for now) on real
+	// text turns that successfully delivered. Media-only turns don't
+	// produce a useful text anchor for the classifier.
+	//
+	// TTL 2h: long enough for natural pauses, short enough that stale
+	// sessions expire without a classifier call.
+	if (sent && isOwner && route.provider === 'gemini' && userText.trim().length > 0) {
+		try {
+			await env.CHAT_KV.put(
+				`pro_context_${userId}`,
+				JSON.stringify({
+					anchor: userText.slice(0, 300),
+					route_reason: route.reason,
+					ts: Date.now(),
+				}),
+				{ expirationTtl: 2 * 3600 }
+			);
+			log.info('sticky_pro_written', { userId, route_reason: route.reason });
+		} catch (e) {
+			log.warn('sticky_pro_write_failed', { userId, msg: (e as Error).message });
+		}
+	}
 }
 
 
@@ -544,4 +777,60 @@ function defaultPromptFor(kind: MediaRef['kind']): string {
 		case 'document':
 			return 'Read this and respond to whatever it contains.';
 	}
+}
+
+/**
+ * Format grounding citations into a compact source list appended to
+ * the bot's reply. Handles both formats:
+ *   - CF Gemma annotations: [{type:'url_citation', url_citation:{url,title,...}}]
+ *   - Gemini groundingMetadata: {webSearchQueries, groundingChunks:[{web:{uri,title}}]}
+ *
+ * Returns empty string when nothing to cite. Output is Telegram HTML,
+ * deduplicated by URL, capped at 6 sources to keep the message tidy.
+ */
+function formatCitations(
+	annotations: unknown[] | undefined,
+	groundingMetadata: any
+): string {
+	const sources: Array<{ url: string; title: string }> = [];
+	const seen = new Set<string>();
+
+	const push = (url: unknown, title: unknown) => {
+		if (typeof url !== 'string' || !url.startsWith('http')) return;
+		if (seen.has(url)) return;
+		seen.add(url);
+		sources.push({
+			url,
+			title: typeof title === 'string' && title.trim() ? title.trim().slice(0, 80) : url.replace(/^https?:\/\//, '').split('/')[0]!,
+		});
+	};
+
+	// CF Gemma path
+	if (Array.isArray(annotations)) {
+		for (const ann of annotations) {
+			const a = ann as { type?: string; url_citation?: { url?: unknown; title?: unknown } };
+			if (a?.type === 'url_citation' && a.url_citation) {
+				push(a.url_citation.url, a.url_citation.title);
+			}
+		}
+	}
+
+	// Gemini path. groundingChunks each have `web: {uri, title}`.
+	const chunks = groundingMetadata?.groundingChunks;
+	if (Array.isArray(chunks)) {
+		for (const chunk of chunks) {
+			const web = (chunk as { web?: { uri?: unknown; title?: unknown } })?.web;
+			if (web) push(web.uri, web.title);
+		}
+	}
+
+	if (!sources.length) return '';
+
+	const capped = sources.slice(0, 6);
+	const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	const items = capped.map((s, i) =>
+		`<a href="${escapeHtml(s.url)}">[${i + 1}] ${escapeHtml(s.title)}</a>`
+	).join('\n');
+
+	return `\n\n<blockquote expandable><i>Sources</i>\n${items}</blockquote>`;
 }

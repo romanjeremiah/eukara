@@ -105,7 +105,7 @@ async function checkConsolidation(env: Env, userId: number, now: Date): Promise<
 	await env.CHAT_KV.put(key, '1', { expirationTtl: 86400 * 5 });
 
 	if (env.MEMORY_WORKFLOW) {
-		await env.MEMORY_WORKFLOW.create({ id: `consolidation-${userId}-${month}`, params: { chatId: userId } });
+		await env.MEMORY_WORKFLOW.create({ id: `consolidation-${userId}-${month}`, params: { userId } });
 		log.info('workflow_triggered', { workflow: 'memory-consolidation', userId, month });
 	}
 }

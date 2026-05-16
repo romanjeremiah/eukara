@@ -5,6 +5,17 @@
 // Used only for irreplaceable features: deep therapeutic
 // reasoning, image generation, TTS, Deep Research.
 // Dynamically imported to avoid bundling when not needed.
+//
+// 2026-06-02 changes:
+//   - Tool combination support (Decision A). When config.enableGrounding
+//     is true AND model is Gemini 3 family, prepends {googleSearch: {}}
+//     to the tools array and sets toolConfig.includeServerSideToolInvocations
+//     so custom function declarations and Google Search coexist.
+//   - parseResponse now captures candidates[0].content raw (for in-turn
+//     tool loop continuity via AIMessage._rawProviderParts) and
+//     groundingMetadata (for citation rendering).
+//   - convertMessages now passes _rawProviderParts through untouched
+//     when present.
 // ============================================================
 
 import type {
@@ -22,6 +33,16 @@ async function getAI(apiKey: string): Promise<any> {
 	const { GoogleGenAI } = await import('@google/genai');
 	_ai = new GoogleGenAI({ apiKey });
 	return _ai;
+}
+
+/**
+ * Models eligible for tool combination (built-in tools + custom
+ * function declarations on the same call). Per Google docs only
+ * Gemini 3 family models support this. 2.x family must choose one
+ * or the other.
+ */
+function supportsToolCombination(model: string): boolean {
+	return model.startsWith('gemini-3');
 }
 
 export class GeminiProvider implements AIProvider {
@@ -42,8 +63,15 @@ export class GeminiProvider implements AIProvider {
 		const ai = await getAI(this.apiKey);
 
 		const geminiContents = this.convertMessages(messages);
-		const geminiTools = tools?.length ? this.convertTools(tools) : undefined;
+		const { geminiTools, toolConfig, groundingEnabled } = this.buildTools(tools, config);
 		const thinkingConfig = this.convertThinking(config?.thinkingEffort);
+
+		if (groundingEnabled) {
+			log.info('gemini_grounding_enabled', {
+				model: this.model,
+				customTools: tools?.length ?? 0,
+			});
+		}
 
 		try {
 			const response = await ai.models.generateContent({
@@ -54,6 +82,7 @@ export class GeminiProvider implements AIProvider {
 					temperature: config?.temperature ?? 1.0,
 					maxOutputTokens: config?.maxTokens ?? 4096,
 					tools: geminiTools,
+					toolConfig,
 					thinkingConfig,
 				},
 			});
@@ -74,6 +103,7 @@ export class GeminiProvider implements AIProvider {
 		const ai = await getAI(this.apiKey);
 
 		const geminiContents = this.convertMessages(messages);
+		const { geminiTools, toolConfig } = this.buildTools(tools, config);
 		const thinkingConfig = this.convertThinking(config?.thinkingEffort);
 
 		try {
@@ -84,6 +114,8 @@ export class GeminiProvider implements AIProvider {
 					systemInstruction: config?.systemInstruction,
 					temperature: config?.temperature ?? 1.0,
 					maxOutputTokens: config?.maxTokens ?? 4096,
+					tools: geminiTools,
+					toolConfig,
 					thinkingConfig,
 				},
 			});
@@ -124,10 +156,27 @@ export class GeminiProvider implements AIProvider {
 
 	// --- Internal converters ---
 
+	/**
+	 * Convert AIMessage[] to Gemini Content[]. When a message has
+	 * `_rawProviderParts` set, those parts are passed through directly
+	 * — this preserves `thoughtSignature`, `functionCall`,
+	 * `functionResponse` parts from a previous turn's
+	 * `candidates[0].content` so the model can maintain context across
+	 * the in-turn tool loop with tool combination enabled.
+	 */
 	private convertMessages(messages: AIMessage[]): Array<{ role: string; parts: Array<Record<string, unknown>> }> {
 		return messages
 			.filter(m => m.role !== 'system') // System instruction handled separately
 			.map(msg => {
+				// In-turn tool loop continuity: prior Gemini turn echoed
+				// back verbatim via _rawProviderParts.
+				if (msg._rawProviderParts && Array.isArray(msg._rawProviderParts) && msg._rawProviderParts.length) {
+					return {
+						role: msg.role === 'model' ? 'model' : 'user',
+						parts: msg._rawProviderParts as Array<Record<string, unknown>>,
+					};
+				}
+
 				const parts: Array<Record<string, unknown>> = [];
 
 				if (typeof msg.content === 'string') {
@@ -155,6 +204,71 @@ export class GeminiProvider implements AIProvider {
 			});
 	}
 
+	/**
+	 * Build the tools array and toolConfig for the Gemini API call.
+	 *
+	 * - Custom function declarations are always converted to the
+	 *   `functionDeclarations` shape Gemini expects.
+	 * - When config.enableGrounding is true AND the model supports tool
+	 *   combination (Gemini 3 family), prepends `{googleSearch: {}}` as
+	 *   a separate tool entry alongside the function declarations.
+	 * - When BOTH googleSearch and functionDeclarations are present,
+	 *   sets `toolConfig.includeServerSideToolInvocations: true` per
+	 *   the tool-combination docs.
+	 * - On non-3.x models, grounding is silently dropped (logged) since
+	 *   sending both would error.
+	 *
+	 * Docs: https://ai.google.dev/gemini-api/docs/tool-combination
+	 */
+	private buildTools(tools: AITool[] | undefined, config: AIProviderConfig | undefined): {
+		geminiTools: Array<Record<string, unknown>> | undefined;
+		toolConfig: Record<string, unknown> | undefined;
+		groundingEnabled: boolean;
+	} {
+		const hasCustomTools = !!tools?.length;
+		const wantsGrounding = !!config?.enableGrounding;
+		const canCombine = supportsToolCombination(this.model);
+
+		// Case 1: no grounding wanted. Just custom tools (or nothing).
+		if (!wantsGrounding) {
+			return {
+				geminiTools: hasCustomTools ? this.convertTools(tools!) : undefined,
+				toolConfig: undefined,
+				groundingEnabled: false,
+			};
+		}
+
+		// Case 2: grounding wanted on a non-combinable model. Sending
+		// both would error — drop grounding and log so the issue is
+		// visible. Custom tools win because they're explicit.
+		if (!canCombine && hasCustomTools) {
+			log.warn('gemini_grounding_dropped_non_combinable', {
+				model: this.model,
+				reason: 'tool_combination_requires_gemini_3',
+			});
+			return {
+				geminiTools: this.convertTools(tools!),
+				toolConfig: undefined,
+				groundingEnabled: false,
+			};
+		}
+
+		// Case 3: grounding wanted, model supports it (or no custom
+		// tools to conflict with). Prepend googleSearch.
+		const geminiTools: Array<Record<string, unknown>> = [{ googleSearch: {} }];
+		if (hasCustomTools) {
+			geminiTools.push(...this.convertTools(tools!));
+		}
+
+		// Tool combination requires toolConfig.includeServerSideToolInvocations
+		// when both googleSearch and functionDeclarations are present.
+		const toolConfig = (hasCustomTools && canCombine)
+			? { includeServerSideToolInvocations: true }
+			: undefined;
+
+		return { geminiTools, toolConfig, groundingEnabled: true };
+	}
+
 	private convertTools(tools: AITool[]): Array<{ functionDeclarations: Array<Record<string, unknown>> }> {
 		// Convert OpenAI-format tools to Gemini's functionDeclarations
 		const declarations = tools.map(t => ({
@@ -167,22 +281,97 @@ export class GeminiProvider implements AIProvider {
 
 	private convertThinking(effort?: string): Record<string, unknown> | undefined {
 		if (!effort) return undefined;
-		// TODO(2026-05-16): Conditional on model generation. 2.5 family uses
-		// `thinkingBudget: <number>` (e.g. 128, 256, -1 for dynamic); 3.x uses
-		// `thinkingLevel: LOW | MEDIUM | HIGH`. With pro now pinned to 2.5,
-		// thinkingLevel is silently ignored. Fix after benchmark proves the
-		// model choice. See journal 2026-05-16.
-		const levelMap: Record<string, string> = {
-			minimal: 'LOW',
-			low: 'LOW',
-			medium: 'MEDIUM',
-			high: 'HIGH',
-		};
-		return { thinkingLevel: levelMap[effort] ?? 'LOW' };
+
+		// Model-family-aware thinking config. Wrong shape returns 400
+		// INVALID_ARGUMENT from Gemini API. Ranges verified against
+		// ai.google.dev docs 2026-05-16 / 2026-06-02:
+		//
+		//   gemini-2.5-pro
+		//     -> thinkingBudget: 128 to 32768, no disable, default 8192
+		//
+		//   gemini-2.5-flash
+		//     -> thinkingBudget: 0 to 24576, supports disable (0),
+		//        default -1 (dynamic)
+		//
+		//   gemini-2.5-flash-lite
+		//     -> thinkingBudget: 0 OR 512-24576, default 0 (disabled)
+		//
+		//   gemini-3.x family (including gemini-3.5-flash,
+		//   gemini-3.1-flash-image, gemini-3.1-flash-lite-preview)
+		//     -> thinkingLevel: 'minimal' | 'low' | 'medium' | 'high'
+		//        Cannot disable. Always dynamic up to level cap.
+		//
+		//   Mixing thinkingBudget + thinkingLevel returns an error.
+		//
+		// `dynamic` maps to thinkingBudget: -1 on 2.5 family (model
+		// auto-scales, max 8192 thinking tokens). On 3.x, 'dynamic' is
+		// the model's default so we return undefined.
+
+		const model = this.model;
+
+		// --- 2.5 family ---
+		if (model.includes('2.5-flash-lite')) {
+			// Flash-Lite: 0 (disabled, default) or 512-24576
+			const budgetMap: Record<string, number> = {
+				minimal: 0,
+				low: 512,
+				medium: 2048,
+				high: 8192,
+				dynamic: -1,
+			};
+			const budget = budgetMap[effort];
+			return budget !== undefined ? { thinkingBudget: budget } : undefined;
+		}
+
+		if (model.includes('2.5-flash')) {
+			// Flash: 0-24576, default -1 dynamic
+			const budgetMap: Record<string, number> = {
+				minimal: 0,
+				low: 512,
+				medium: -1,
+				high: 4096,
+				dynamic: -1,
+			};
+			const budget = budgetMap[effort];
+			return budget !== undefined ? { thinkingBudget: budget } : undefined;
+		}
+
+		if (model.includes('2.5-pro')) {
+			// Pro: 128-32768, NO disable. Dynamic recommended.
+			const budgetMap: Record<string, number> = {
+				minimal: 128,
+				low: 128,
+				medium: -1,
+				high: -1,
+				dynamic: -1,
+			};
+			const budget = budgetMap[effort];
+			return budget !== undefined ? { thinkingBudget: budget } : undefined;
+		}
+
+		// --- 3.x family ---
+		if (model.startsWith('gemini-3')) {
+			// 3.x uses thinkingLevel; 'dynamic' is the model's natural default
+			// so we return undefined for that.
+			if (effort === 'dynamic') return undefined;
+			const levelMap: Record<string, string> = {
+				minimal: 'minimal',
+				low: 'low',
+				medium: 'medium',
+				high: 'high',
+			};
+			const level = levelMap[effort];
+			return level ? { thinkingLevel: level } : undefined;
+		}
+
+		// Unknown model family — fail open.
+		return undefined;
 	}
 
 	private parseResponse(response: any): AIResponse {
-		const parts = response.candidates?.[0]?.content?.parts ?? [];
+		const candidate = response.candidates?.[0];
+		const rawContent = candidate?.content;
+		const parts = rawContent?.parts ?? [];
 
 		const textParts = parts
 			.filter((p: any) => p.text && !p.thought)
@@ -197,9 +386,25 @@ export class GeminiProvider implements AIProvider {
 				id: p.functionCall.id ?? `call_${Date.now()}`,
 			}));
 
+		// Grounding metadata, present when the model invoked
+		// googleSearch on this turn. Shape per Google docs:
+		//   { webSearchQueries: string[],
+		//     groundingChunks: Array<{web: {uri, title}}>,
+		//     groundingSupports: Array<{...}> }
+		const groundingMetadata = candidate?.groundingMetadata;
+		if (groundingMetadata?.webSearchQueries?.length) {
+			log.info('gemini_grounded_response', {
+				model: this.model,
+				queries: groundingMetadata.webSearchQueries.length,
+				chunks: groundingMetadata.groundingChunks?.length ?? 0,
+			});
+		}
+
 		return {
 			text: text.trim(),
 			toolCalls: toolCalls.length ? toolCalls : undefined,
+			_geminiRawContent: rawContent,
+			_groundingMetadata: groundingMetadata,
 		};
 	}
 }

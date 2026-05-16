@@ -4,15 +4,23 @@
 // Durable multi-step workflow that consolidates memories monthly.
 // Step 1: Fetch all memories from D1
 // Step 2: First-pass deduplication via CF AI (free)
-// Step 3: Gemini Pro consolidation (paid, retryable)
+// Step 3: Gemini consolidation (paid, retryable)
 // Step 4: Atomic D1 write + cleanup
+//
+// 2026-06-02 changes:
+//   F3: chatId param renamed to userId; D1 queries now use user_id
+//       column for per-user isolation (matches rest of codebase).
+//   Hardcoded model gemini-3.1-pro-preview replaced with
+//   GEMINI_MODELS.flashLite (= gemini-3.5-flash post-migration).
+//   Workflow now in sync with central registry.
 // ============================================================
 
 import { WorkflowEntrypoint, WorkflowStep } from 'cloudflare:workers';
 import type { WorkflowEvent } from 'cloudflare:workers';
+import { GEMINI_MODELS } from '../config/models';
 
 interface ConsolidationParams {
-	chatId: number;
+	userId: number;
 }
 
 interface MemoryItem {
@@ -25,14 +33,14 @@ interface MemoryItem {
 
 export class MemoryConsolidationWorkflow extends WorkflowEntrypoint<Env, ConsolidationParams> {
 	async run(event: WorkflowEvent<ConsolidationParams>, step: WorkflowStep) {
-		const chatId = event.payload.chatId;
-		if (!chatId) throw new Error('Missing chatId');
+		const userId = event.payload.userId;
+		if (!userId) throw new Error('Missing userId');
 
 		// Step 1: Fetch all memories
 		const allMemories = await step.do('fetch-memories', async () => {
 			const { results } = await this.env.DB.prepare(
-				'SELECT id, category, fact, importance_score, created_at FROM memories WHERE chat_id = ? ORDER BY importance_score DESC, created_at DESC LIMIT 200'
-			).bind(chatId).all();
+				'SELECT id, category, fact, importance_score, created_at FROM memories WHERE user_id = ? ORDER BY importance_score DESC, created_at DESC LIMIT 200'
+			).bind(userId).all();
 			return (results ?? []) as unknown as MemoryItem[];
 		});
 
@@ -40,7 +48,7 @@ export class MemoryConsolidationWorkflow extends WorkflowEntrypoint<Env, Consoli
 			return { status: 'skipped', reason: 'Not enough memories', count: allMemories.length };
 		}
 
-		// Step 2: CF AI dedup (free, reduces tokens sent to Gemini)
+		// Step 2: CF AI dedup (reduces tokens sent to Gemini)
 		const dedupResult = await step.do('cf-ai-dedup', {
 			retries: { limit: 2, delay: '5 seconds', backoff: 'constant' },
 			timeout: '30 seconds',
@@ -61,7 +69,7 @@ export class MemoryConsolidationWorkflow extends WorkflowEntrypoint<Env, Consoli
 		}
 		const dedupedMemories = allMemories.filter(m => !dupIds.has(m.id));
 
-		// Step 3: Gemini Pro consolidation (expensive, retryable)
+		// Step 3: Gemini consolidation (expensive, retryable)
 		const consolidated = await step.do('ai-consolidation', {
 			retries: { limit: 3, delay: '10 seconds', backoff: 'exponential' },
 			timeout: '120 seconds',
@@ -74,7 +82,7 @@ export class MemoryConsolidationWorkflow extends WorkflowEntrypoint<Env, Consoli
 				.join('\n');
 
 			const response = await ai.models.generateContent({
-				model: 'gemini-3.1-pro-preview',
+				model: GEMINI_MODELS.flashLite,
 				contents: `You are performing memory consolidation for a therapeutic Second Brain.
 Here are the user's saved memories:
 ${rawText}
@@ -103,11 +111,11 @@ No markdown, no backticks.`,
 
 		// Step 4: Atomic D1 write
 		await step.do('write-consolidated', async () => {
-			const deleteStmt = this.env.DB.prepare('DELETE FROM memories WHERE chat_id = ?').bind(chatId);
+			const deleteStmt = this.env.DB.prepare('DELETE FROM memories WHERE user_id = ?').bind(userId);
 			const inserts = consolidated.map(m =>
 				this.env.DB.prepare(
-					'INSERT INTO memories (chat_id, category, fact, importance_score) VALUES (?, ?, ?, ?)'
-				).bind(chatId, (m.category ?? 'general').toLowerCase(), m.fact, m.importance ?? 1)
+					'INSERT INTO memories (user_id, category, fact, importance_score) VALUES (?, ?, ?, ?)'
+				).bind(userId, (m.category ?? 'general').toLowerCase(), m.fact, m.importance ?? 1)
 			);
 			await this.env.DB.batch([deleteStmt, ...inserts]);
 		});

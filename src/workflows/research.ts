@@ -3,6 +3,12 @@
 //
 // Triggers Gemini's Deep Research agent, polls for completion,
 // saves full report to R2, and notifies the user.
+//
+// 2026-06-02 changes:
+//   F3: chatId param kept for Telegram delivery + R2 path; userId
+//       added for D1 inserts (memories use user_id).
+//   Model stays as deep-research-pro-preview-12-2025 (Interactions
+//   API agent, separate from the chat models).
 // ============================================================
 
 import { WorkflowEntrypoint, WorkflowStep } from 'cloudflare:workers';
@@ -10,13 +16,14 @@ import type { WorkflowEvent } from 'cloudflare:workers';
 
 interface ResearchParams {
 	chatId: number;
+	userId: number;
 	topic: string;
 	manual?: boolean;
 }
 
 export class DeepResearchWorkflow extends WorkflowEntrypoint<Env, ResearchParams> {
 	async run(event: WorkflowEvent<ResearchParams>, step: WorkflowStep) {
-		const { chatId, topic, manual } = event.payload;
+		const { chatId, userId, topic } = event.payload;
 
 		// Step 1: Start the Deep Research agent
 		const interactionId = await step.do('start-research', {
@@ -82,22 +89,23 @@ export class DeepResearchWorkflow extends WorkflowEntrypoint<Env, ResearchParams
 		await step.do('save-report', async () => {
 			const timestamp = Date.now();
 			const safeTopic = topic.replace(/[^a-zA-Z0-9\s]/g, '').trim().replace(/\s+/g, '_').slice(0, 60);
-			const r2Key = `research/${chatId}/${timestamp}_${safeTopic}.txt`;
+			// R2 path uses userId for per-user namespacing.
+			const r2Key = `research/${userId}/${timestamp}_${safeTopic}.txt`;
 
 			// Save full report to R2
 			if (this.env.MEDIA_BUCKET) {
 				await this.env.MEDIA_BUCKET.put(r2Key, reportText);
 			}
 
-			// Save reference in D1
+			// Save reference in D1 — user_id, not chat_id.
 			await this.env.DB.prepare(
-				'INSERT OR IGNORE INTO user_profiles (chat_id) VALUES (?)'
-			).bind(chatId).run();
+				'INSERT OR IGNORE INTO user_profiles (user_id) VALUES (?)'
+			).bind(userId).run();
 
 			await this.env.DB.prepare(
-				'INSERT INTO memories (chat_id, category, fact, importance_score) VALUES (?, ?, ?, ?)'
+				'INSERT INTO memories (user_id, category, fact, importance_score) VALUES (?, ?, ?, ?)'
 			).bind(
-				chatId, 'research_ref',
+				userId, 'research_ref',
 				`[R2:${r2Key}] Topic: ${topic.slice(0, 200)}`,
 				1
 			).run();
@@ -105,11 +113,11 @@ export class DeepResearchWorkflow extends WorkflowEntrypoint<Env, ResearchParams
 			// Save summary in memories
 			const summary = reportText.slice(0, 800);
 			await this.env.DB.prepare(
-				'INSERT INTO memories (chat_id, category, fact, importance_score) VALUES (?, ?, ?, ?)'
-			).bind(chatId, 'discovery', `Deep Research (${topic.slice(0, 80)}): ${summary}`, 1).run();
+				'INSERT INTO memories (user_id, category, fact, importance_score) VALUES (?, ?, ?, ?)'
+			).bind(userId, 'discovery', `Deep Research (${topic.slice(0, 80)}): ${summary}`, 1).run();
 		});
 
-		// Step 4: Notify user
+		// Step 4: Notify user (chatId for delivery)
 		await step.do('notify', async () => {
 			const token = this.env.TELEGRAM_TOKEN;
 			if (!token) return;

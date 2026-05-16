@@ -4,19 +4,29 @@
 // Durable innovation review. Runs as a Workflow to avoid
 // the timeout issues that plagued the inline /architect command.
 // Steps: Research → Generate proposals → Save → Notify
+//
+// 2026-06-02 changes:
+//   F3: chatId param kept for Telegram delivery, but userId is now
+//       passed alongside for D1 inserts (memories use user_id).
+//   Hardcoded model gemini-3.1-pro-preview replaced with
+//   GEMINI_MODELS.flashLite (= gemini-3.5-flash post-migration).
+//   The googleSearch tool already used here is now a Gemini 3 family
+//   pattern; combines with custom tools cleanly on 3.5-flash.
 // ============================================================
 
 import { WorkflowEntrypoint, WorkflowStep } from 'cloudflare:workers';
 import type { WorkflowEvent } from 'cloudflare:workers';
+import { GEMINI_MODELS } from '../config/models';
 
 interface ArchitectParams {
 	chatId: number;
+	userId: number;
 	statusMsgId?: number;
 }
 
 export class ArchitectWorkflow extends WorkflowEntrypoint<Env, ArchitectParams> {
 	async run(event: WorkflowEvent<ArchitectParams>, step: WorkflowStep) {
-		const { chatId, statusMsgId } = event.payload;
+		const { chatId, userId, statusMsgId } = event.payload;
 		const token = this.env.TELEGRAM_TOKEN;
 
 		const notify = async (text: string) => {
@@ -68,12 +78,12 @@ export class ArchitectWorkflow extends WorkflowEntrypoint<Env, ArchitectParams> 
 			}
 		});
 
-		// Step 2: Generate proposals via Gemini Pro
+		// Step 2: Generate proposals via Gemini
 		const suggestions = await step.do('generate-proposals', {
 			retries: { limit: 2, delay: '10 seconds', backoff: 'exponential' },
 			timeout: '60 seconds',
 		}, async () => {
-			await notify('<i>Step 2/3: Generating innovation proposals with Gemini Pro...</i>');
+			await notify('<i>Step 2/3: Generating innovation proposals...</i>');
 
 			const { GoogleGenAI } = await import('@google/genai');
 			const ai = new GoogleGenAI({ apiKey: this.env.GEMINI_API_KEY });
@@ -82,10 +92,10 @@ export class ArchitectWorkflow extends WorkflowEntrypoint<Env, ArchitectParams> 
 				? `\n\nRESEARCH FINDINGS:\n${researchContext}` : '';
 
 			const response = await ai.models.generateContent({
-				model: 'gemini-3.1-pro-preview',
+				model: GEMINI_MODELS.flashLite,
 				contents: `You are an AI product strategist reviewing a Telegram AI companion chatbot. Find 3 unique innovations.
 
-PROJECT: TypeScript on Cloudflare Workers. Uses Gemma 4 (CF AI), Gemini Pro (fallback), D1, Vectorize, Queues, Workflows.
+PROJECT: TypeScript on Cloudflare Workers. Uses Gemma 4 (CF AI), Gemini 3.5 Flash (Pro lane), D1, Vectorize, Queues, Workflows.
 ${researchSection}
 
 RESEARCH ACROSS: Telegram Bot API, Gemini API, Cloudflare Workers AI, competitors (Pi, Replika, ChatGPT), therapeutic AI (AEDP, IFS, DBT).
@@ -118,15 +128,18 @@ Be bold.`,
 			// Save to memory
 			const today = new Date().toISOString().split('T')[0];
 			await this.env.DB.prepare(
-				'INSERT OR IGNORE INTO user_profiles (chat_id) VALUES (?)'
-			).bind(chatId).run();
+				'INSERT OR IGNORE INTO user_profiles (user_id) VALUES (?)'
+			).bind(userId).run();
 			await this.env.DB.prepare(
-				'INSERT INTO memories (chat_id, category, fact, importance_score) VALUES (?, ?, ?, ?)'
-			).bind(chatId, 'discovery', `Architect review (${today}): ${suggestions.slice(0, 500)}`, 1).run();
+				'INSERT INTO memories (user_id, category, fact, importance_score) VALUES (?, ?, ?, ?)'
+			).bind(userId, 'discovery', `Architect review (${today}): ${suggestions.slice(0, 500)}`, 1).run();
 
-			// Send final result
+			// Send final result. Without this `res.ok` check, a 4xx from
+			// Telegram (typically HTML parse errors in the suggestions
+			// blob) silently leaves the user staring at "Step 3/3:
+			// Saving and delivering results...". 2026-06-02 saw this.
 			const finalText = suggestions.slice(0, 3900);
-			await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
+			const finalRes = await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -141,10 +154,33 @@ Be bold.`,
 					},
 				}),
 			});
+
+			const finalJson = await finalRes.json() as { ok: boolean; description?: string };
+			if (!finalJson.ok) {
+				// Most common cause: model output contains HTML the parser
+				// rejects. Retry once with parse_mode stripped and HTML
+				// tags removed so the user gets the content.
+				const plain = finalText.replace(/<[^>]+>/g, '');
+				await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						chat_id: chatId, message_id: statusMsgId,
+						text: `Architecture Review\n\n${plain}`.slice(0, 3900),
+						reply_markup: {
+							inline_keyboard: [[
+								{ text: '✅ Approve', callback_data: 'approve_pr' },
+								{ text: '❌ Dismiss', callback_data: 'action_dismiss_pr' },
+							]],
+						},
+					}),
+				}).catch(() => {});
+				throw new Error(`Telegram editMessageText failed: ${finalJson.description ?? 'unknown'}`);
+			}
 		});
 
-		// Clear lock
-		await this.env.CHAT_KV.delete(`architect_lock_${chatId}`);
+		// Clear lock (keyed by userId for isolation)
+		await this.env.CHAT_KV.delete(`architect_lock_${userId}`);
 
 		return { status: 'success', length: suggestions.length };
 	}

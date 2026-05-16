@@ -69,7 +69,7 @@ export const startDeepResearch = defineTool(
 		if (!env.RESEARCH_WORKFLOW) return err('Research workflow not available.');
 		await env.RESEARCH_WORKFLOW.create({
 			id: `research-${Date.now()}`,
-			params: { chatId: ctx.chatId, topic: args.topic as string, manual: true },
+			params: { chatId: ctx.chatId, userId: ctx.userId, topic: args.topic as string, manual: true },
 		});
 		return ok({ topic: args.topic }, 'Deep research started. Results in 2-5 minutes.');
 	}

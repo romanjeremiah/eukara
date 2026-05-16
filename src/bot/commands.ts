@@ -59,8 +59,11 @@ export async function handleCommand(
 				await telegram.sendMessage(chatId, threadId, 'This command is owner-only.', env);
 				return true;
 			}
-			// Concurrency guard with kill switch
-			const lock = await env.CHAT_KV.get(`architect_lock_${chatId}`);
+			const userId = msg.from?.id;
+			if (!userId) return true;
+			// Concurrency guard with kill switch. Keyed by userId for
+			// per-user isolation (matches the workflow's D1 isolation).
+			const lock = await env.CHAT_KV.get(`architect_lock_${userId}`);
 			if (lock) {
 				const age = Math.round((Date.now() - parseInt(lock)) / 1000);
 				await telegram.sendMessage(chatId, threadId,
@@ -71,7 +74,7 @@ export async function handleCommand(
 					]] } });
 				return true;
 			}
-			await env.CHAT_KV.put(`architect_lock_${chatId}`, String(Date.now()), { expirationTtl: 120 });
+			await env.CHAT_KV.put(`architect_lock_${userId}`, String(Date.now()), { expirationTtl: 120 });
 
 			const statusRes = await telegram.sendMessage(chatId, threadId,
 				'⚙️ <b>Architecture Review</b>\n\n<i>Starting research workflow...</i>', env);
@@ -80,10 +83,10 @@ export async function handleCommand(
 			try {
 				await env.ARCHITECT_WORKFLOW.create({
 					id: `architect-${Date.now()}`,
-					params: { chatId, statusMsgId },
+					params: { chatId, userId, statusMsgId },
 				});
 			} catch (e) {
-				await env.CHAT_KV.delete(`architect_lock_${chatId}`);
+				await env.CHAT_KV.delete(`architect_lock_${userId}`);
 				await telegram.sendMessage(chatId, threadId,
 					`⚙️ Workflow error: ${((e as Error).message ?? '').slice(0, 100)}`, env);
 			}

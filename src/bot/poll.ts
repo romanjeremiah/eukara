@@ -17,7 +17,7 @@ import { GeminiProvider } from '../ai/gemini';
 import { GEMINI_MODELS } from '../config/models';
 import { BASE_INSTRUCTION, MENTAL_HEALTH_DIRECTIVE, FORMATTING_RULES } from '../config/personas';
 import * as telegram from '../lib/telegram';
-import { normaliseMarkdown } from '../lib/formatting';
+import { normaliseMarkdown, stripLeakedThoughts } from '../lib/formatting';
 import { log } from '../lib/logger';
 import { saveHistory, loadHistory } from '../lib/history';
 import * as mood from '../services/mood';
@@ -124,8 +124,12 @@ export async function handlePollAnswer(
 		analysis = fallbackAnalysis(score);
 	}
 
-	// Defensive markdown cleanup — the system prompt is HTML-only
-	// but the model slips occasionally.
+	// Defensive cleanup before delivery. stripLeakedThoughts catches
+	// prose-form planning paragraphs the model occasionally emits ahead
+	// of the actual reply (2026-06-02). normaliseMarkdown converts the
+	// model's stray markdown into Telegram HTML. Order matters: strip
+	// first so paragraph boundaries are still clean for splitting.
+	analysis = stripLeakedThoughts(analysis);
 	analysis = normaliseMarkdown(analysis);
 
 	// Send the analysis + emotion category buttons
@@ -200,7 +204,8 @@ async function handleClinicalConcern(
 		response = fallbackAnalysis(score);
 	}
 
-	// Defensive markdown cleanup.
+	// Defensive cleanup before delivery (see note in handlePollAnswer).
+	response = stripLeakedThoughts(response);
 	response = normaliseMarkdown(response);
 
 	const btns = {

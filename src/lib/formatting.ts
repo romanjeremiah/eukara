@@ -10,27 +10,98 @@ const SAFE_SPLIT_LENGTH = 3900;
 
 /**
  * Strip leaked internal reasoning from model output.
- * Catches both italic-bracketed actions and keyword-prefixed brackets.
+ * Catches three classes of leakage:
+ *   1. Bracketed-action markers — both italic and keyword-prefixed.
+ *   2. Specific debug-style prefixes (ACTION PLAN, PROCEDURAL MEMORY).
+ *   3. Prose-form planning paragraphs at the START of the response
+ *      (2026-06-02 addition). Models like Gemma 4 with thinking on
+ *      and Gemini 3.x in some grounded-tool contexts emit their
+ *      reasoning as plain prose preceding the actual reply, e.g.
+ *      "The user responded yes. Based on the directive I should
+ *      call log_mood_entry..." Pattern-strip the planning paragraphs
+ *      and keep only the genuine reply.
  */
 export function stripLeakedThoughts(text: string): string {
 	if (!text) return text;
-	return text
+	let out = text;
+
+	// (1) Bracketed-action markers
+	out = out
 		// Remove ALL <i>[...]</i> patterns (italic bracketed actions)
 		.replace(/<i>\s*\[[^\]]{0,300}\]\s*<\/i>/gi, '')
 		// Remove keyword-prefixed [bracketed reasoning]
 		.replace(
 			/\[(?:Noticing|Thinking|Considering|Reflecting|Observing|Planning|Analyzing|Processing|Noting|Recalling|Checking|Looking|Adjusting|Scanning|Reviewing|Connecting|Sensing|Reading|Pulling|Searching|Querying|Loading|Fetching|Parsing)[^\]]{0,300}\]/gi,
 			''
-		)
-		// Remove computing/result leaks
+		);
+
+	// (2) Specific debug-style prefixes
+	out = out
 		.replace(/⚙️\s*Computing[^\n]*\n?/g, '')
 		.replace(/^Result:\s*.*?timestamp:\s*\d+\s*$/gm, '')
-		// Remove ACTION PLAN / PROCEDURAL MEMORY leaks
 		.replace(/ACTION PLAN[^\n]*(?:\n[-•*][^\n]*)*/g, '')
-		.replace(/PROCEDURAL MEMORY[^\n]*(?:\n[-•*][^\n]*)*/g, '')
-		// Clean up resulting whitespace
-		.replace(/\n{3,}/g, '\n\n')
-		.trim();
+		.replace(/PROCEDURAL MEMORY[^\n]*(?:\n[-•*][^\n]*)*/g, '');
+
+	// (3) Prose-form planning paragraph stripping. The model leaks
+	// planning text BEFORE its actual reply, separated by a blank line.
+	// Strategy: split into paragraphs, drop leading paragraphs that
+	// match planning patterns, return the rest. Conservative: requires
+	// at least one non-planning paragraph to remain, otherwise returns
+	// the original text (better to ship something than nothing).
+	out = stripPlanningPreamble(out);
+
+	// Clean up resulting whitespace
+	return out.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/**
+ * Patterns that mark a paragraph as the model planning/reasoning
+ * about its response rather than the response itself. Case-insensitive.
+ * Tested against the first ~120 characters of each paragraph.
+ *
+ * Conservative bias: only the patterns that have been observed in
+ * production leakage are included. Generic openers like "I think"
+ * or "I want to" are NOT here because they are common in legitimate
+ * therapeutic replies.
+ */
+const PLANNING_PATTERNS: RegExp[] = [
+	/^\s*The user (?:responded|said|asked|wrote|sent|mentioned|reported|stated|confirmed|replied)/i,
+	/^\s*Based on (?:the|my|our|this|previous|user|prior|clinical|system|persona|memory|directive)/i,
+	/^\s*Since the (?:user|previous|last|context|conversation|persona|directive)/i,
+	/^\s*Given (?:the|that|this|user|previous|prior|current|recent|past)/i,
+	/^\s*Plan:/i,
+	/^\s*I (?:should|need to|will|am going to|have to|must|can|could|might|may)\s*:/i,
+	/^\s*I (?:should|need to|will|have to|must) (?:call|invoke|use|trigger|fire|log|save|record|capture|note|acknowledge)\b/i,
+	/^\s*First,? I('ll| will| should| need)/i,
+	/^\s*Let me (?:check|call|invoke|trigger|log|see|verify|run|use)\s+(?:the|my|a|an)\b/i,
+	/^\s*If I have tool/i,
+	/^\s*Let's assume (?:the|that)/i,
+	/^\s*(?:Step|Action) \d+:?\s+(?:Call|Invoke|Log|Save|Record|Trigger)/i,
+];
+
+function stripPlanningPreamble(text: string): string {
+	if (!text || !text.includes('\n')) return text;
+
+	const paragraphs = text.split(/\n{2,}/);
+	if (paragraphs.length < 2) return text;
+
+	// Find the first paragraph that DOESN'T match planning patterns.
+	let keepFrom = -1;
+	for (let i = 0; i < paragraphs.length; i++) {
+		const p = paragraphs[i]!.trim();
+		if (!p) continue;
+		const head = p.slice(0, 200);
+		const isPlanning = PLANNING_PATTERNS.some(rx => rx.test(head));
+		if (!isPlanning) {
+			keepFrom = i;
+			break;
+		}
+	}
+
+	// Nothing salvageable, or no planning detected — leave the text alone.
+	if (keepFrom < 0 || keepFrom === 0) return text;
+
+	return paragraphs.slice(keepFrom).join('\n\n');
 }
 
 /**

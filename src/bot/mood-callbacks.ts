@@ -21,7 +21,7 @@ import {
 } from '../config/personas';
 import { POSITIVE_EMOTIONS, NEGATIVE_EMOTIONS, classifyEmotion } from '../config/emotions';
 import * as telegram from '../lib/telegram';
-import { normaliseMarkdown, formatTime } from '../lib/formatting';
+import { normaliseMarkdown, stripLeakedThoughts, formatTime } from '../lib/formatting';
 import { log } from '../lib/logger';
 import { loadHistory, saveHistory } from '../lib/history';
 import * as mood from '../services/mood';
@@ -187,7 +187,10 @@ export async function handleEmotionsDone(
 		summary = fallbackSummary(selected);
 	}
 
-	// Defensive markdown cleanup.
+	// Defensive cleanup before delivery (2026-06-02). Mood flow calls
+	// provider.chat() directly and was bypassing the strip pass that
+	// the main message handler runs. Strip first, then normalise.
+	summary = stripLeakedThoughts(summary);
 	summary = normaliseMarkdown(summary);
 
 	// Subtle footer showing when the check-in was logged. Uses tg-time

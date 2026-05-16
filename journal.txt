@@ -1,0 +1,336 @@
+================================================================
+2026-06-02  AFTERNOON: cascade reorder + sticky Pro + queue dispatch
+================================================================
+
+Follow-up to the morning's thought-leakage + architect fixes. Started
+from Roma reporting that an emotional message ("i'm feeling anxious
+about tomorrow") got no reply in tail, no `ai_response` log at all.
+
+ROOT CAUSE (verified against Cloudflare docs)
+  index.ts wrapped handleMessage in ctx.waitUntil(task). The slow Pro
+  Gemini call (grounded, 25 custom tools, thinking) exceeded the 30s
+  waitUntil ceiling and was silently cancelled.
+  Source: https://developers.cloudflare.com/workers/platform/limits/
+  "When the client disconnects, tasks are canceled unless you call
+   waitUntil() to extend execution by up to 30 seconds."
+  Paid plan does NOT raise this. Paid only changes CPU time cap
+  (default 30s, configurable up to 5min). HTTP duration is unlimited
+  while client connected.
+
+ROMA'S DECISIONS (confirmed before implementation)
+  - Cascade: Tier 1 gemini-pro-latest, Tier 2 gemini-3.5-flash,
+    Tier 3 @cf/google/gemma-4-26b-a4b-it. Matches Xaridotis B2C
+    cascade minus OpenAI/Anthropic middle tiers (Eukara has neither
+    provider wired).
+  - Timeouts per tier: 90s / 45s / 30s, total worst case 165s, well
+    within the queue consumer's 15-min budget. Promise.race wrappers,
+    not AbortSignal (provider-agnostic, no SDK plumbing).
+  - Sticky Pro routing (Option C): KV anchor written after every
+    successful Pro turn. Next user message triggers a content-based
+    topic shift classifier; same topic -> force Pro, different ->
+    clear flag and fall through to normal routing.
+  - Dispatch: Pro lane -> queue (15-min wall clock). Casual lane ->
+    `await task` inline (HTTP handler stays connected, no 30s cap).
+    Callbacks/polls -> ctx.waitUntil (short, no concern).
+  - No CPU cap in wrangler.jsonc — default 30s is plenty since calls
+    are I/O bound.
+  - DO NOT TOUCH mood flow or active-checkin override — separate
+    session for emotion category expansion + 24h check expiry.
+
+FILES TOUCHED
+  src/config/models.ts       — added GEMINI_MODELS.proLatest = 'gemini-pro-latest'
+  src/ai/router.ts           — added RouterContext.forceProLane; new
+                                willHitProLane() helper for cheap
+                                pre-routing in dispatcher
+  src/bot/message.ts         — cascade reorder (Tier 1/2/3); withTimeout
+                                helper via Promise.race; handleMessage
+                                accepts options.forceProLane; sticky-Pro
+                                KV write at end of successful Pro turn
+                                (TTL 2h)
+  src/services/topicShift.ts — NEW. Llama 3.2 3B classifier with 2s
+                                Promise.race timeout. Conservative on
+                                error (returns sameTopic=true so we
+                                stay on Pro rather than flip personas)
+  src/router/queue.ts        — added process_user_message task type;
+                                3-retry final-attempt user notification
+                                following Xaridotis pattern
+  src/index.ts               — dispatchMessage() with hybrid routing:
+                                sticky check -> queue if Pro, else
+                                await inline. Callbacks/polls keep
+                                waitUntil path.
+
+LOG EVENTS TO WATCH POST-DEPLOY
+  - sticky_pro_written, sticky_pro_kept, sticky_pro_cleared, sticky_pro_kept_short
+  - topic_shift_classified, topic_shift_classifier_failed
+  - message_queued (with reason: pro_lane | sticky_pro)
+  - queue_user_message_start, queue_user_message_done
+  - pro_lane_tier1_recovered, pro_lane_tier2_recovered, pro_lane_tier3_recovered
+  - message_handled (now includes route_reason and force_pro_lane)
+
+DEFERRED (separate sessions, by Roma's direction)
+  (a) Mood: add a new category for borderline/dissociation support
+      with emotions like dissociated, depersonalised, derealised,
+      splitting, fragmented, numb, switching. src/bot/mood-callbacks.ts.
+  (b) Mood check 24h expiry + persistent state pattern. Patterns Roma
+      can choose from in a separate session:
+        - hard 24h timeout (extend current 4h)
+        - 24h timeout with reminder at 4h
+        - persistent KV state (no workflow waiting; complete on any
+          callback whenever)
+        - resume-on-next-message (next user message checks pending
+          mood flow and offers to continue before processing)
+  (c) Other-users slowness diagnosis. Need `wrangler tail` capture
+      of a slow request from a non-owner user. Could be the same
+      30s timeout we just fixed; could be sequential D1 awaits or
+      cold starts. Diagnose first, fix later.
+  (d) Cascade Tier 2 model differentiation. Currently Tier 1 is
+      gemini-pro-latest and Tier 2 is gemini-3.5-flash; both pull
+      different models from Google's stack but if Google's whole API
+      is down they both fail. Tier 3 (Gemma on CF) is the real
+      different-infrastructure backstop.
+
+----------------------------------------------------------------
+
+================================================================
+2026-06-02  POST-DEPLOY: thought-leakage + architect delivery fixes
+================================================================
+
+Follow-up to the morning deploy. Roma's testing surfaced three concrete
+bugs in the Gemini-3.5-flash / Gemma 4 grounded paths.
+
+BUG 1 — medication "yes" reply leaked 715-char planning monologue
+  Logs: round 0 textLen=715 + toolCalls=1, round 1 textLen=59 toolCalls=0.
+  Cause: tool loop accumulated text across all rounds. Gemma 4 with
+  enable_thinking=true emits its planning prose alongside the tool call
+  in round 0; the actual reply is in round 1. Concatenation shipped both.
+  Pre-existing bug, surfaced by migration of Pro slot away from the
+  thought-channel-separated 2.5-pro.
+  FIX (Option A, message.ts): only the FINAL no-tool-calls round sets
+  fullText. Rounds with toolCalls drop their text entirely.
+
+BUG 2 — mood analysis (score-2 path) leaked persona instruction echo
+  Path: src/bot/poll.ts:handlePollAnswer — calls provider.chat() directly
+  and pipes output only through normaliseMarkdown, never
+  stripLeakedThoughts. Same gap in handleClinicalConcern and
+  mood-callbacks.ts:handleEmotionsDone.
+  FIX: import stripLeakedThoughts at all three call sites. Apply before
+  normaliseMarkdown. Also strengthened stripLeakedThoughts itself with
+  a new stripPlanningPreamble() pass using PLANNING_PATTERNS regex
+  array — detects prose-form planning paragraphs at the START of the
+  response ("The user responded...", "Based on the directive...",
+  "Plan:", "I should:", "If I have tool calling..."). Conservative:
+  requires at least one non-planning paragraph to remain or returns
+  the original.
+
+BUG 3 — /architect stuck on "Step 3/3: Saving and delivering results..."
+  Workflow.run logged Ok at 1:48:51 but the message never updated.
+  Cause: final editMessageText doesn't check res.ok. fetch() does not
+  throw on 4xx; Telegram's 400 (likely HTML parse failure in the
+  suggestions blob) silently no-ops while the workflow reports success.
+  FIX (architect.ts): await response.json(), check ok flag. On failure
+  retry once with parse_mode stripped and HTML tags removed so the user
+  still gets the content. Throw on persistent failure so the workflow
+  shows as errored rather than silently-stuck.
+
+FILES CHANGED (5)
+  src/bot/message.ts          Option A in tool loop
+  src/lib/formatting.ts       stripLeakedThoughts + stripPlanningPreamble
+  src/workflows/architect.ts  res.ok check + plain-text retry
+  src/bot/poll.ts             stripLeakedThoughts on analysis + concern
+  src/bot/mood-callbacks.ts   stripLeakedThoughts on emotion summary
+
+OPEN — NOT FIXED IN THIS PASS
+  - "I'm feeling anxious about tomorrow" — routed to gemini-3.5-flash,
+    showed gemini_grounding_enabled log then waitUntil() warning and NO
+    ai_response or message_handled log. Function effectively hung past
+    30s and Workers killed it. Tool combination (googleSearch + 25
+    custom functionDeclarations + thinking) may be exceeding budget on
+    emotional turns. Needs dedicated investigation: tail with --debug,
+    consider lowering thinkingLevel or capping customTools count when
+    grounding is on.
+  - Gemini Pro 503 ("high demand") on mood emotion summary at 12:46:34.
+    Fallback path worked correctly. Google capacity issue, not ours.
+  - waitUntil() warning on background observation — known cost. Silent
+    observation AI call exceeds 30s post-response window. Acceptable.
+
+PENDING (Roma)
+  - npm run typecheck (5-file delta)
+  - npx wrangler deploy --minify
+  - Re-test: meds yes, anxious feeling, /mood end-to-end, /architect
+
+================================================================
+2026-06-02  PLANNING: Xaridotis mirror plan (no code yet)
+================================================================
+
+SCOPE: Roma briefed a 15-item plan to bring Xaridotis feature parity into
+Eukara while keeping Eukara's model registry (Gemini 3.5 Flash + Gemma 4
+26B + Kimi K2.6). No OpenAI / Anthropic in Eukara. Aim for cleaner
+architecture than Xaridotis.
+
+DELIVERABLE: decisions/2026-06-02-xaridotis-mirror-plan.md (36 KB).
+
+KEY FINDINGS
+
+  - Mood check failure today (2026-06-02) root cause: handlePollAnswer +
+    handleEmotionsDone run via ctx.waitUntil with Gemini Pro calls that
+    routinely exceed Cloudflare's 30s waitUntil ceiling. Comment in
+    src/index.ts claiming "5-min CPU limit" is incorrect. Phase 1 of the
+    plan moves these calls into queue tasks with 15-min wall clock.
+
+  - personas.ts vs personas.js: BASE / MHD / FORMATTING are identical by
+    design. Eukara is missing CASUAL_REGISTER_DIRECTIVE (line 406 in
+    Xaridotis) and TOOL SELECTION HARD CONSTRAINTS sub-block in
+    SECOND_BRAIN. TOPICS routing block correctly absent (Eukara is
+    single-thread).
+
+  - Schema gap: Eukara needs ai_signature on 7 tables, source on
+    mood_journal, metadata on reminders, style_card on user_profiles,
+    composite PK on persona_config (currently single PK), new media_refs
+    table, updated_at triggers (SQLite does NOT auto-bump on UPDATE).
+    All additive except persona_config (recreate via SELECT-INSERT, safe
+    on <=2 minimal rows).
+
+  - Chat history persistence design: keep KV live window (24 turns / 7d),
+    add nightly 03:00 compression to D1 chat_summaries + Vectorize as
+    conv_${userId}_summary_${id}. Optional Eukara-only improvement: raw
+    transcript shadow to R2 (chat_raw/${userId}/${date}.jsonl) for
+    forensic recovery.
+
+  - Service mirror inventory (16 new files, 18 changed files):
+    moodStore extension, reminders, users, personas (multi),
+    media + mediaRefs, planner (CoALA), personaEvolution (daily 04:00),
+    chatSummaries (nightly 03:00), moodSynthesis (queue-fired
+    Anti-Summary), moodMicroAck, inlineHandler.
+
+  - Model mapping table for cascades: 5 Xaridotis cascades collapse to 3
+    Eukara cascades (synth / mood-ack / casual / bg). All use combinations
+    of gemini-3.5-flash + gemma-4-26b + kimi-k2.6. Gemma confirmed as
+    Tier 1 for mood-ack and casual cascades.
+
+PHASING (5 phases, ~50-55 hrs total)
+
+  Phase 1 (6-8h): Mood reliability fix - queue routing for poll_answer,
+                  emotions_done, synthesis. Fixes today's bug.
+  Phase 2 (12-15h): Service layer foundation + schema migration.
+  Phase 3 (10h):   Mood completeness - synthesis, micro-acks, activities,
+                   sleep, photo, populating the 4 always-NULL columns.
+  Phase 4 (10h):   Persona evolution + chat summaries cron jobs +
+                   CASUAL_REGISTER_DIRECTIVE.
+  Phase 5 (12h):   Spontaneous outreach upgrade, accountability nudge,
+                   curiosity digest, inline handler, /persona multi.
+
+OPEN QUESTIONS FOR ROMA (block Phase 1 until answered)
+
+  Q1: Persona key naming - drop Helldivers names or keep?
+  Q2: Raw transcript R2 shadow - yes / no / defer?
+  Q3: curator_log table - day-1 or later?
+  Q4: Phase ordering after Phase 1 - confirm or propose?
+  Q5: Photo upload investigation - include in Phase 3 or stay paused?
+  Q6: services/persona.ts - split now or re-export shim during migration?
+
+STATUS: Plan documented. Awaiting Roma sign-off on the 6 open questions
+before any code is written. Today's mood failure is the most urgent
+trigger for Phase 1 - the queue-route fix is straightforward and
+self-contained.
+
+EUKARA JOURNAL
+==============
+
+Latest entries at top. Full decision rationale lives in /decisions/.
+Each entry: date, scope, files touched, deploy status.
+
+
+================================================================
+2026-06-02  Pro-lane migration, always-on grounding, bug pass
+================================================================
+
+DECISIONS (full rationale: decisions/2026-06-02-pro-migration-grounding-bugs.md)
+
+  - Pro slot migrated: gemini-2.5-pro -> gemini-3.5-flash (stable).
+    Thinking level default (let model decide). Enables tool
+    combination (function calling + Google Search grounding on the
+    same call) per Google docs (3.x family only).
+  - flashLite slot migrated: gemini-3.1-flash-lite-preview ->
+    gemini-3.5-flash (same as Pro). Cascade Tier 2 still triggers
+    but with same model; effective fallback is now Tier 3 (Kimi
+    K2.6 on CF). Accepted as simplification; revisit if we hit
+    primary-model outages.
+  - flash slot RETIRED. Was gemini-3-flash-preview, never called
+    anywhere in code (grep confirmed). Dropped from models.ts.
+  - image slot: gemini-2.5-flash-image -> gemini-3.1-flash-image
+    (Nano Banana 2, stable). Wiring deferred to follow-up session.
+  - tts slot: unchanged. Currently dead config (lib/tts.ts uses
+    Google Cloud TTS directly), kept for future migration.
+  - Workflows consolidation + architect: hardcoded
+    gemini-3.1-pro-preview replaced with GEMINI_MODELS.flashLite
+    (= gemini-3.5-flash). Workflow now in sync with registry.
+  - Workflow research: stays on deep-research-pro-preview-12-2025.
+  - Decision B (Gemma web_search_options): ALWAYS ON. Default
+    search_context_size 'medium' with UK user_location.
+    Annotations rendered as inline footnote links.
+  - Decision A (Gemini Pro grounding): ALWAYS ON via tool
+    combination on gemini-3.5-flash. Both googleSearch and custom
+    function declarations sent in same call. thoughtSignature
+    preservation added to AIMessage type and history layer.
+  - Decision C3 (end-to-end streaming with tool loops): DEFERRED
+    to dedicated session. Provider chatStream already exists but
+    the message.ts handler-level streaming + throttled Telegram
+    editMessageText + mid-stream tool-call handling is a multi-
+    hour rewrite that warrants its own session. Decision doc
+    drafted at decisions/2026-06-XX-end-to-end-streaming.md (TBD).
+
+BUGS FIXED
+
+  F1: queue.ts health_checkin / med_nudge / spontaneous_outreach
+      now go through CloudflareProvider and persist the greeting
+      into KV history. Replies have correct context, no more
+      stale-history confabulation.
+  F2: background.ts deduplicateMemories now parses OpenAI-compat
+      response shape (choices[0].message.content), not just legacy
+      {response: ...}. GLM 4.7 Flash dedup actually works now.
+  F3: workflows consolidation, architect, research migrated from
+      chat_id to user_id for D1 queries. Matches the rest of the
+      codebase's per-user isolation.
+  F4: queue.ts max_tokens (deprecated) -> max_completion_tokens on
+      Gemma calls.
+  F5: models.ts comment "free tier" corrected to indicate paid
+      pricing on Gemma 4 and Kimi K2.6.
+  F6: background.ts extractText helper unified to handle both
+      OpenAI-compat and legacy native CF response shapes.
+  F7: router.ts default_casual route no longer emits thinking
+      effort 'low'. Lets Gemma's natural default apply.
+
+FILES CHANGED
+
+  src/config/models.ts
+  src/types/ai.ts
+  src/ai/router.ts
+  src/ai/cloudflare.ts
+  src/ai/gemini.ts
+  src/lib/history.ts                 (no changes needed; tool-loop
+                                      state stays in-memory only)
+  src/bot/message.ts
+  src/bot/commands.ts                (architect dispatch: pass userId,
+                                      lock keyed by userId)
+  src/bot/callback.ts                (architect_kill: unlock by userId)
+  src/router/cron.ts                 (consolidation dispatch: {userId})
+  src/router/queue.ts
+  src/ai/background.ts
+  src/tools/research-tools.ts        (deep research dispatch: pass userId)
+  src/workflows/consolidation.ts
+  src/workflows/architect.ts
+  src/workflows/research.ts
+
+DEPLOY STATUS: NOT DEPLOYED. Roma to run `npx wrangler deploy
+--minify` after reviewing. node --check passed locally.
+
+NEXT SESSIONS QUEUED
+
+  - C3 end-to-end streaming with tool loops (largest single
+    change; needs own decision doc + careful testing)
+  - Nano Banana 2 image generation wiring
+  - Native Telegram Checklists (replace text-formatted checklist
+    tool with sendChecklist + ChecklistTasksDone updates)
+  - Mini App for mood journal (largest UX improvement)
+  - Pro slot bench harness (verify gemini-3.5-flash matches 2.5
+    Pro on emotional turns)

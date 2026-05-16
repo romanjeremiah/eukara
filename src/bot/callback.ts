@@ -59,7 +59,10 @@ export async function handleCallback(
 
 	// --- Architect kill switch ---
 	} else if (data === 'architect_kill') {
-		await env.CHAT_KV.delete(`architect_lock_${chatId}`);
+		// Lock is keyed by userId post-2026-06-02 migration (architect
+		// workflow's D1 isolation also uses user_id).
+		const userId = query.from.id;
+		await env.CHAT_KV.delete(`architect_lock_${userId}`);
 		await telegram.editMessage(chatId, msgId,
 			'⚙️ <b>Architecture review cancelled.</b> Run /architect to start fresh.', env);
 		await telegram.answerCallbackQuery(query.id, env, { text: 'Cancelled.' }).catch(() => {});
