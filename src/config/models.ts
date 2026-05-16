@@ -23,7 +23,7 @@ export const CF_MODELS = {
 
 /** Gemini models (paid, used for complex/emotional/therapeutic) */
 export const GEMINI_MODELS = {
-	pro: 'gemini-3.1-pro-preview',
+	pro: 'gemini-2.5-pro',
 	flash: 'gemini-3-flash-preview',
 	image: 'gemini-2.5-flash-image',
 	tts: 'gemini-2.5-pro-preview-tts',

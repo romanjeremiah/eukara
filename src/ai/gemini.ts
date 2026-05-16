@@ -167,7 +167,11 @@ export class GeminiProvider implements AIProvider {
 
 	private convertThinking(effort?: string): Record<string, unknown> | undefined {
 		if (!effort) return undefined;
-		// Gemini 3.x uses thinkingLevel: LOW | MEDIUM | HIGH
+		// TODO(2026-05-16): Conditional on model generation. 2.5 family uses
+		// `thinkingBudget: <number>` (e.g. 128, 256, -1 for dynamic); 3.x uses
+		// `thinkingLevel: LOW | MEDIUM | HIGH`. With pro now pinned to 2.5,
+		// thinkingLevel is silently ignored. Fix after benchmark proves the
+		// model choice. See journal 2026-05-16.
 		const levelMap: Record<string, string> = {
 			minimal: 'LOW',
 			low: 'LOW',
