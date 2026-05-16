@@ -1,6 +1,12 @@
-// Reminder & Schedule Tools — userId for ownership, chatId for delivery
+// Reminder & Schedule Tools — userId for ownership, chatId for delivery.
+//
+// Phase 2 (2026-06-02): set_reminder routes through
+// services/reminders.ts (dedup + metadata). update_timezone routes
+// through services/user.ts so the DB+KV writes stay in one place.
 
 import { defineTool, ok } from './factory';
+import * as reminders from '../services/reminders';
+import * as user from '../services/user';
 
 export const setReminder = defineTool(
 	'set_reminder',
@@ -13,14 +19,24 @@ export const setReminder = defineTool(
 	},
 	['task_message', 'context', 'due_at_timestamp', 'recurrence_type'],
 	async (args, env, ctx) => {
-		await env.DB.prepare(
-			'INSERT INTO reminders (user_id, chat_id, text, due_at, recurrence_type, thread_id, status) VALUES (?, ?, ?, ?, ?, ?, ?)'
-		).bind(
-			ctx.userId, ctx.chatId, args.task_message as string,
-			args.due_at_timestamp as number, args.recurrence_type as string,
-			ctx.threadId, 'pending'
-		).run();
-		return ok({ scheduled_at_utc: args.due_at_timestamp });
+		const result = await reminders.createReminder(env, ctx.userId, {
+			chatId: ctx.chatId,
+			threadId: ctx.threadId,
+			text: args.task_message as string,
+			dueAt: args.due_at_timestamp as number,
+			recurrenceType: args.recurrence_type as string,
+			metadata: {
+				origin: 'ai_suggested',
+				source_context: typeof args.context === 'string'
+					? (args.context as string).slice(0, 200)
+					: undefined,
+			},
+		});
+		return ok({
+			scheduled_at_utc: args.due_at_timestamp,
+			reminder_id: result.id,
+			deduplicated: !result.created,
+		});
 	}
 );
 
@@ -30,11 +46,7 @@ export const updateTimezone = defineTool(
 	{ timezone: { type: 'string' } },
 	['timezone'],
 	async (args, env, ctx) => {
-		// Store timezone in user profile AND KV for fast access
-		await env.CHAT_KV.put(`timezone_${ctx.userId}`, args.timezone as string);
-		await env.DB.prepare(
-			'UPDATE user_profiles SET timezone = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?'
-		).bind(args.timezone as string, ctx.userId).run();
+		await user.setUserTimezone(env, ctx.userId, args.timezone as string);
 		return ok({ timezone: args.timezone });
 	}
 );

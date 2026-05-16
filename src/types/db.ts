@@ -14,6 +14,13 @@ export interface UserProfileRow {
 	communication_preference: string;
 	known_hobbies: string | null;
 	core_traits: string | null;
+	/**
+	 * Structured document of communication preferences, interests,
+	 * and subjective opinions. Loaded by services/persona.ts on every
+	 * system-prompt build. Populated by the daily 04:00 consolidation
+	 * cron (Phase 4). NULL for new users or until consolidation runs.
+	 */
+	style_card: string | null;
 	first_seen_at: string;
 	updated_at: string;
 }
@@ -50,6 +57,13 @@ export interface ReminderRow {
 	recurrence_type: string;
 	thread_id: string;
 	status: string;
+	/**
+	 * JSON blob for fields that don't justify their own column:
+	 * richer recurrence config, snooze history, origin context
+	 * (source memory id, source conversation turn), AI-suggested
+	 * vs user-initiated flag. Phase 2 (2026-06-02).
+	 */
+	metadata: string | null;
 	created_at: string;
 	updated_at: string;
 }
@@ -98,6 +112,15 @@ export interface MoodJournalRow {
 	ai_observation: string | null;
 	photo_r2_key: string | null;
 	clinical_tags: string | null;
+	/**
+	 * Distinguishes how a row was created so the scheduled evening cron
+	 * can tell a real check-in from a casual mid-day mood mention.
+	 * Precedence: 'cron_poll' > 'manual_command' > 'inline_chat'.
+	 * Once a row is tagged as a real check-in (cron_poll or manual_command),
+	 * later AI-driven updates must not downgrade it.
+	 * NULL = pre-migration row; treat as 'inline_chat' for safety.
+	 */
+	source: string | null;
 	created_at: string;
 	updated_at: string;
 }
@@ -106,4 +129,38 @@ export interface Episode extends Omit<EpisodeRow, 'emotions' | 'related_memory_i
 	emotions: string[];
 	related_memory_ids: number[];
 	metadata: Record<string, unknown>;
+}
+
+/**
+ * Phase 2 (2026-06-02). Forensics row for every classifier / curator
+ * decision. Written by services/curatorLog.ts. Lets us trace why
+ * routing went one way after the fact (e.g. why did sticky-Pro
+ * classify this turn as same-topic?).
+ */
+export interface CuratorLogRow {
+	id: number;
+	user_id: number;
+	ts: string;
+	/**
+	 * Identifier for which classifier or curator made the decision.
+	 * Examples: 'topic_shift', 'memory_dedup', 'mood_register',
+	 * 'tool_selection'. Used as a grep handle in dashboards.
+	 */
+	classifier: string;
+	/**
+	 * The relevant user input truncated to 200 chars by the writer
+	 * to avoid leaking long conversations into a debug table.
+	 * NULL when the classifier doesn't take user input (e.g. a
+	 * scheduled background decision).
+	 */
+	input_truncated: string | null;
+	/**
+	 * What the classifier decided. Free-form string, conventionally
+	 * a JSON object stringified or a single label.
+	 */
+	decision: string | null;
+	latency_ms: number | null;
+	/** 1 = success, 0 = error. Defaults to 1 on insert. */
+	success: number;
+	error_msg: string | null;
 }

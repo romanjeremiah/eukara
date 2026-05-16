@@ -14,6 +14,9 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     communication_preference TEXT DEFAULT 'friendly',
     known_hobbies TEXT,
     core_traits TEXT,
+    -- Structured communication preferences document; populated by
+    -- the daily 04:00 consolidation cron. NULL until then.
+    style_card TEXT,
     first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -58,6 +61,12 @@ CREATE TABLE IF NOT EXISTS reminders (
     recurrence_type TEXT DEFAULT 'none',
     thread_id TEXT DEFAULT 'default',
     status TEXT DEFAULT 'pending',
+    -- JSON blob for fields that don't deserve their own column:
+    -- richer recurrence config (custom cron, last-day-of-month),
+    -- snooze history, origin context (source memory id, source
+    -- conversation turn), AI-suggested vs user-initiated flag.
+    -- Phase 2 (2026-06-02).
+    metadata TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -130,8 +139,32 @@ CREATE TABLE IF NOT EXISTS mood_journal (
     ai_observation TEXT,
     photo_r2_key TEXT,
     clinical_tags TEXT,
+    -- 'cron_poll' | 'manual_command' | 'inline_chat'.
+    -- Precedence: cron_poll > manual_command > inline_chat. AI-driven
+    -- updates must not downgrade real check-ins.
+    source TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_mood_user_date ON mood_journal(user_id, date);
+
+-- 9. CURATOR LOG (forensics for classifier / curator decisions)
+-- Phase 2 (2026-06-02). Logs every classifier or curator call so we can
+-- trace why routing went a particular way after the fact. input_truncated
+-- is capped at 200 chars by the writer (services/curatorLog.ts) to avoid
+-- leaking long conversations into a debug table.
+CREATE TABLE IF NOT EXISTS curator_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    ts DATETIME DEFAULT CURRENT_TIMESTAMP,
+    classifier TEXT NOT NULL,
+    input_truncated TEXT,
+    decision TEXT,
+    latency_ms INTEGER,
+    success INTEGER DEFAULT 1,
+    error_msg TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_curator_user_ts ON curator_log(user_id, ts);
+CREATE INDEX IF NOT EXISTS idx_curator_classifier ON curator_log(classifier, ts);

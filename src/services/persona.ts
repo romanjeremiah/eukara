@@ -1,18 +1,30 @@
 // ============================================================
-// Persona Service
+// Personas Service
 //
-// Per-user personality evolution. Each user gets a unique
-// persona that adapts based on their interactions.
+// Owns everything to do with the persona_config table plus the
+// composition of Eukara's system prompt for a given user.
+//
+// Phase 2 (2026-06-03). Renamed from personas.ts to match the
+// rest of the Eukara service-file naming convention (singular
+// domain noun: memory.ts, episode.ts, mood.ts, weather.ts).
+// Dependency direction: persona.ts imports from user.ts. user.ts
+// does not import from here.
+//
+// Conversational modes (balanced / warm / direct / playful /
+// minimal) are templates defined in src/config/persona-presets.ts.
+// /persona writes the chosen mode's slider values into persona_config
+// via updatePersonaConfig() below. buildSystemInstruction reads
+// those slider values back at every turn.
 // ============================================================
 
-import type { PersonaConfigRow, UserProfileRow } from '../types/db';
-import { log } from '../lib/logger';
+import type { PersonaConfigRow } from '../types/db';
 import {
 	BASE_INSTRUCTION,
 	MENTAL_HEALTH_DIRECTIVE,
 	FORMATTING_RULES,
 	SECOND_BRAIN_DIRECTIVE,
 } from '../config/personas';
+import { getProfile } from './user';
 
 const DEFAULT_PERSONA: PersonaConfigRow = {
 	user_id: 0,
@@ -28,82 +40,10 @@ const DEFAULT_PERSONA: PersonaConfigRow = {
 };
 
 /**
- * Ensure user profile + persona config exist. Called on first interaction.
- */
-export async function ensureUser(
-	env: Env,
-	userId: number,
-	firstName?: string,
-	username?: string,
-	languageCode?: string
-): Promise<void> {
-	await env.DB.prepare(
-		'INSERT OR IGNORE INTO user_profiles (user_id, first_name, username, language_code) VALUES (?, ?, ?, ?)'
-	).bind(userId, firstName ?? null, username ?? null, languageCode ?? 'en').run();
-
-	await env.DB.prepare(
-		'INSERT OR IGNORE INTO persona_config (user_id) VALUES (?)'
-	).bind(userId).run();
-}
-
-/**
- * Get user's profile.
- */
-export async function getProfile(env: Env, userId: number): Promise<UserProfileRow | null> {
-	return env.DB.prepare(
-		'SELECT * FROM user_profiles WHERE user_id = ?'
-	).bind(userId).first<UserProfileRow>();
-}
-
-/**
- * Get the user's IANA timezone string (e.g. 'Europe/London',
- * 'America/New_York'). Falls back to 'Europe/London' for users
- * without a profile row or a null column. This is the single
- * source of truth — every time/date computation that should
- * feel local to the user goes through here.
- *
- * Also mirrors the value into KV under `timezone_${userId}` so
- * that cron.ts (which runs outside a request lifecycle and wants
- * to avoid DB round-trips per cron tick) can read it cheaply.
- * The mirror is best-effort; a stale KV entry only affects
- * proactive scheduling, never user-facing data.
- */
-export async function getUserTimezone(env: Env, userId: number): Promise<string> {
-	try {
-		const row = await env.DB.prepare(
-			'SELECT timezone FROM user_profiles WHERE user_id = ?'
-		).bind(userId).first<{ timezone: string | null }>();
-		return row?.timezone ?? 'Europe/London';
-	} catch (e) {
-		log.warn('timezone_fetch_error', { userId, msg: (e as Error).message });
-		return 'Europe/London';
-	}
-}
-
-/**
- * Update the user's timezone. Writes to both user_profiles (source
- * of truth) and the KV mirror used by cron.ts.
- *
- * Callers should validate the timezone string before calling —
- * Intl.supportedValuesOf('timeZone') gives the canonical list in
- * modern runtimes. Passing an invalid tz won't throw here but will
- * break downstream toLocaleDateString calls that use it.
- */
-export async function setUserTimezone(
-	env: Env, userId: number, timezone: string
-): Promise<void> {
-	await env.DB.prepare(
-		'UPDATE user_profiles SET timezone = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?'
-	).bind(timezone, userId).run();
-	// Mirror to KV for cron.ts — best effort, don't block on failure.
-	await env.CHAT_KV.put(`timezone_${userId}`, timezone).catch(e =>
-		log.warn('timezone_kv_mirror_error', { userId, msg: (e as Error).message })
-	);
-	log.info('timezone_updated', { userId, timezone });
-}
-
-/**
- * Get user's persona configuration.
+ * Read the user's persona_config row.
+ * Falls back to DEFAULT_PERSONA when the row is missing, so callers
+ * don't have to null-check every slider. The defaults match the
+ * 'balanced' preset.
  */
 export async function getPersonaConfig(env: Env, userId: number): Promise<PersonaConfigRow> {
 	const config = await env.DB.prepare(
@@ -113,7 +53,13 @@ export async function getPersonaConfig(env: Env, userId: number): Promise<Person
 }
 
 /**
- * Update persona config fields.
+ * Patch persona_config fields. Pass any subset of the eight
+ * editable columns; updated_at is bumped automatically.
+ *
+ * Unknown keys are silently dropped via the allow-list. This is
+ * intentional: callers (including tools that the model invokes)
+ * can pass arbitrary user-suggested keys without risk of writing
+ * to columns we did not intend.
  */
 export async function updatePersonaConfig(
 	env: Env, userId: number, updates: Partial<PersonaConfigRow>
@@ -133,14 +79,20 @@ export async function updatePersonaConfig(
 /**
  * Build the full system instruction for a specific user.
  *
- * Composition order (important — earlier layers set the frame,
+ * Composition order (important: earlier layers set the frame,
  * later layers refine):
- *   1. BASE_INSTRUCTION           — identity, voice, therapeutic frameworks
- *   2. USER CONTEXT + PERSONA OVERLAY — who the user is, how Eukara speaks to them
- *   3. MENTAL_HEALTH_DIRECTIVE    — clinical protocol
- *   4. FORMATTING_RULES           — typography and HTML rules
- *   5. SECOND_BRAIN_DIRECTIVE     — accountability, note-taking, actions
- *   6. DYNAMIC CONTEXT            — per-turn memory, time, episodes, etc.
+ *   1. BASE_INSTRUCTION             identity, voice, therapeutic frameworks
+ *   2. USER CONTEXT + PERSONA OVERLAY  who the user is, how Eukara speaks to them
+ *   3. MENTAL_HEALTH_DIRECTIVE      clinical protocol
+ *   4. FORMATTING_RULES             typography and HTML rules
+ *   5. SECOND_BRAIN_DIRECTIVE       accountability, note-taking, actions
+ *   6. DYNAMIC CONTEXT              per-turn memory, time, episodes, etc.
+ *
+ * The persona overlay block is the per-user calibration: tone /
+ * formality / humour / emoji / therapeutic_approach plus any
+ * accumulated evolved_traits, communication_notes, and stated
+ * topics_of_interest. These come from /persona presets or from
+ * the daily evolution cron (Phase 4).
  */
 export async function buildSystemInstruction(
 	env: Env, userId: number, dynamicContext: string
@@ -155,7 +107,7 @@ export async function buildSystemInstruction(
 		? Math.floor((Date.now() - new Date(profile.first_seen_at + 'Z').getTime()) / 86400000)
 		: 0;
 
-	// Per-user persona overlay — tone, formality, humour, evolved traits
+	// Per-user persona overlay: tone, formality, humour, evolved traits.
 	const personaOverlay = [
 		`Tone: ${persona.tone}`,
 		`Formality: ${persona.formality}`,
@@ -167,7 +119,7 @@ export async function buildSystemInstruction(
 		persona.topics_of_interest ? `User's stated interests: ${persona.topics_of_interest}` : '',
 	].filter(Boolean).join('\n');
 
-	// Stable profile facts worth knowing every turn
+	// Stable profile facts worth knowing every turn.
 	const userContext = [
 		profile?.known_hobbies ? `Known hobbies: ${profile.known_hobbies}` : '',
 		profile?.core_traits ? `Core traits: ${profile.core_traits}` : '',
@@ -190,27 +142,4 @@ ${personaOverlay}
 		SECOND_BRAIN_DIRECTIVE,
 		dynamicContext,
 	].join('\n\n');
-}
-
-/**
- * Update user profile with new information from observation.
- */
-export async function updateProfileFromObservation(
-	env: Env, userId: number,
-	updates: { hobbies?: string; traits?: string; preference?: string }
-): Promise<void> {
-	const fields: string[] = [];
-	const values: (string | number)[] = [];
-
-	if (updates.hobbies) { fields.push('known_hobbies = ?'); values.push(updates.hobbies); }
-	if (updates.traits) { fields.push('core_traits = ?'); values.push(updates.traits); }
-	if (updates.preference) { fields.push('communication_preference = ?'); values.push(updates.preference); }
-
-	if (!fields.length) return;
-	fields.push('updated_at = CURRENT_TIMESTAMP');
-	values.push(userId);
-
-	await env.DB.prepare(
-		`UPDATE user_profiles SET ${fields.join(', ')} WHERE user_id = ?`
-	).bind(...values).run();
 }

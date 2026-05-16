@@ -17,9 +17,12 @@ const THERAPEUTIC_CATEGORIES = [
 export async function saveMemory(
 	env: Env, userId: number, category: string, fact: string, importance = 1
 ): Promise<void> {
-	await env.DB.prepare(
-		'INSERT OR IGNORE INTO user_profiles (user_id) VALUES (?)'
-	).bind(userId).run();
+	// Phase 2 (2026-06-03): the redundant `INSERT OR IGNORE INTO
+	// user_profiles` bootstrap was removed from here. user_profiles
+	// is owned by services/user.ts:ensureUser, which the message
+	// handler (and every other entry point) calls before any service
+	// touches per-user data. Bootstrapping in two places risked
+	// drift if ensureUser ever gains new seed fields.
 
 	const result = await env.DB.prepare(
 		'INSERT INTO memories (user_id, category, fact, importance_score) VALUES (?, ?, ?, ?)'

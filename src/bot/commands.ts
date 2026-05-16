@@ -10,6 +10,7 @@ import type { TelegramMessage, TelegramInlineKeyboardButton } from '../types/tel
 import type { MemoryRow, PersonaConfigRow } from '../types/db';
 import * as telegram from '../lib/telegram';
 import * as memory from '../services/memory';
+import * as user from '../services/user';
 import * as persona from '../services/persona';
 import { PERSONA_PRESETS, type PersonaPreset } from '../config/persona-presets';
 import { TIMEZONE_PRESETS, findPresetByTz, isValidTimezone } from '../config/timezone-presets';
@@ -50,7 +51,14 @@ export async function handleCommand(
 			// how to send the 0-10 poll and wire the KV context for the
 			// poll_answer webhook to find. Using the queue keeps the
 			// webhook path fast and isolates the Telegram API call.
-			await env.TASK_QUEUE.send({ type: 'mood_poll', userId: fromId, chatId });
+			// 2026-06-02 Phase 1: pass source so the row gets tagged as
+			// manual_command (distinct from cron_poll evening triggers).
+			await env.TASK_QUEUE.send({
+				type: 'mood_poll',
+				userId: fromId,
+				chatId,
+				source: 'manual_command',
+			});
 			return true;
 		}
 
@@ -59,8 +67,11 @@ export async function handleCommand(
 				await telegram.sendMessage(chatId, threadId, 'This command is owner-only.', env);
 				return true;
 			}
-			// Concurrency guard with kill switch
-			const lock = await env.CHAT_KV.get(`architect_lock_${chatId}`);
+			const userId = msg.from?.id;
+			if (!userId) return true;
+			// Concurrency guard with kill switch. Keyed by userId for
+			// per-user isolation (matches the workflow's D1 isolation).
+			const lock = await env.CHAT_KV.get(`architect_lock_${userId}`);
 			if (lock) {
 				const age = Math.round((Date.now() - parseInt(lock)) / 1000);
 				await telegram.sendMessage(chatId, threadId,
@@ -71,7 +82,7 @@ export async function handleCommand(
 					]] } });
 				return true;
 			}
-			await env.CHAT_KV.put(`architect_lock_${chatId}`, String(Date.now()), { expirationTtl: 120 });
+			await env.CHAT_KV.put(`architect_lock_${userId}`, String(Date.now()), { expirationTtl: 120 });
 
 			const statusRes = await telegram.sendMessage(chatId, threadId,
 				'⚙️ <b>Architecture Review</b>\n\n<i>Starting research workflow...</i>', env);
@@ -80,10 +91,10 @@ export async function handleCommand(
 			try {
 				await env.ARCHITECT_WORKFLOW.create({
 					id: `architect-${Date.now()}`,
-					params: { chatId, statusMsgId },
+					params: { chatId, userId, statusMsgId },
 				});
 			} catch (e) {
-				await env.CHAT_KV.delete(`architect_lock_${chatId}`);
+				await env.CHAT_KV.delete(`architect_lock_${userId}`);
 				await telegram.sendMessage(chatId, threadId,
 					`⚙️ Workflow error: ${((e as Error).message ?? '').slice(0, 100)}`, env);
 			}
@@ -140,7 +151,7 @@ export async function handleCommand(
 		case '/persona': {
 			const userId = msg.from?.id;
 			if (!userId) return true;
-			await persona.ensureUser(env, userId, msg.from?.first_name, msg.from?.username, msg.from?.language_code);
+			await user.ensureUser(env, userId, msg.from?.first_name, msg.from?.username, msg.from?.language_code);
 			const current = await persona.getPersonaConfig(env, userId);
 			// Infer which preset (if any) matches the user's current config.
 			// Matching is best-effort — evolved_traits and communication_notes
@@ -215,7 +226,7 @@ export async function handleCommand(
 		case '/timezone': {
 			const userId = msg.from?.id;
 			if (!userId) return true;
-			await persona.ensureUser(env, userId, msg.from?.first_name, msg.from?.username, msg.from?.language_code);
+			await user.ensureUser(env, userId, msg.from?.first_name, msg.from?.username, msg.from?.language_code);
 
 			// Parse an optional argument: /timezone Europe/Berlin
 			// Accepts both IANA strings and preset labels (case-insensitive).
@@ -235,7 +246,7 @@ export async function handleCommand(
 					return true;
 				}
 
-				await persona.setUserTimezone(env, userId, candidate);
+				await user.setUserTimezone(env, userId, candidate);
 				const preset = findPresetByTz(candidate);
 				const nowLocal = new Date().toLocaleString('en-GB', { timeZone: candidate });
 				await telegram.sendMessage(chatId, threadId,
@@ -245,7 +256,7 @@ export async function handleCommand(
 			}
 
 			// No arg → show picker
-			const current = await persona.getUserTimezone(env, userId);
+			const current = await user.getUserTimezone(env, userId);
 			const currentPreset = findPresetByTz(current);
 			const header = currentPreset
 				? `<b>Your timezone: ${currentPreset.flag} ${currentPreset.label}</b>\n<code>${current}</code>\n\nPick a new one:`

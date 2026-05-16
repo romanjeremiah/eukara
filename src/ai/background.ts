@@ -3,11 +3,41 @@
 //
 // Lightweight CF AI calls for non-user-facing processing.
 // Uses the cheapest models within the free neuron budget.
+//
+// 2026-06-02 F2 + F6 fix: unified extractText helper that handles
+// both OpenAI-compat (choices[0].message.content) and legacy native
+// CF (response: string) response shapes. Previously deduplicateMemories
+// silently returned null because GLM 4.7 Flash returns OpenAI-compat
+// but generate() only parsed legacy.
 // ============================================================
 
 import { CF_MODELS } from '../config/models';
 import { log } from '../lib/logger';
 import { runAI } from '../lib/ai-gateway';
+
+/**
+ * Extract text from a CF AI response, handling both response shapes:
+ *   - OpenAI-compat: choices[0].message.content (Gemma, GLM, Kimi, Qwen3)
+ *   - Legacy native: response: string (Llama 3.x and earlier)
+ * Returns null if neither shape matches or the text is empty.
+ */
+function extractText(result: unknown): string | null {
+	if (typeof result === 'string') return result || null;
+	if (!result || typeof result !== 'object') return null;
+
+	// OpenAI-compat first (newer schema).
+	const openAi = (result as { choices?: Array<{ message?: { content?: unknown } }> }).choices;
+	if (Array.isArray(openAi) && openAi.length) {
+		const content = openAi[0]?.message?.content;
+		if (typeof content === 'string' && content.trim()) return content;
+	}
+
+	// Legacy native
+	const legacy = (result as { response?: unknown }).response;
+	if (typeof legacy === 'string' && legacy.trim()) return legacy;
+
+	return null;
+}
 
 /**
  * Run a simple text generation on a CF AI model.
@@ -23,14 +53,13 @@ async function generate(
 		if (system) messages.push({ role: 'system', content: system });
 		messages.push({ role: 'user', content: prompt });
 
-		const result = await runAI<{ response?: string } | string>(
+		const result = await runAI<unknown>(
 			ai,
 			model as unknown as keyof AiModels,
 			{ messages, max_tokens: 512 }
 		);
 
-		if (typeof result === 'string') return result;
-		return result?.response ?? null;
+		return extractText(result);
 	} catch (err) {
 		const error = err as Error;
 		log.error('bg_ai_error', { model, msg: error.message });

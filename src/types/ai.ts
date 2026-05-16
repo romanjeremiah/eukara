@@ -69,6 +69,17 @@ export type AIMessageContent =
 export interface AIMessage {
 	role: 'user' | 'model' | 'system' | 'tool';
 	content: AIMessageContent;
+	/**
+	 * Provider-specific raw parts for in-turn tool loop continuity.
+	 * On Gemini with tool combination, the next call must echo back the
+	 * model's previous `candidates[0].content.parts` array (including
+	 * `thoughtSignature`, `toolCall`, `toolResponse`) for the model to
+	 * maintain context. When set, `GeminiProvider.convertMessages` uses
+	 * these directly and skips the standard text/inline_data conversion.
+	 * `CloudflareProvider` ignores this field. Only meaningful within a
+	 * single user message's tool loop; not persisted to KV history.
+	 */
+	_rawProviderParts?: unknown[];
 }
 
 export interface AIToolCall {
@@ -80,6 +91,29 @@ export interface AIToolCall {
 export interface AIResponse {
 	text: string;
 	toolCalls?: AIToolCall[];
+	/**
+	 * Gemini-only: the raw `candidates[0].content` from the response,
+	 * with all parts (text, functionCall, thoughtSignature). Used by
+	 * the in-turn tool loop in message.ts to feed the model's previous
+	 * output back as an AIMessage with `_rawProviderParts`. Not
+	 * persisted to KV history.
+	 */
+	_geminiRawContent?: unknown;
+	/**
+	 * Gemini-only: `candidates[0].groundingMetadata` from Google Search
+	 * grounding. Contains `webSearchQueries`, `groundingChunks`,
+	 * `groundingSupports`. Rendered as inline citations in the Telegram
+	 * output.
+	 */
+	_groundingMetadata?: unknown;
+	/**
+	 * Cloudflare-only (Gemma 4 with `web_search_options`):
+	 * `choices[0].message.annotations[]` from the response. Each entry
+	 * is `{type: 'url_citation', url_citation: {url, title, start_index,
+	 * end_index}}`. Rendered as numbered footnote links in the Telegram
+	 * output.
+	 */
+	_annotations?: unknown[];
 }
 
 // --- Streaming ---
@@ -95,8 +129,25 @@ export interface AIStreamChunk {
 export interface AIProviderConfig {
 	temperature?: number;
 	maxTokens?: number;
-	thinkingEffort?: 'minimal' | 'low' | 'medium' | 'high';
+	// `dynamic` lets the model decide thinking budget per request.
+	// Recommended default for 2.5 Pro per Google docs (cost-efficient,
+	// 30-50% cheaper than fixed-high). Maps to `thinkingBudget: -1` on
+	// 2.5 family; ignored on 3.x (3.x is always dynamic anyway).
+	thinkingEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'dynamic';
 	systemInstruction?: string;
+	/**
+	 * Always-on grounding flag. Effect depends on provider+model:
+	 *  - GeminiProvider on a Gemini 3 family model (e.g. gemini-3.5-flash):
+	 *    prepends `{googleSearch: {}}` to the tools array and sets
+	 *    `toolConfig.includeServerSideToolInvocations: true` if custom
+	 *    function declarations are also present (tool combination).
+	 *  - CloudflareProvider on Gemma 4: adds `web_search_options` to the
+	 *    payload with `search_context_size: 'medium'` and UK user_location.
+	 *  - Other providers/models: ignored.
+	 * The model decides per-turn whether to actually invoke search; the
+	 * flag only makes the capability available. Billing is per-query.
+	 */
+	enableGrounding?: boolean;
 }
 
 // --- The Provider Interface ---
@@ -125,11 +176,18 @@ export interface AIProvider {
 
 // --- Model Router Types ---
 
-export type TaskComplexity = 'low' | 'medium' | 'high';
+export type TaskComplexity = 'minimal' | 'low' | 'medium' | 'high' | 'dynamic';
 
 export interface ModelRoute {
 	provider: 'cloudflare' | 'gemini';
 	model: string;
 	thinkingEffort: TaskComplexity;
 	reason: string;
+	/**
+	 * Whether grounding (Google Search / web_search_options) should be
+	 * enabled on this route. Set by the router based on the model's
+	 * verified capability — true for Gemma 4 and Gemini 3.x family,
+	 * false for code/analytical routes (Qwen3 30B schema unverified).
+	 */
+	enableGrounding?: boolean;
 }

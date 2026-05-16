@@ -23,10 +23,10 @@ export type EntryType = 'morning' | 'midday' | 'evening';
  * local date so that "today's check-in" matches their sense of
  * the day, regardless of where the server or the user is.
  *
- * Callers should read the user's timezone from user_profiles via
- * persona.getProfile() or persona.getUserTimezone() and pass it in.
- * Defaults to 'Europe/London' for safety during the migration —
- * remove once all callers are passing a tz explicitly.
+ * Callers should resolve the user's timezone via
+ * services/user.ts:getUserTimezone() and pass it in. The default
+ * 'Europe/London' is a defensive fallback for environments where
+ * the lookup has not yet been wired (e.g. early tests).
  */
 export function todayLocal(timezone = 'Europe/London'): string {
 	return new Date().toLocaleDateString('en-CA', { timeZone: timezone });
@@ -68,12 +68,38 @@ export async function hasCheckedInToday(
 }
 
 /**
+ * Source precedence ordering. Higher index = stronger source.
+ * Used by upsertEntry to reject downgrades: once a row is tagged
+ * 'cron_poll' or 'manual_command' (a deliberate check-in), an
+ * AI-driven 'inline_chat' write must not overwrite the label.
+ *
+ * NULL is treated as 'inline_chat' for safety, so pre-Phase-1
+ * rows behave like the weakest source.
+ */
+const SOURCE_PRECEDENCE: Record<string, number> = {
+	inline_chat: 0,
+	manual_command: 1,
+	cron_poll: 2,
+};
+
+function sourceRank(value: string | null | undefined): number {
+	if (!value) return SOURCE_PRECEDENCE.inline_chat!;
+	return SOURCE_PRECEDENCE[value] ?? SOURCE_PRECEDENCE.inline_chat!;
+}
+
+/**
  * Partial update for today's entry. Creates a new row if none exists,
  * otherwise merges the supplied fields into the existing row. Fields
  * the caller omits are left untouched.
  *
  * Returns the final row after the write. Emotions and activities are
  * stored as JSON strings; callers pass the already-stringified value.
+ *
+ * Source precedence (Phase 2): if `updates.source` is supplied and
+ * the existing row's source has a higher precedence, the source
+ * field is dropped from the write so a casual 'inline_chat' AI write
+ * cannot downgrade a deliberate 'cron_poll' check-in. Other fields
+ * are still merged. Precedence: cron_poll > manual_command > inline_chat.
  */
 export async function upsertEntry(
 	env: Env,
@@ -97,12 +123,27 @@ export async function upsertEntry(
 		return getEntry(env, userId, date, entryType);
 	}
 
+	// Source precedence enforcement: drop the source field from the
+	// update if it would downgrade the existing row.
+	const effectiveUpdates: Record<string, unknown> = { ...updates };
+	if ('source' in effectiveUpdates) {
+		const incoming = effectiveUpdates.source as string | null | undefined;
+		if (sourceRank(incoming) < sourceRank(existing.source)) {
+			log.info('mood_source_downgrade_blocked', {
+				userId, date, entryType,
+				existing: existing.source,
+				attempted: incoming ?? null,
+			});
+			delete effectiveUpdates.source;
+		}
+	}
+
 	// Merge: only SET fields the caller actually supplied.
-	const keys = Object.keys(updates);
+	const keys = Object.keys(effectiveUpdates);
 	if (!keys.length) return existing;
 
 	const setClause = keys.map(k => `${k} = ?`).join(', ');
-	const values = Object.values(updates);
+	const values = Object.values(effectiveUpdates);
 
 	await env.DB.prepare(
 		`UPDATE mood_journal SET ${setClause}, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND date = ? AND entry_type = ?`
@@ -169,6 +210,95 @@ export async function countRecentCheckins(
 export async function deleteAll(env: Env, userId: number): Promise<void> {
 	await env.DB.prepare('DELETE FROM mood_journal WHERE user_id = ?').bind(userId).run();
 	log.info('mood_deleted', { userId });
+}
+
+// ============================================================
+// Phase 2 helpers (2026-06-02)
+//
+// Domain queries the mood-flow + cron use to make decisions like
+// "should we send an evening reminder?" or "is sleep already
+// logged?". Each takes the user's timezone so "today" is local.
+// ============================================================
+
+/**
+ * True if today's evening row exists AND was created by a real
+ * check-in (source 'cron_poll' or 'manual_command'). A casual
+ * mid-day AI write that landed in the evening slot does NOT
+ * count, because the source will be 'inline_chat' or NULL.
+ *
+ * Used by the evening cron to decide whether to fire the
+ * scheduled reminder. If the user has already done a real
+ * check-in (early via /mood), the cron stays quiet.
+ */
+export async function hasRealEveningCheckin(
+	env: Env, userId: number, timezone = 'Europe/London'
+): Promise<boolean> {
+	const today = todayLocal(timezone);
+	const row = await env.DB.prepare(
+		`SELECT source FROM mood_journal
+		 WHERE user_id = ? AND date = ? AND entry_type = 'evening'
+		 LIMIT 1`
+	).bind(userId, today).first<{ source: string | null }>();
+	if (!row) return false;
+	return row.source === 'cron_poll' || row.source === 'manual_command';
+}
+
+/**
+ * True if today has any sleep data logged in the evening row
+ * (hours or quality). Used by the mood-flow synthesis step to
+ * decide whether to ask about sleep.
+ */
+export async function hasSleepLoggedToday(
+	env: Env, userId: number, timezone = 'Europe/London'
+): Promise<boolean> {
+	const today = todayLocal(timezone);
+	const row = await env.DB.prepare(
+		`SELECT sleep_hours, sleep_quality FROM mood_journal
+		 WHERE user_id = ? AND date = ? AND entry_type = 'evening'
+		 LIMIT 1`
+	).bind(userId, today).first<{ sleep_hours: number | null; sleep_quality: string | null }>();
+	if (!row) return false;
+	return row.sleep_hours !== null || (row.sleep_quality !== null && row.sleep_quality !== '');
+}
+
+/**
+ * Merge a list of activity strings into today's row, dedup-aware.
+ * Activities are stored as a JSON array of strings. New entries
+ * are appended in order, skipping any value already present
+ * (case-insensitive match).
+ *
+ * Returns the new full array after merge, so callers can use it
+ * without an extra read. Empty `newActivities` is a no-op that
+ * returns the existing array (or [] if no row yet).
+ */
+export async function mergeActivities(
+	env: Env,
+	userId: number,
+	date: string,
+	entryType: EntryType,
+	newActivities: string[]
+): Promise<string[]> {
+	const existing = await getEntry(env, userId, date, entryType);
+	const current = existing?.activities ? safeJsonArray(existing.activities) : [];
+
+	if (!newActivities.length) return current;
+
+	const seen = new Set(current.map(s => s.toLowerCase().trim()));
+	const merged = [...current];
+	for (const a of newActivities) {
+		const key = a.toLowerCase().trim();
+		if (!key || seen.has(key)) continue;
+		seen.add(key);
+		merged.push(a);
+	}
+
+	// If nothing was actually new, skip the write.
+	if (merged.length === current.length) return current;
+
+	await upsertEntry(env, userId, date, entryType, {
+		activities: JSON.stringify(merged),
+	});
+	return merged;
 }
 
 function safeJsonArray(raw: string | null): string[] {

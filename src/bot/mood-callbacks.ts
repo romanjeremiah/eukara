@@ -3,11 +3,21 @@
 //
 // Split out from callback.ts to keep that file readable.
 // Handles the two "big" mood interactions:
-//   handleEmotionToggle — user tapped an individual emotion
-//   handleEmotionsDone  — user finished selecting, synthesise summary
+//   handleEmotionToggle    — user tapped an individual emotion
+//   handleEmotionsDone     — webhook-thin: persists selection,
+//                            enqueues the heavy synthesis call
+//   runEmotionsDoneWork    — exported, queue-worker entry point
+//                            for the heavy Gemini Pro synthesis
 //
 // Category and "next" flows stay in callback.ts because they're
 // trivial stateless button-swaps.
+//
+// 2026-06-02 Phase 1: handleEmotionsDone used to run the 2000-token
+// thinking-high Gemini Pro call inline via ctx.waitUntil. That hit
+// the 30s waitUntil ceiling on bad-latency days. Now the heavy
+// work lives in runEmotionsDoneWork, invoked from the queue worker
+// (src/router/queue.ts `mood_emotions_done` case) with a 15-min
+// wall clock and 3 retries.
 // ============================================================
 
 import type { TelegramCallbackQuery } from '../types/telegram';
@@ -19,16 +29,16 @@ import {
 	MENTAL_HEALTH_DIRECTIVE,
 	FORMATTING_RULES,
 } from '../config/personas';
-import { POSITIVE_EMOTIONS, NEGATIVE_EMOTIONS, classifyEmotion } from '../config/emotions';
+import { classifyEmotion } from '../config/emotions';
 import * as telegram from '../lib/telegram';
-import { normaliseMarkdown, formatTime } from '../lib/formatting';
+import { normaliseMarkdown, stripLeakedThoughts, formatTime } from '../lib/formatting';
 import { log } from '../lib/logger';
 import { loadHistory, saveHistory } from '../lib/history';
 import * as mood from '../services/mood';
 import * as memory from '../services/memory';
 import * as episode from '../services/episode';
 import * as vector from '../services/vector';
-import * as persona from '../services/persona';
+import * as user from '../services/user';
 
 /**
  * Toggle a single emotion in/out of the user's selection.
@@ -66,22 +76,24 @@ export async function handleEmotionToggle(
 	if (adding) selected.push(emotion);
 	else selected.splice(idx, 1);
 
-	await env.CHAT_KV.put(key, JSON.stringify(selected), { expirationTtl: 3600 });
+	await env.CHAT_KV.put(key, JSON.stringify(selected), { expirationTtl: 86400 });
 	await telegram.answerCallbackQuery(query.id, env, {
 		text: adding ? `✓ ${emotion}` : `✗ ${emotion} removed`,
 	}).catch(() => {});
 }
 
 /**
- * User has finished selecting emotions. We:
- *   1. Persist the emotion list to today's mood_journal entry
- *   2. Pull mood history, therapeutic notes, relevant episodes,
- *      semantic context
- *   3. Ask Gemini Pro for a full therapeutic summary
- *   4. Send the summary, save the turn to history
+ * User has finished selecting emotions. Webhook-thin handler:
+ *   1. Clear the emotion keyboard
+ *   2. Acknowledge the callback
+ *   3. Retrieve the selection buffer from KV and clear it
+ *   4. Persist emotions against today's evening entry
+ *   5. Fresh typing indicator
+ *   6. Enqueue `mood_emotions_done` for the heavy synthesis
  *
- * This is the heaviest call in the mood flow. If it fails, we fall
- * back to a minimal acknowledgement so the user isn't left hanging.
+ * The heavy Gemini Pro call lives in runEmotionsDoneWork below,
+ * invoked from the queue worker so the 15-min wall clock applies
+ * instead of the webhook's 30s waitUntil ceiling.
  */
 export async function handleEmotionsDone(
 	query: TelegramCallbackQuery,
@@ -99,12 +111,11 @@ export async function handleEmotionsDone(
 		return;
 	}
 
-	// Clear the emotion keyboard
+	// Clear the emotion keyboard so it can't be tapped again.
 	await telegram.editMessageReplyMarkup(chatId, msgId, null, env).catch(() => {});
 	await telegram.answerCallbackQuery(query.id, env).catch(() => {});
-	await telegram.sendChatAction(chatId, threadId, 'typing', env).catch(() => {});
 
-	// Retrieve selections, then clear the buffer
+	// Retrieve selections, then clear the buffer.
 	const key = `mood_emo_selected_${userId}`;
 	const stored = await env.CHAT_KV.get(key) ?? '[]';
 	let selected: string[] = [];
@@ -114,9 +125,10 @@ export async function handleEmotionsDone(
 	} catch { /* empty selection is fine */ }
 	await env.CHAT_KV.delete(key);
 
-	// Persist emotions against today's evening entry, using the
-	// user's local timezone to determine "today".
-	const tz = await persona.getUserTimezone(env, userId);
+	// Persist emotions against today's evening entry, using the user's
+	// local timezone to determine "today". Do this synchronously so the
+	// row is committed before the queue worker picks up.
+	const tz = await user.getUserTimezone(env, userId);
 	const today = mood.todayLocal(tz);
 	if (selected.length) {
 		await mood.upsertEntry(env, userId, today, 'evening', {
@@ -125,19 +137,83 @@ export async function handleEmotionsDone(
 		log.info('mood_emotions_logged', { userId, count: selected.length });
 	}
 
-	// Partition for the prompt
-	const negSet = new Set<string>(NEGATIVE_EMOTIONS);
-	const posSelected = selected.filter(e => !negSet.has(e));
-	const negSelected = selected.filter(e => negSet.has(e));
+	// Fresh typing indicator so the user has visual feedback while the
+	// queue worker spins up. The work function sends another typing
+	// indicator when it actually starts (typing actions expire ~5s).
+	await telegram.sendChatAction(chatId, threadId, 'typing', env).catch(() => {});
+
+	// Enqueue the heavy synthesis. Queue gives 15-min wall clock + 3
+	// retries vs the webhook's 30s waitUntil ceiling. Fallback to
+	// inline only if the queue binding is missing.
+	if (!env.TASK_QUEUE) {
+		log.warn('mood_emotions_no_queue_binding_fallback_inline', { userId });
+		await runEmotionsDoneWork(env, userId, chatId, threadId, selected);
+		return;
+	}
+
+	await env.TASK_QUEUE.send({
+		type: 'mood_emotions_done',
+		userId,
+		chatId,
+		threadId,
+		selectedEmotions: selected,
+	});
+	log.info('mood_emotions_enqueued', { userId, count: selected.length });
+}
+
+/**
+ * Queue-worker entry point for the mood-flow synthesis. Pulls
+ * mood history, therapeutic notes, recent episodes, and semantic
+ * context, asks Gemini Pro for the full therapeutic summary, and
+ * sends it with the tg-time footer + saves history.
+ *
+ * The emotions and keyboard have already been handled by
+ * handleEmotionsDone; this function only owns the AI synthesis.
+ *
+ * Exported because the queue worker (router/queue.ts
+ * `mood_emotions_done` case) calls this. Also called inline by
+ * handleEmotionsDone as a fallback when the TASK_QUEUE binding
+ * is missing.
+ */
+export async function runEmotionsDoneWork(
+	env: Env,
+	userId: number,
+	chatId: number,
+	threadId: string,
+	selected: string[]
+): Promise<void> {
+	// Fresh typing indicator at the start of consumer processing.
+	await telegram.sendChatAction(chatId, threadId, 'typing', env).catch(() => {});
+
+	// Partition for the prompt. classifyEmotion is the source of truth
+	// so this stays correct if more emotions are added to any list.
+	const posSelected: string[] = [];
+	const negSelected: string[] = [];
+	const dissSelected: string[] = [];
+	for (const e of selected) {
+		const kind = classifyEmotion(e);
+		if (kind === 'positive') posSelected.push(e);
+		else if (kind === 'negative') negSelected.push(e);
+		else if (kind === 'dissociative') dissSelected.push(e);
+	}
 
 	// Pull today's score (written by the poll answer handler earlier)
+	// using the user's timezone to align with what "today" means.
+	const tz = await user.getUserTimezone(env, userId);
+	const today = mood.todayLocal(tz);
 	const todayEntry = await mood.getEntry(env, userId, today, 'evening').catch(() => null);
 	const todayScore = todayEntry?.mood_score ?? null;
 
 	// Pull context for the therapeutic summary. Episodes are pulled
 	// by recency — filter-by-emotion isn't implemented in episode
 	// service yet, so we use the most recent 5 unconditionally.
-	const [history, therapeuticNotes, relevantEpisodes, semanticCtx] = await Promise.all([
+	//
+	// 2026-06-03 (heuristic injection): also pull category='trigger'
+	// and category='schema' memories so the synthesis prompt can
+	// compare today's signals against KNOWN HEURISTICS instead of
+	// summarising in a vacuum. Both degrade to [] on error — missing
+	// heuristics should not crash the synthesis.
+	const [history, therapeuticNotes, relevantEpisodes, semanticCtx, triggers, schemas] = await Promise.all([
 		mood.getHistory(env, userId, 30, 'evening').catch(() => []),
 		memory.getRecentTherapeuticMemories(env, userId, 30).catch(() => []),
 		episode.getRecentEpisodes(env, userId, 5).catch(() => []),
@@ -146,6 +222,8 @@ export async function handleEmotionsDone(
 			userId,
 			selected.join(' ') || 'mood emotions feelings'
 		).catch(() => ''),
+		memory.getMemoriesByCategory(env, userId, 'trigger', 10).catch(() => []),
+		memory.getMemoriesByCategory(env, userId, 'schema', 10).catch(() => []),
 	]);
 
 	const historyContext = mood.formatHistoryForContext(history, 10);
@@ -158,14 +236,31 @@ export async function handleEmotionsDone(
 	const episodeContext = episode.formatEpisodesForContext(relevantEpisodes)
 		|| '(No past episodes to reference.)';
 
+	// 2026-06-03 (heuristic injection): format triggers + schemas into a
+	// KNOWN HEURISTICS block. The prompt below tells the model to find
+	// friction between today's data and these heuristics rather than
+	// summarising the data in isolation. Empty block when no heuristics
+	// exist yet — graceful degradation for new users.
+	const heuristicsContext = (triggers.length || schemas.length)
+		? '[KNOWN HEURISTICS]\n'
+			+ (triggers.length
+				? 'Known triggers:\n' + triggers.slice(0, 8).map(t => `- ${t.fact}`).join('\n') + '\n'
+				: '')
+			+ (schemas.length
+				? 'Known schemas/patterns:\n' + schemas.slice(0, 8).map(s => `- ${s.fact}`).join('\n')
+				: '')
+		: '';
+
 	const prompt = buildSummaryPrompt({
 		todayScore,
 		posSelected,
 		negSelected,
+		dissSelected,
 		historyContext,
 		clinicalContext,
 		episodeContext,
 		semanticCtx,
+		heuristicsContext,
 	});
 
 	let summary: string;
@@ -187,7 +282,10 @@ export async function handleEmotionsDone(
 		summary = fallbackSummary(selected);
 	}
 
-	// Defensive markdown cleanup.
+	// Defensive cleanup before delivery (2026-06-02). Mood flow calls
+	// provider.chat() directly and was bypassing the strip pass that
+	// the main message handler runs. Strip first, then normalise.
+	summary = stripLeakedThoughts(summary);
 	summary = normaliseMarkdown(summary);
 
 	// Subtle footer showing when the check-in was logged. Uses tg-time
@@ -217,38 +315,67 @@ export async function handleEmotionsDone(
 	log.info('mood_summary_sent', {
 		userId,
 		emotionsCount: selected.length,
+		posCount: posSelected.length,
+		negCount: negSelected.length,
+		dissCount: dissSelected.length,
+		heuristicsUsed: triggers.length + schemas.length,
 		summaryLen: summary.length,
 	});
 
-	// Clear the health_checkin_active flag — the check-in is complete.
-	await env.CHAT_KV.delete(`health_checkin_active_${userId}`);
+	// 2026-06-03 (pattern c, 24h resume): flow completed cleanly. Drop
+	// the pending flow + resume-offered flags so a fresh check-in is
+	// clean state. Done in parallel with the existing active-flag
+	// delete; all three are best-effort.
+	await Promise.all([
+		env.CHAT_KV.delete(`health_checkin_active_${userId}`),
+		env.CHAT_KV.delete(`mood_flow_pending_${userId}`),
+		env.CHAT_KV.delete(`mood_flow_resume_offered_${userId}`),
+	]).catch(() => {});
 }
 
 interface SummaryInputs {
 	todayScore: number | null;
 	posSelected: string[];
 	negSelected: string[];
+	dissSelected: string[];
 	historyContext: string;
 	clinicalContext: string;
 	episodeContext: string;
 	semanticCtx: string;
+	heuristicsContext: string;
 }
 
 function buildSummaryPrompt(inputs: SummaryInputs): string {
 	const {
-		todayScore, posSelected, negSelected,
+		todayScore, posSelected, negSelected, dissSelected,
 		historyContext, clinicalContext, episodeContext, semanticCtx,
+		heuristicsContext,
 	} = inputs;
 
-	return `The user just completed their full mood check-in. Analyse everything and give a meaningful therapeutic summary.
+	// 2026-06-03: prompt rewritten for heuristic injection. The model is
+	// instructed to find FRICTION between today's data and the known
+	// heuristics block, rather than summarising the data on its own.
+	// This addresses the "averaging into neutral prose" problem: a
+	// summary of [score 4, anxious, tired] reads the same for every
+	// user; a contradiction ("high sleep but low energy") is specific.
+	//
+	// Dissociative emotions are partitioned separately because they
+	// represent altered-perception states rather than affective valence.
+	// The prompt acknowledges that distinction so the model doesn't
+	// collapse "numb" into "sad" or treat "depersonalised" as a
+	// negative feeling.
+	return `The user just completed their full mood check-in. Today's data is below, alongside heuristics you already know about them. Find the friction — do not summarise.
 
 TODAY'S CHECK-IN:
 Mood score: ${todayScore ?? 'not recorded'}/10
 Positive emotions selected: ${posSelected.length ? posSelected.join(', ') : 'none'}
 Negative emotions selected: ${negSelected.length ? negSelected.join(', ') : 'none'}
+Dissociative / altered-state emotions selected: ${dissSelected.length ? dissSelected.join(', ') : 'none'}
 
 RECENT MOOD HISTORY:
 ${historyContext}
+
+${heuristicsContext || '(No known triggers or schemas on file yet.)'}
 
 ${clinicalContext}
 
@@ -256,14 +383,14 @@ ${episodeContext}
 
 ${semanticCtx}
 
-YOUR RESPONSE (follow this structure naturally, not as a list):
-1. Acknowledge what they shared today. Name the emotions they selected. If the mix of positive and negative is notable (e.g. "inspired but lonely"), explore that tension briefly.
-2. Compare to recent days. Is the score trending up, down, or stable? Are certain emotions recurring? Note any patterns without being clinical.
-3. If past episodes are available, reference what happened in similar emotional states before. What helped? What didn't? Use this to inform your suggestion.
-4. Draw ONE therapeutic observation. Connect today's emotions to known patterns, triggers, or schemas from the clinical notes. Use the therapeutic frameworks (AEDP, IFS, schema) as lenses for YOUR thinking — do NOT name them to the user.
-5. End with ONE natural question that invites deeper conversation but doesn't pressure.
+YOUR RESPONSE (3-5 sentences, natural prose, no list):
 
-Keep it warm, direct, and personal. 3-5 sentences. No bullet points. No clinical jargon unless it adds genuine insight. You know this person well.`;
+1. Acknowledge what they shared today, in your own register. Do NOT validate the receipt of information — ban opening phrases like "I hear you", "That makes sense", "It sounds like". React directly to the content instead.
+2. Find the friction. Compare today's data against the KNOWN HEURISTICS, past episodes, and recent history. Point out a specific contradiction or echo — "high sleep but flat energy", "this is the same shape as Tuesday", "the trigger you flagged last month is back" — something concrete. Avoid generic trend descriptions ("a mixed day", "your mood is variable").
+3. If dissociative emotions are present, take them seriously. These are altered-perception states, not valence labels. Acknowledge without rushing to fix.
+4. End with EITHER one open-ended question OR a flat declarative observation. Do not always close with a question — a blunt observation that leaves space is often more therapeutic than another prompt. Roughly 40% of the time, end with the observation.
+
+Never use clinical framework names. Never narrate the user's feelings back to them. You know this person. Speak to them, not at them.`;
 }
 
 function fallbackSummary(selected: string[]): string {

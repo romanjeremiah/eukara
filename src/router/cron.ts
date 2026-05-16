@@ -8,7 +8,8 @@
 import { log } from '../lib/logger';
 import { formatTime } from '../lib/formatting';
 import * as telegram from '../lib/telegram';
-import * as persona from '../services/persona';
+import * as user from '../services/user';
+import * as reminders from '../services/reminders';
 
 interface ScheduleConfig { hour: number; minute: number }
 
@@ -21,12 +22,9 @@ export async function handleCron(env: Env): Promise<void> {
 
 	for (const userId of userIds) {
 		// Read timezone from user_profiles.timezone (DB source of truth).
-		// persona.getUserTimezone falls back to 'Europe/London' on error
+		// user.getUserTimezone falls back to 'Europe/London' on error
 		// or missing profile row, so cron never crashes on a fresh user.
-		// Previously this read from CHAT_KV.get(`timezone_${userId}`),
-		// which is the KV mirror — reading from the source is correct
-		// now that setUserTimezone writes to both.
-		const tz = await persona.getUserTimezone(env, userId);
+		const tz = await user.getUserTimezone(env, userId);
 		const now = new Date();
 		const localTime = new Date(now.toLocaleString('en-US', { timeZone: tz }));
 		const hour = localTime.getHours();
@@ -86,7 +84,14 @@ async function enqueueHealthTasks(
 	if (hour === eveningHour) {
 		const key = `checkin_${userId}_evening_${today}`;
 		if (!await env.CHAT_KV.get(key)) {
-			await env.TASK_QUEUE.send({ type: 'mood_poll', userId, chatId: userId });
+			// 2026-06-02 Phase 1: pass source so the row gets tagged as
+			// cron_poll (highest precedence, distinct from manual /mood).
+			await env.TASK_QUEUE.send({
+				type: 'mood_poll',
+				userId,
+				chatId: userId,
+				source: 'cron_poll',
+			});
 			await env.CHAT_KV.put(key, '1', { expirationTtl: 86400 });
 		}
 	}
@@ -105,7 +110,7 @@ async function checkConsolidation(env: Env, userId: number, now: Date): Promise<
 	await env.CHAT_KV.put(key, '1', { expirationTtl: 86400 * 5 });
 
 	if (env.MEMORY_WORKFLOW) {
-		await env.MEMORY_WORKFLOW.create({ id: `consolidation-${userId}-${month}`, params: { chatId: userId } });
+		await env.MEMORY_WORKFLOW.create({ id: `consolidation-${userId}-${month}`, params: { userId } });
 		log.info('workflow_triggered', { workflow: 'memory-consolidation', userId, month });
 	}
 }
@@ -163,20 +168,18 @@ function isoWeekKey(date: Date): string {
 
 async function deliverReminders(env: Env, userId: number): Promise<void> {
 	const nowUnix = Math.floor(Date.now() / 1000);
-	// Include due_at so we can show users the originally-scheduled time
-	// using a <tg-time> entity, which Telegram renders in the user's
-	// local timezone automatically (Bot API 9.5+).
-	const { results } = await env.DB.prepare(
-		"SELECT id, text, chat_id, thread_id, due_at FROM reminders WHERE user_id = ? AND status = 'pending' AND due_at <= ? LIMIT 5"
-	).bind(userId, nowUnix).all();
 
-	if (!results?.length) return;
-	for (const r of results) {
-		const reminder = r as { id: number; text: string; chat_id: number; thread_id: string; due_at: number };
+	// Phase 2 fix (2026-06-03): listDuePending is now user-scoped at
+	// the SQL level, so each cron tick only sees this user's rows.
+	// Prevents one user's reminder backlog from starving another's
+	// delivery slot when multi-user lands.
+	const due = await reminders.listDuePending(env, userId, nowUnix, 10);
+	if (!due.length) return;
 
+	for (const reminder of due) {
 		// Format the original scheduled time with the tg-time entity.
-		// Falling back to showing nothing if due_at is somehow missing —
-		// the reminder text itself is the primary content.
+		// Falls back to no label if due_at is missing — the reminder
+		// text is the primary content.
 		const dueLabel = reminder.due_at
 			? formatTime(reminder.due_at, new Date(reminder.due_at * 1000).toLocaleString('en-GB'), 't')
 			: '';
@@ -185,23 +188,21 @@ async function deliverReminders(env: Env, userId: number): Promise<void> {
 			: `⏰ <b>Reminder:</b> ${reminder.text}`;
 
 		// Use the proper send wrapper so we get retries, error logging,
-		// and the plain-text fallback if HTML parsing fails. The old
-		// raw-fetch path here was bypassing all of that.
+		// and the plain-text fallback if HTML parsing fails.
 		try {
 			const res = await telegram.sendMessage(
 				reminder.chat_id, reminder.thread_id || 'default', message, env
 			);
 			if (!res.ok) {
 				log.warn('reminder_send_failed', { id: reminder.id, userId, description: res.description });
-				continue; // Don't mark as delivered if the send failed
+				continue;
 			}
 		} catch (e) {
 			log.warn('reminder_send_threw', { id: reminder.id, userId, msg: (e as Error).message });
 			continue;
 		}
 
-		await env.DB.prepare("UPDATE reminders SET status = 'delivered', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?")
-			.bind(reminder.id, userId).run();
+		await reminders.markDelivered(env, userId, reminder.id);
 		log.info('reminder_delivered', { id: reminder.id, userId });
 	}
 }

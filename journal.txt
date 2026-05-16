@@ -1,0 +1,913 @@
+================================================================
+2026-06-03  Voice-note transcription leak fix
+================================================================
+
+User-reported bug: voice notes were getting replies that opened
+with a literal 'Transcription: "..."' line followed by the actual
+response, all in the same message body.
+
+ROOT CAUSE
+  defaultPromptFor() in src/bot/message.ts (line ~767) returned
+  'Transcribe this and respond to whatever was said.' as the text
+  part of the multimodal user turn when a voice note had no caption.
+  Gemini followed the instruction literally — transcribed first,
+  then responded — so the transcription appeared in the user-facing
+  output stream.
+
+  No separate STT call, no Deepgram. Audio goes directly to Gemini
+  multimodal. The 'transcription' was just the model obeying its
+  prompt.
+
+FIX (Option A from the discussion)
+  Changed the voice/audio default prompt to:
+    'Respond naturally to what was said in this audio, as if it
+    had been spoken to you in conversation.'
+  Drops the transcription request entirely. The model now just
+  responds.
+
+  Trade-off: no implicit 'did the bot hear me right' confirmation,
+  and conversation history continues to store '[user sent a voice
+  note]' as the placeholder rather than the transcribed content.
+  Acceptable for speed-of-input use case.
+
+NOT TOUCHED
+  - Photo / sticker default ('Describe what you see, and respond
+    to it as if I had shared it in conversation.')
+  - Video / video_note default ('Watch this and share what stands
+    out.')
+  - Document default ('Read this and respond to whatever it
+    contains.')
+  These may have the same leakage pattern (descriptive prose ahead
+  of the response) but Roma didn't flag them and the user often
+  WANTS a photo description, so the call is less clear-cut.
+
+Deferred follow-up if this becomes a problem: do the same Option A
+treatment across all media kinds, or move to Option C (explicit STT
+via @cf/deepgram/nova-3 with the transcription as a real artefact
+in conversation history). For now, voice is the only path changed.
+
+----------------------------------------------------------------
+
+================================================================
+2026-06-03  Mood expansion: dissociative category + 24h resume + persona tightening
+================================================================
+
+Three-part scope: (1) longer mood poll descriptions restored from
+Xaridotis, (2) third emotion category for borderline/dissociation,
+(3) 24h check-in window with soft resume prompt + persona pass
+(no-receipts rule, asymmetric pacing, heuristic injection for mood
+synthesis).
+
+ROMA'S DECISIONS (confirmed before implementation)
+  - Dissociative button: 🌫️ Dissociative (parity with ☀️ / 🌧)
+  - Cycle order: Positive → Negative → Dissociative → Positive
+  - Emotion list: 7 entries (dissociated, depersonalised, derealised,
+    splitting, fragmented, numb, switching). Ragged 3+3+1 grid tail
+    accepted.
+  - Mood expiry: pattern (a) hard 24h TTL + (c) resume prompt
+  - Persona: include no-receipts ban + asymmetric pacing + heuristic
+    injection for mood synthesis. (Skipped: tool-timing constraint on
+    save_therapeutic_note description — minor, can add later.)
+
+KEY ARCHITECTURAL NOTE
+  Eukara has NO mood evening WORKFLOW like Xaridotis does. The mood
+  flow is queue + KV + callbacks. So the "24h extension" doesn't map
+  to a STEP_TIMEOUT constant. It maps to TTLs on three KV keys plus
+  a new "pending flow" tracking key for the resume prompt.
+
+DESIGN: TWO SEPARATE FLAGS
+  - `health_checkin_active_${userId}` (TTL 1800s / 30 min): drives
+    Pro-routing during the immediate post-poll window. UNCHANGED.
+    Keeping it short prevents 24h of slow Pro responses for casual
+    chat while a check-in is technically "open".
+  - `mood_flow_pending_${userId}` (TTL 86400s / 24h): NEW. Tracks
+    flow state for the resume prompt. Stored as JSON
+    {stage: 'awaiting_score' | 'awaiting_emotions', startedAt: ts}.
+    Set in queue.ts mood_poll, advanced in poll.ts handlePollAnswer,
+    cleared in mood-callbacks.ts runEmotionsDoneWork on completion
+    and in callback.ts mood_resume_skip on user dismiss.
+  - `mood_flow_resume_offered_${userId}` (TTL 86400s / 24h): NEW.
+    Set when the dispatcher sends the resume prompt; prevents
+    re-prompting on every subsequent message during the same flow.
+
+FILES TOUCHED
+  src/config/moodScale.ts          — NEW. Canonical long-form options
+                                     lifted from Xaridotis. Both cron
+                                     mood_poll and /mood now share.
+  src/config/emotions.ts           — added DISSOCIATIVE_EMOTIONS,
+                                     EmotionCategory type, NEXT_CATEGORY,
+                                     CATEGORY_LABEL, emotionsByCategory().
+                                     emotionButtonRows signature changed
+                                     from (emotions, otherCategoryLabel:
+                                     string|null) to (emotions,
+                                     nextCategory: EmotionCategory|null).
+  src/config/personas.ts           — BASE_TEMPLATE VOICE DISCIPLINE
+                                     section gained NO RECEIPTS rule
+                                     (banned-phrase list) + ASYMMETRIC
+                                     PACING rule. MENTAL_HEALTH_DIRECTIVE
+                                     section 3 EMOTIONS LIBRARY gained
+                                     the dissociative/altered-state list
+                                     with clinical guidance to not
+                                     collapse them into negative valence.
+  src/router/queue.ts              — mood_poll case uses MOOD_POLL_OPTIONS
+                                     from moodScale; bumped poll context
+                                     TTL 1h → 24h; sets mood_flow_pending
+                                     after sending poll.
+  src/bot/poll.ts                  — third category button 🌫️ Dissociative
+                                     added to both runClinicalConcernWork
+                                     and runMoodAnalysisWork keyboards.
+                                     Advances mood_flow_pending stage to
+                                     'awaiting_emotions' after score.
+  src/bot/callback.ts              — mood_cat_dissociative branch; three-
+                                     way cycling via NEXT_CATEGORY; new
+                                     handlers for mood_resume_continue
+                                     (re-fires mood_poll task) and
+                                     mood_resume_skip (clears all flow
+                                     keys); selection-buffer TTL 1h → 24h.
+  src/bot/mood-callbacks.ts        — selection-buffer TTL 1h → 24h;
+                                     three-way partition (pos/neg/diss)
+                                     in runEmotionsDoneWork via
+                                     classifyEmotion; pulls triggers and
+                                     schemas from memories table and
+                                     injects as [KNOWN HEURISTICS] block
+                                     into prompt; prompt rewritten with
+                                     no-receipts + asymmetric pacing +
+                                     dissociation-aware framing; clears
+                                     mood_flow_pending and
+                                     mood_flow_resume_offered on done.
+  src/index.ts                     — MOOD_RESUME_IDLE_MS constant (10 min)
+                                     + maybeOfferMoodResume() helper;
+                                     called inside dispatchMessage owner
+                                     path before routing decision.
+                                     Non-blocking: prompt sent via
+                                     ctx.waitUntil so the user's actual
+                                     message processing continues.
+
+FLOW SUMMARY
+  1. Cron 20:30 fires mood_poll task.
+  2. Queue worker sends poll, writes mood_poll_<pollId> KV (24h),
+     writes mood_flow_pending = {awaiting_score, ts} (24h), clears
+     any stale mood_flow_resume_offered.
+  3a. Best case: user taps poll within 10 min → poll.ts updates
+      mood_flow_pending to {awaiting_emotions, ts}; sends 3-button
+      category keyboard.
+  3b. User walks away → health_checkin_active expires at 30 min
+      (Pro routing reverts to normal); mood_flow_pending survives.
+  4. User types something at hour 2 → dispatcher sees pending flow,
+     idleMs > 10 min, no offered flag → sends Continue/Skip prompt
+     + sets offered flag + continues normal routing for the message.
+  5a. User taps Continue → mood_resume_continue handler enqueues a
+      fresh mood_poll task. New poll, fresh state.
+  5b. User taps Skip → mood_resume_skip handler clears all flow keys.
+  5c. User ignores buttons → mood_flow_pending lives 24h then expires
+      silently. Resume prompt won't re-fire (offered flag).
+  6. Happy path completion (user taps Done after emotions) →
+     runEmotionsDoneWork clears all three flow keys.
+
+HEURISTIC INJECTION DETAIL
+  runEmotionsDoneWork now fetches getMemoriesByCategory(env, userId,
+  'trigger', 10) and (..., 'schema', 10) alongside the existing context
+  pulls. Formats them as a [KNOWN HEURISTICS] block in the prompt with
+  "Known triggers:" and "Known schemas/patterns:" subsections. Prompt
+  rewritten to instruct the model to "find the friction" between
+  today's data and these heuristics rather than summarising. Addresses
+  the averaging-into-neutral-prose problem from the feedback docs Roma
+  shared. Degrades gracefully when no heuristics exist yet (new users).
+
+LOG EVENTS TO WATCH POST-DEPLOY
+  - mood_flow_resume_offered (with stage and idleMs)
+  - mood_flow_resumed (after Continue tap)
+  - mood_flow_skipped (after Skip tap)
+  - mood_summary_sent now includes posCount, negCount, dissCount,
+    heuristicsUsed
+
+DEFERRED (still pending)
+  - Tool-timing constraint on save_therapeutic_note description
+    (don't call mid-distress). Roma didn't include in this batch.
+  - Nano Banana 2 image generation wiring. Roma dropped from this
+    turn; clarified that Gemma cannot generate images. When we come
+    back, choices are Nano Banana only, CF Flux Schnell only, or
+    cascade.
+  - Other-users slowness diagnosis. Needs a wrangler tail capture.
+  - Vitest fix (config-load error). Blocks running model-invariants.
+
+----------------------------------------------------------------
+
+================================================================
+2026-06-03  Phase 2 review + cleanup + architecture decision
+================================================================
+
+Roma asked for a review of Phase 1+2 against Eukara's actual
+architecture, not against Xaridotis patterns. Review surfaced two
+real bugs and several Xaridotis impurities. All fixed in this pass.
+
+FINDINGS (full breakdown in decisions/2026-06-03-eukara-architecture-principles.md)
+
+  BUGS
+  B1  reminders.listDuePending was table-wide; cron filtered users in JS.
+      Risk: under load, one user's pending backlog could starve another's
+      delivery slot. Multi-user latent bug.
+  B2  tools/reminder-tools.ts:updateTimezone duplicated user.setUserTimezone
+      DB+KV write. Drift risk.
+  B3  services/memory.ts:saveMemory had its own INSERT OR IGNORE INTO
+      user_profiles, bypassing user.ensureUser. Drift risk if ensureUser
+      ever seeds new fields.
+
+  XARIDOTIS IMPURITIES
+  X1  60s dedup window picked because Xaridotis uses 60s, not because of
+      Eukara reasoning. Number kept, justification rewritten.
+  X2  ReminderMetadata.origin was a strict Xaridotis-shaped union
+      'user' | 'ai_suggested'. Eukara has no /remind command yet; the
+      real distinctions are ai_suggested / user_command / recurrence /
+      workflow. Loosened to free-string with documented conventions.
+  X3  Files named users.ts / personas.ts (plural). Eukara convention is
+      singular domain noun (memory.ts, episode.ts, mood.ts).
+  X4  createReminder had 7 positional params. Eukara convention is
+      (env, userId, input). Switched to options object.
+
+  COSMETIC
+  C1  Broken sentence in mood.ts:27 doc comment from earlier edit.
+  C2  Stale 'persona.getUserTimezone' comment in cron.ts.
+  C3  user.getUserTimezone catches DB errors and falls back to London
+      while the rest of Eukara lets DB errors throw. Kept the catch
+      (cron MUST have a tz to proceed) but documented why it deviates.
+
+FILES TOUCHED
+  src/services/reminders.ts         Rewrite. New signature
+                                    createReminder(env, userId, input).
+                                    listDuePending(env, userId, nowUnix, limit).
+                                    Looser ReminderMetadata.origin (free string).
+                                    Trimmed verbose comments to Eukara house style.
+  src/services/user.ts              Renamed from users.ts. Tightened JSDoc on
+                                    getUserTimezone explaining the deliberate
+                                    DB-error swallow. Updated self-references.
+  src/services/persona.ts           Renamed from personas.ts. Updated header.
+                                    Imports from './user' now.
+  src/services/index.ts             Barrel exports updated: user, persona
+                                    (singular) instead of users, personas.
+  src/services/memory.ts            Dropped redundant INSERT OR IGNORE INTO
+                                    user_profiles in saveMemory. Documented
+                                    that callers must ensureUser first.
+  src/services/mood.ts              Fixed broken sentence in todayLocal
+                                    JSDoc.
+  src/tools/reminder-tools.ts       set_reminder uses new createReminder
+                                    object signature. update_timezone now
+                                    calls user.setUserTimezone (B2 fix).
+  src/router/cron.ts                listDuePending called with userId; JS
+                                    filter removed. Cron-side comment
+                                    references 'users.' updated to 'user.'.
+                                    Tightened stale comment from Phase 2.
+  src/bot/commands.ts               Imports + call sites: users -> user,
+                                    personas -> persona (4 call sites).
+  src/bot/poll.ts                   users -> user (1 call site).
+  src/bot/mood-callbacks.ts         users -> user (2 call sites).
+  src/bot/message.ts                users -> user, personas -> persona
+                                    (3 call sites).
+  src/bot/callback.ts               users -> user, personas -> persona
+                                    (2 call sites).
+  decisions/2026-06-03-eukara-architecture-principles.md   NEW.
+                                    Standing instruction: Eukara is built
+                                    on its own architecture. Xaridotis is
+                                    a reference for intent, not blueprint.
+                                    Documents naming, service-layer rules,
+                                    AI-call rules, metadata rules, process
+                                    rules. Living document.
+
+VALIDATION
+  npx tsc --noEmit                  EXIT 0, zero output. Clean.
+  No imports of services/users or services/personas remain.
+  No `users.X` or `personas.X` call sites remain.
+  config/personas.ts (static templates) intentionally kept plural; only
+  service files were renamed.
+
+WHAT THIS BUYS US
+  1. Multi-user safety on the reminder delivery path.
+  2. Single bootstrap path for user_profiles + persona_config.
+  3. Eukara-native naming convention across the service tree.
+  4. Documented standing rule against Xaridotis copy-paste, which gives
+     Phase 3+ a clear basis for design decisions (no MicroAck shaped
+     like Xaridotis's, no clinical_tags copied wholesale, no sequential
+     keyboard state machine if natural-language extraction would serve
+     Eukara better).
+
+DEPLOY STATUS: NOT DEPLOYED. Roma to run `npx wrangler deploy --minify`.
+
+CARRY-OVER
+  - curator_log table still has no writers. First writer should be
+    services/topicShift.ts in Phase 3 work.
+  - Phase 3 design decisions still open (mood synthesis cascade routing,
+    latency-perception fix strategy, activities/sleep/photo flow shape,
+    photo storage use case, clinical_tags taxonomy). The architecture
+    decision file directs us to evaluate alternatives for each before
+    implementing rather than mirroring Xaridotis defaults.
+
+================================================================
+2026-06-03  Phase 2: service split + reminders service + curator_log
+================================================================
+
+Follow-up to Phase 1. Phase 2 was the "hygiene" pass: schema
+alignment, service boundary cleanup, and the foundations Phase 3
+needs. No user-visible behaviour change; all changes additive or
+refactor.
+
+ROMA'S DECISIONS (locked in before code)
+  - Drop ai_signature entirely. Forensics value too low for the
+    column-on-every-table cost; source already gives most of what's
+    needed on mood_journal. Can be added later as additive.
+  - Drop media.ts + media_refs + photo upload work from Phase 2.
+    Moved to Phase 3 where it lands with the feature that uses it.
+  - Keep metadata column on reminders (D1 already had it, but
+    schema.sql + types/db.ts had drifted).
+  - Keep curator_log table, ship from day 1 even though Phase 2
+    doesn't write to it yet (first writer = topicShift.ts in a
+    later phase).
+  - persona.ts proper split, no shim. All 6 import sites updated.
+  - reminders.ts built now with dedup + metadata, not deferred.
+
+VALIDATION FIRST (per Roma's instruction)
+  Re-read every file before touching it. Found and reconciled:
+    - reminders.metadata column already in D1 (PRAGMA showed it
+      after I tried to ALTER and got duplicate-column error)
+    - schema.sql / types/db.ts had drifted; brought into line
+    - 6 importers of services/persona to track for renames
+    - services/index.ts barrel re-exported the file I was about
+      to delete; would have broken tsc
+
+D1 MIGRATIONS APPLIED
+  - curator_log table + 2 indexes (idx_curator_user_ts,
+    idx_curator_classifier). user_id / ts / classifier /
+    input_truncated / decision / latency_ms / success / error_msg.
+  - reminders.metadata already present, no migration needed.
+
+FILES TOUCHED
+  schema.sql                        + curator_log table at the bottom
+                                    + metadata column comment on reminders
+  src/types/db.ts                   + ReminderRow.metadata
+                                    + new CuratorLogRow interface
+  src/services/users.ts             NEW (130 lines). Owns user_profiles:
+                                    ensureUser, getProfile, getUserTimezone,
+                                    setUserTimezone, updateProfileFromObservation.
+                                    ensureUser keeps both-table init via
+                                    direct INSERT OR IGNORE (no cross-module
+                                    call) to avoid import cycle risk.
+  src/services/personas.ts          NEW (144 lines). Owns persona_config +
+                                    system-prompt composition: getPersonaConfig,
+                                    updatePersonaConfig, buildSystemInstruction.
+                                    Imports getProfile from users.ts. Dependency
+                                    direction: personas → users, not the reverse.
+  src/services/reminders.ts         NEW (271 lines). Single SQL owner for the
+                                    reminders table:
+                                      createReminder      dedup-aware insert
+                                      listReminders       filtered reads
+                                      getReminder         ownership-checked single read
+                                      updateReminder      ownership-checked patch
+                                      markDelivered       status='delivered'
+                                      softCancel          status='cancelled' (row kept)
+                                      listDuePending      cron-side helper
+                                      deleteAll           /forget hard delete
+                                    Plus ReminderMetadata interface for the
+                                    JSON blob (origin, source_context,
+                                    recurrence, snooze_count, extensible).
+                                    Dedup criteria: same user_id, status='pending',
+                                    normalised text equal (lowercase + trim +
+                                    collapsed whitespace), due_at within +/-60s.
+                                    Returns { id, created } so callers can
+                                    distinguish a fresh insert from a dedup hit.
+  src/services/persona.ts           DELETED. All callers migrated.
+  src/services/index.ts             updated barrel exports to match the
+                                    new service layout (users, personas, mood,
+                                    reminders + the pre-existing services).
+  src/services/mood.ts              + SOURCE_PRECEDENCE table (cron_poll=2,
+                                      manual_command=1, inline_chat=0, null=0)
+                                    + sourceRank() helper
+                                    + downgrade-blocking in upsertEntry; logs
+                                      mood_source_downgrade_blocked when fired,
+                                      drops source from the SQL but still writes
+                                      the rest of the fields
+                                    + hasRealEveningCheckin (source in cron_poll
+                                      | manual_command)
+                                    + hasSleepLoggedToday (sleep_hours or
+                                      sleep_quality non-null)
+                                    + mergeActivities (dedup-aware JSON-array
+                                      append)
+  src/tools/reminder-tools.ts       set_reminder rewritten to route through
+                                    reminders.createReminder. Tool response
+                                    now includes reminder_id + deduplicated
+                                    flag so the AI can see when its retry was
+                                    a duplicate. updateTimezone left inline to
+                                    avoid pulling a service import into the
+                                    tool layer (cosmetic; functionally identical
+                                    to users.setUserTimezone).
+  src/router/cron.ts                deliverReminders rewritten to use
+                                    reminders.listDuePending + reminders.
+                                    markDelivered. Raw SQL gone from this path.
+                                    Added defence-in-depth filter (cron is
+                                    per-user, listDuePending is table-wide;
+                                    filter prevents one user's cron tick from
+                                    seeing another's rows when multi-user lands).
+  src/bot/commands.ts               4 call sites migrated (ensureUser/users,
+                                    getPersonaConfig/personas,
+                                    getUserTimezone/users,
+                                    setUserTimezone/users)
+  src/bot/poll.ts                   getUserTimezone -> users
+  src/bot/mood-callbacks.ts         getUserTimezone -> users (2 sites:
+                                    thin handler + runEmotionsDoneWork)
+  src/bot/message.ts                3 sites: ensureUser/users,
+                                    getUserTimezone/users,
+                                    buildSystemInstruction/personas
+  src/bot/callback.ts               setUserTimezone/users, updatePersonaConfig/personas
+  src/router/cron.ts                getUserTimezone/users
+
+VALIDATION RUN
+  npx tsc --noEmit                  EXIT 0, zero lines of output. Clean.
+  All persona.X call sites either eliminated or local-variable usage in
+  personas.ts:111-118 (the const [profile, persona] destructuring inside
+  buildSystemInstruction; local var, not an import).
+
+NEW LOG EVENTS TO WATCH POST-DEPLOY
+  - reminder_dedup_hit         createReminder matched an existing pending row
+  - reminder_created           normal happy path
+  - reminder_send_failed       Telegram API said no
+  - reminder_send_threw        network-level failure
+  - reminder_delivered         status flipped to delivered
+  - reminders_deleted_all      /forget hard delete (not yet wired)
+  - mood_source_downgrade_blocked   precedence rejected an AI write
+
+DEPLOY STATUS: NOT DEPLOYED. Roma to run `npx wrangler deploy --minify`.
+After deploy: confirm /mood still works end-to-end; if set_reminder
+stops working, suspect dedup window misconfigured or reminders.ts
+import path. Watch for reminder_dedup_hit during normal use.
+
+CARRY-OVER
+  - curator_log table exists but no writers yet; first writer will be
+    topicShift.ts in a later phase
+  - services/mood.ts:27 has a slightly broken-sentence doc comment
+    from a quick edit; cosmetic, not functional
+
+================================================================
+2026-06-02  EVENING: Phase 1 mood-flow queue routing (Xaridotis mirror)
+================================================================
+
+Continuation of the afternoon's hybrid-dispatch work, this time
+targeting the mood flow which was NOT covered by the chat-message
+routing. poll_answer + emotions_done callbacks were still inline via
+ctx.waitUntil, and on bad-latency days the heavy Gemini Pro calls
+(1500-token analysis with thinking medium, 2000-token synthesis with
+thinking high) were being silently killed at the 30s ceiling.
+
+This morning's user-visible failure: tapped 7 on /mood poll, got no
+reply. D1 forensics showed mood_score was NULL on today's evening
+row — the upsert never reached the queue path because the synthesis
+function aborted before saving. Score now persists before any queue
+dispatch.
+
+ROMA'S DECISIONS (confirmed before implementation)
+  1. Persona keys: drop Helldivers names; make `eukara` primary with
+     5 conversational modes (balanced, warm, direct, playful, minimal).
+     DISCOVERY: this was already done in src/config/persona-presets.ts;
+     no code change needed for the modes themselves.
+  2. Raw R2 transcript shadow: yes, but Phase 4 work (out of scope
+     for Phase 1).
+  3. curator_log table: yes, from day 1 (Phase 2).
+  4. Phase ordering: 1 → 2 → 3 → 4 → 5 confirmed.
+  5. Photo upload: include in Phase 3.
+  6. services/persona.ts split into users.ts + personas.ts: Phase 2.
+
+PRE-IMPLEMENTATION VALIDATION (per Roma's "double-check before start")
+  Discovered the codebase had drifted significantly from the plan:
+    - /persona 5-mode preset system already complete
+    - process_user_message queue routing for owner CHAT messages
+      already deployed (afternoon's work)
+    - GEMINI_MODELS.proLatest cascade already wired
+    - telegram.sendPoll typed wrapper already in lib/telegram.ts
+      (mood_poll queue case was still using raw fetch — fixed here)
+    - mood_journal.source + user_profiles.style_card already in D1
+      but missing from schema.sql AND types/db.ts — fixed here
+    - Spontaneous outreach with KV daily cap + 10-19 gate already live
+    - Weekly Sunday 19:00 report with ISO-week idempotency already live
+  Result: Phase 1 scope shrunk from 6-8h to ~3-4h. Total roadmap
+  (Phases 2-5) revised down from 50-55h to ~37-40h.
+
+FILES TOUCHED (Phase 1 scope only)
+  schema.sql                       — added user_profiles.style_card +
+                                       mood_journal.source TEXT columns
+                                       (DB already had them, schema.sql
+                                       had drifted)
+  src/types/db.ts                  — UserProfileRow.style_card +
+                                       MoodJournalRow.source matching DB
+  src/router/queue.ts              — extended QueueTask interface with
+                                       source / threadId / score /
+                                       selectedEmotions optional fields;
+                                       mood_poll case now uses
+                                       telegram.sendPoll (typed wrapper
+                                       with 429/5xx retry) + propagates
+                                       source through KV poll context;
+                                       NEW mood_score_received case
+                                       (dispatches to clinical vs normal);
+                                       NEW mood_emotions_done case
+  src/bot/poll.ts                  — handlePollAnswer now thin (~50
+                                       lines): KV read, score+source
+                                       upsert, fresh typing, enqueue
+                                       mood_score_received, return;
+                                       renamed + exported
+                                       runClinicalConcernWork (now also
+                                       saves history); NEW
+                                       runMoodAnalysisWork holding the
+                                       analysis Gemini call; both
+                                       called from queue worker
+  src/bot/mood-callbacks.ts        — handleEmotionsDone now thin: clear
+                                       keyboard, ack callback, persist
+                                       emotions, fresh typing, enqueue
+                                       mood_emotions_done, return;
+                                       NEW runEmotionsDoneWork holding
+                                       the synthesis Gemini call, called
+                                       from queue worker
+  src/bot/commands.ts              — /mood now passes
+                                       source: 'manual_command'
+  src/router/cron.ts               — evening mood_poll trigger now
+                                       passes source: 'cron_poll'
+
+KEY DESIGN POINTS
+  - Score persistence happens BEFORE enqueue. If the queue task fails
+    all 3 retries, the user's score is still in D1.
+  - Inline fallback when env.TASK_QUEUE is missing. Same 30s risk as
+    pre-Phase-1 but at least no silent drop.
+  - Source precedence (cron_poll > manual_command > inline_chat) is
+    written to the row as-is. mood.ts service-layer enforcement of
+    precedence (no AI downgrade) lands in Phase 2.
+  - The Gemini Pro call signatures + prompts are UNCHANGED. Phase 1
+    only moves WHERE they run.
+  - Pre-existing log lines (mood_clinical_concern, mood_analysis_sent,
+    mood_summary_sent, mood_emotions_logged) preserved verbatim so
+    existing dashboards/grep patterns still match.
+
+NEW LOG EVENTS TO WATCH POST-DEPLOY
+  - mood_score_received_webhook            (thin handler logged)
+  - mood_score_enqueued                    (queue dispatch confirmed)
+  - mood_emotions_enqueued                 (queue dispatch confirmed)
+  - mood_score_received_no_score           (defensive: shouldn't happen)
+  - mood_poll_send_failed                  (Telegram poll send failed)
+  - mood_score_no_queue_binding_fallback_inline      (binding issue)
+  - mood_emotions_no_queue_binding_fallback_inline   (binding issue)
+
+DEPLOY STATUS: NOT DEPLOYED. Roma to run `npx wrangler deploy --minify`.
+After deploy: verify by running /mood end-to-end. Expect:
+  - Poll appears via telegram.sendPoll path (look for tgApi log lines
+    in tail vs raw fetch).
+  - Score tap returns analysis within ~3-15s (queue dispatch +
+    Gemini Pro turn).
+  - Emotion Done returns synthesis within ~10-30s.
+  - mood_journal row has source = 'manual_command' (or 'cron_poll'
+    for cron-fired evening).
+
+DEFERRED TO LATER PHASES
+  - Phase 2 (~8-10h): service split (users.ts + personas.ts +
+    reminderStore + mediaStore + extended mood.ts with precedence +
+    schema additions for ai_signature x6, metadata on reminders,
+    media_refs + curator_log tables + updated_at triggers).
+  - Phase 3 (~10h): moodSynthesis with Anti-Summary discipline,
+    moodMicroAck for score/emotions acks, activities keyboard,
+    sleep prompt, photo upload fix, moodTagger for clinical_tags.
+  - Phase 4 (~8h): personaEvolution 04:00 cron, chatSummaries 03:00
+    cron with R2 raw transcript shadow, CASUAL_REGISTER_DIRECTIVE +
+    TOOL SELECTION HARD CONSTRAINTS additions to personas.ts.
+  - Phase 5 (~8h): spontaneous outreach memory mix + discovery scope
+    guard + quiet-hours respect, accountability nudge, curiosity
+    digest, inlineHandler wiring, planner.ts (CoALA).
+
+================================================================
+2026-06-02  AFTERNOON: cascade reorder + sticky Pro + queue dispatch
+================================================================
+
+Follow-up to the morning's thought-leakage + architect fixes. Started
+from Roma reporting that an emotional message ("i'm feeling anxious
+about tomorrow") got no reply in tail, no `ai_response` log at all.
+
+ROOT CAUSE (verified against Cloudflare docs)
+  index.ts wrapped handleMessage in ctx.waitUntil(task). The slow Pro
+  Gemini call (grounded, 25 custom tools, thinking) exceeded the 30s
+  waitUntil ceiling and was silently cancelled.
+  Source: https://developers.cloudflare.com/workers/platform/limits/
+  "When the client disconnects, tasks are canceled unless you call
+   waitUntil() to extend execution by up to 30 seconds."
+  Paid plan does NOT raise this. Paid only changes CPU time cap
+  (default 30s, configurable up to 5min). HTTP duration is unlimited
+  while client connected.
+
+ROMA'S DECISIONS (confirmed before implementation)
+  - Cascade: Tier 1 gemini-pro-latest, Tier 2 gemini-3.5-flash,
+    Tier 3 @cf/google/gemma-4-26b-a4b-it. Matches Xaridotis B2C
+    cascade minus OpenAI/Anthropic middle tiers (Eukara has neither
+    provider wired).
+  - Timeouts per tier: 90s / 45s / 30s, total worst case 165s, well
+    within the queue consumer's 15-min budget. Promise.race wrappers,
+    not AbortSignal (provider-agnostic, no SDK plumbing).
+  - Sticky Pro routing (Option C): KV anchor written after every
+    successful Pro turn. Next user message triggers a content-based
+    topic shift classifier; same topic -> force Pro, different ->
+    clear flag and fall through to normal routing.
+  - Dispatch: Pro lane -> queue (15-min wall clock). Casual lane ->
+    `await task` inline (HTTP handler stays connected, no 30s cap).
+    Callbacks/polls -> ctx.waitUntil (short, no concern).
+  - No CPU cap in wrangler.jsonc — default 30s is plenty since calls
+    are I/O bound.
+  - DO NOT TOUCH mood flow or active-checkin override — separate
+    session for emotion category expansion + 24h check expiry.
+
+FILES TOUCHED
+  src/config/models.ts       — added GEMINI_MODELS.proLatest = 'gemini-pro-latest'
+  src/ai/router.ts           — added RouterContext.forceProLane; new
+                                willHitProLane() helper for cheap
+                                pre-routing in dispatcher
+  src/bot/message.ts         — cascade reorder (Tier 1/2/3); withTimeout
+                                helper via Promise.race; handleMessage
+                                accepts options.forceProLane; sticky-Pro
+                                KV write at end of successful Pro turn
+                                (TTL 2h)
+  src/services/topicShift.ts — NEW. Llama 3.2 3B classifier with 2s
+                                Promise.race timeout. Conservative on
+                                error (returns sameTopic=true so we
+                                stay on Pro rather than flip personas)
+  src/router/queue.ts        — added process_user_message task type;
+                                3-retry final-attempt user notification
+                                following Xaridotis pattern
+  src/index.ts               — dispatchMessage() with hybrid routing:
+                                sticky check -> queue if Pro, else
+                                await inline. Callbacks/polls keep
+                                waitUntil path.
+
+LOG EVENTS TO WATCH POST-DEPLOY
+  - sticky_pro_written, sticky_pro_kept, sticky_pro_cleared, sticky_pro_kept_short
+  - topic_shift_classified, topic_shift_classifier_failed
+  - message_queued (with reason: pro_lane | sticky_pro)
+  - queue_user_message_start, queue_user_message_done
+  - pro_lane_tier1_recovered, pro_lane_tier2_recovered, pro_lane_tier3_recovered
+  - message_handled (now includes route_reason and force_pro_lane)
+
+DEFERRED (separate sessions, by Roma's direction)
+  (a) Mood: add a new category for borderline/dissociation support
+      with emotions like dissociated, depersonalised, derealised,
+      splitting, fragmented, numb, switching. src/bot/mood-callbacks.ts.
+  (b) Mood check 24h expiry + persistent state pattern. Patterns Roma
+      can choose from in a separate session:
+        - hard 24h timeout (extend current 4h)
+        - 24h timeout with reminder at 4h
+        - persistent KV state (no workflow waiting; complete on any
+          callback whenever)
+        - resume-on-next-message (next user message checks pending
+          mood flow and offers to continue before processing)
+  (c) Other-users slowness diagnosis. Need `wrangler tail` capture
+      of a slow request from a non-owner user. Could be the same
+      30s timeout we just fixed; could be sequential D1 awaits or
+      cold starts. Diagnose first, fix later.
+  (d) Cascade Tier 2 model differentiation. Currently Tier 1 is
+      gemini-pro-latest and Tier 2 is gemini-3.5-flash; both pull
+      different models from Google's stack but if Google's whole API
+      is down they both fail. Tier 3 (Gemma on CF) is the real
+      different-infrastructure backstop.
+
+----------------------------------------------------------------
+
+================================================================
+2026-06-02  POST-DEPLOY: thought-leakage + architect delivery fixes
+================================================================
+
+Follow-up to the morning deploy. Roma's testing surfaced three concrete
+bugs in the Gemini-3.5-flash / Gemma 4 grounded paths.
+
+BUG 1 — medication "yes" reply leaked 715-char planning monologue
+  Logs: round 0 textLen=715 + toolCalls=1, round 1 textLen=59 toolCalls=0.
+  Cause: tool loop accumulated text across all rounds. Gemma 4 with
+  enable_thinking=true emits its planning prose alongside the tool call
+  in round 0; the actual reply is in round 1. Concatenation shipped both.
+  Pre-existing bug, surfaced by migration of Pro slot away from the
+  thought-channel-separated 2.5-pro.
+  FIX (Option A, message.ts): only the FINAL no-tool-calls round sets
+  fullText. Rounds with toolCalls drop their text entirely.
+
+BUG 2 — mood analysis (score-2 path) leaked persona instruction echo
+  Path: src/bot/poll.ts:handlePollAnswer — calls provider.chat() directly
+  and pipes output only through normaliseMarkdown, never
+  stripLeakedThoughts. Same gap in handleClinicalConcern and
+  mood-callbacks.ts:handleEmotionsDone.
+  FIX: import stripLeakedThoughts at all three call sites. Apply before
+  normaliseMarkdown. Also strengthened stripLeakedThoughts itself with
+  a new stripPlanningPreamble() pass using PLANNING_PATTERNS regex
+  array — detects prose-form planning paragraphs at the START of the
+  response ("The user responded...", "Based on the directive...",
+  "Plan:", "I should:", "If I have tool calling..."). Conservative:
+  requires at least one non-planning paragraph to remain or returns
+  the original.
+
+BUG 3 — /architect stuck on "Step 3/3: Saving and delivering results..."
+  Workflow.run logged Ok at 1:48:51 but the message never updated.
+  Cause: final editMessageText doesn't check res.ok. fetch() does not
+  throw on 4xx; Telegram's 400 (likely HTML parse failure in the
+  suggestions blob) silently no-ops while the workflow reports success.
+  FIX (architect.ts): await response.json(), check ok flag. On failure
+  retry once with parse_mode stripped and HTML tags removed so the user
+  still gets the content. Throw on persistent failure so the workflow
+  shows as errored rather than silently-stuck.
+
+FILES CHANGED (5)
+  src/bot/message.ts          Option A in tool loop
+  src/lib/formatting.ts       stripLeakedThoughts + stripPlanningPreamble
+  src/workflows/architect.ts  res.ok check + plain-text retry
+  src/bot/poll.ts             stripLeakedThoughts on analysis + concern
+  src/bot/mood-callbacks.ts   stripLeakedThoughts on emotion summary
+
+OPEN — NOT FIXED IN THIS PASS
+  - "I'm feeling anxious about tomorrow" — routed to gemini-3.5-flash,
+    showed gemini_grounding_enabled log then waitUntil() warning and NO
+    ai_response or message_handled log. Function effectively hung past
+    30s and Workers killed it. Tool combination (googleSearch + 25
+    custom functionDeclarations + thinking) may be exceeding budget on
+    emotional turns. Needs dedicated investigation: tail with --debug,
+    consider lowering thinkingLevel or capping customTools count when
+    grounding is on.
+  - Gemini Pro 503 ("high demand") on mood emotion summary at 12:46:34.
+    Fallback path worked correctly. Google capacity issue, not ours.
+  - waitUntil() warning on background observation — known cost. Silent
+    observation AI call exceeds 30s post-response window. Acceptable.
+
+PENDING (Roma)
+  - npm run typecheck (5-file delta)
+  - npx wrangler deploy --minify
+  - Re-test: meds yes, anxious feeling, /mood end-to-end, /architect
+
+================================================================
+2026-06-02  PLANNING: Xaridotis mirror plan (no code yet)
+================================================================
+
+SCOPE: Roma briefed a 15-item plan to bring Xaridotis feature parity into
+Eukara while keeping Eukara's model registry (Gemini 3.5 Flash + Gemma 4
+26B + Kimi K2.6). No OpenAI / Anthropic in Eukara. Aim for cleaner
+architecture than Xaridotis.
+
+DELIVERABLE: decisions/2026-06-02-xaridotis-mirror-plan.md (36 KB).
+
+KEY FINDINGS
+
+  - Mood check failure today (2026-06-02) root cause: handlePollAnswer +
+    handleEmotionsDone run via ctx.waitUntil with Gemini Pro calls that
+    routinely exceed Cloudflare's 30s waitUntil ceiling. Comment in
+    src/index.ts claiming "5-min CPU limit" is incorrect. Phase 1 of the
+    plan moves these calls into queue tasks with 15-min wall clock.
+
+  - personas.ts vs personas.js: BASE / MHD / FORMATTING are identical by
+    design. Eukara is missing CASUAL_REGISTER_DIRECTIVE (line 406 in
+    Xaridotis) and TOOL SELECTION HARD CONSTRAINTS sub-block in
+    SECOND_BRAIN. TOPICS routing block correctly absent (Eukara is
+    single-thread).
+
+  - Schema gap: Eukara needs ai_signature on 7 tables, source on
+    mood_journal, metadata on reminders, style_card on user_profiles,
+    composite PK on persona_config (currently single PK), new media_refs
+    table, updated_at triggers (SQLite does NOT auto-bump on UPDATE).
+    All additive except persona_config (recreate via SELECT-INSERT, safe
+    on <=2 minimal rows).
+
+  - Chat history persistence design: keep KV live window (24 turns / 7d),
+    add nightly 03:00 compression to D1 chat_summaries + Vectorize as
+    conv_${userId}_summary_${id}. Optional Eukara-only improvement: raw
+    transcript shadow to R2 (chat_raw/${userId}/${date}.jsonl) for
+    forensic recovery.
+
+  - Service mirror inventory (16 new files, 18 changed files):
+    moodStore extension, reminders, users, personas (multi),
+    media + mediaRefs, planner (CoALA), personaEvolution (daily 04:00),
+    chatSummaries (nightly 03:00), moodSynthesis (queue-fired
+    Anti-Summary), moodMicroAck, inlineHandler.
+
+  - Model mapping table for cascades: 5 Xaridotis cascades collapse to 3
+    Eukara cascades (synth / mood-ack / casual / bg). All use combinations
+    of gemini-3.5-flash + gemma-4-26b + kimi-k2.6. Gemma confirmed as
+    Tier 1 for mood-ack and casual cascades.
+
+PHASING (5 phases, ~50-55 hrs total)
+
+  Phase 1 (6-8h): Mood reliability fix - queue routing for poll_answer,
+                  emotions_done, synthesis. Fixes today's bug.
+  Phase 2 (12-15h): Service layer foundation + schema migration.
+  Phase 3 (10h):   Mood completeness - synthesis, micro-acks, activities,
+                   sleep, photo, populating the 4 always-NULL columns.
+  Phase 4 (10h):   Persona evolution + chat summaries cron jobs +
+                   CASUAL_REGISTER_DIRECTIVE.
+  Phase 5 (12h):   Spontaneous outreach upgrade, accountability nudge,
+                   curiosity digest, inline handler, /persona multi.
+
+OPEN QUESTIONS FOR ROMA (block Phase 1 until answered)
+
+  Q1: Persona key naming - drop Helldivers names or keep?
+  Q2: Raw transcript R2 shadow - yes / no / defer?
+  Q3: curator_log table - day-1 or later?
+  Q4: Phase ordering after Phase 1 - confirm or propose?
+  Q5: Photo upload investigation - include in Phase 3 or stay paused?
+  Q6: services/persona.ts - split now or re-export shim during migration?
+
+STATUS: Plan documented. Awaiting Roma sign-off on the 6 open questions
+before any code is written. Today's mood failure is the most urgent
+trigger for Phase 1 - the queue-route fix is straightforward and
+self-contained.
+
+EUKARA JOURNAL
+==============
+
+Latest entries at top. Full decision rationale lives in /decisions/.
+Each entry: date, scope, files touched, deploy status.
+
+
+================================================================
+2026-06-02  Pro-lane migration, always-on grounding, bug pass
+================================================================
+
+DECISIONS (full rationale: decisions/2026-06-02-pro-migration-grounding-bugs.md)
+
+  - Pro slot migrated: gemini-2.5-pro -> gemini-3.5-flash (stable).
+    Thinking level default (let model decide). Enables tool
+    combination (function calling + Google Search grounding on the
+    same call) per Google docs (3.x family only).
+  - flashLite slot migrated: gemini-3.1-flash-lite-preview ->
+    gemini-3.5-flash (same as Pro). Cascade Tier 2 still triggers
+    but with same model; effective fallback is now Tier 3 (Kimi
+    K2.6 on CF). Accepted as simplification; revisit if we hit
+    primary-model outages.
+  - flash slot RETIRED. Was gemini-3-flash-preview, never called
+    anywhere in code (grep confirmed). Dropped from models.ts.
+  - image slot: gemini-2.5-flash-image -> gemini-3.1-flash-image
+    (Nano Banana 2, stable). Wiring deferred to follow-up session.
+  - tts slot: unchanged. Currently dead config (lib/tts.ts uses
+    Google Cloud TTS directly), kept for future migration.
+  - Workflows consolidation + architect: hardcoded
+    gemini-3.1-pro-preview replaced with GEMINI_MODELS.flashLite
+    (= gemini-3.5-flash). Workflow now in sync with registry.
+  - Workflow research: stays on deep-research-pro-preview-12-2025.
+  - Decision B (Gemma web_search_options): ALWAYS ON. Default
+    search_context_size 'medium' with UK user_location.
+    Annotations rendered as inline footnote links.
+  - Decision A (Gemini Pro grounding): ALWAYS ON via tool
+    combination on gemini-3.5-flash. Both googleSearch and custom
+    function declarations sent in same call. thoughtSignature
+    preservation added to AIMessage type and history layer.
+  - Decision C3 (end-to-end streaming with tool loops): DEFERRED
+    to dedicated session. Provider chatStream already exists but
+    the message.ts handler-level streaming + throttled Telegram
+    editMessageText + mid-stream tool-call handling is a multi-
+    hour rewrite that warrants its own session. Decision doc
+    drafted at decisions/2026-06-XX-end-to-end-streaming.md (TBD).
+
+BUGS FIXED
+
+  F1: queue.ts health_checkin / med_nudge / spontaneous_outreach
+      now go through CloudflareProvider and persist the greeting
+      into KV history. Replies have correct context, no more
+      stale-history confabulation.
+  F2: background.ts deduplicateMemories now parses OpenAI-compat
+      response shape (choices[0].message.content), not just legacy
+      {response: ...}. GLM 4.7 Flash dedup actually works now.
+  F3: workflows consolidation, architect, research migrated from
+      chat_id to user_id for D1 queries. Matches the rest of the
+      codebase's per-user isolation.
+  F4: queue.ts max_tokens (deprecated) -> max_completion_tokens on
+      Gemma calls.
+  F5: models.ts comment "free tier" corrected to indicate paid
+      pricing on Gemma 4 and Kimi K2.6.
+  F6: background.ts extractText helper unified to handle both
+      OpenAI-compat and legacy native CF response shapes.
+  F7: router.ts default_casual route no longer emits thinking
+      effort 'low'. Lets Gemma's natural default apply.
+
+FILES CHANGED
+
+  src/config/models.ts
+  src/types/ai.ts
+  src/ai/router.ts
+  src/ai/cloudflare.ts
+  src/ai/gemini.ts
+  src/lib/history.ts                 (no changes needed; tool-loop
+                                      state stays in-memory only)
+  src/bot/message.ts
+  src/bot/commands.ts                (architect dispatch: pass userId,
+                                      lock keyed by userId)
+  src/bot/callback.ts                (architect_kill: unlock by userId)
+  src/router/cron.ts                 (consolidation dispatch: {userId})
+  src/router/queue.ts
+  src/ai/background.ts
+  src/tools/research-tools.ts        (deep research dispatch: pass userId)
+  src/workflows/consolidation.ts
+  src/workflows/architect.ts
+  src/workflows/research.ts
+
+DEPLOY STATUS: NOT DEPLOYED. Roma to run `npx wrangler deploy
+--minify` after reviewing. node --check passed locally.
+
+NEXT SESSIONS QUEUED
+
+  - C3 end-to-end streaming with tool loops (largest single
+    change; needs own decision doc + careful testing)
+  - Nano Banana 2 image generation wiring
+  - Native Telegram Checklists (replace text-formatted checklist
+    tool with sendChecklist + ChecklistTasksDone updates)
+  - Mini App for mood journal (largest UX improvement)
+  - Pro slot bench harness (verify gemini-3.5-flash matches 2.5
+    Pro on emotional turns)
