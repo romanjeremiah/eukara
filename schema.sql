@@ -44,11 +44,18 @@ CREATE TABLE IF NOT EXISTS memories (
     fact TEXT NOT NULL,
     importance_score INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    -- Supersession flag (2026-06-03). When the user reports a change
+    -- that contradicts an existing fact, the model calls
+    -- supersede_memory which sets this to CURRENT_TIMESTAMP. Default
+    -- retrieval filters out superseded rows; data is retained for
+    -- audit / future include_superseded queries.
+    superseded_at DATETIME,
     FOREIGN KEY(user_id) REFERENCES user_profiles(user_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id);
 CREATE INDEX IF NOT EXISTS idx_memories_user_category ON memories(user_id, category);
+CREATE INDEX IF NOT EXISTS idx_memories_superseded ON memories(user_id, superseded_at);
 
 -- 4. REMINDERS (user_id = owner, chat_id = where to deliver)
 CREATE TABLE IF NOT EXISTS reminders (

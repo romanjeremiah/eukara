@@ -9,13 +9,13 @@
 import type { AITool } from '../types/ai';
 
 // Memory & Episodes
-import { saveMemory, saveEpisode, updateEpisodeOutcome } from './memory-tools';
+import { saveMemory, supersedeMemory, saveEpisode, updateEpisodeOutcome } from './memory-tools';
 
 // Telegram Interactions
 import { reactToMessage, pinMessage, sendLocation, sendDraft, replyWithQuote, sendVoiceNote, lookupCustomEmoji } from './telegram-tools';
 
 // Reminders & Schedule
-import { setReminder, updateTimezone } from './reminder-tools';
+import { setReminder, updateTimezone, setQuietHours, clearQuietHours, listReminders, updateReminder, clearReminders } from './reminder-tools';
 
 // Mood Journal
 import { logMoodEntry, getMoodHistory } from './mood-tools';
@@ -41,6 +41,7 @@ import { searchResearch, startDeepResearch } from './research-tools';
 export const allTools: AITool[] = [
 	// Core memory
 	saveMemory,
+	supersedeMemory,
 	saveEpisode,
 	updateEpisodeOutcome,
 
@@ -56,6 +57,11 @@ export const allTools: AITool[] = [
 	// Scheduling
 	setReminder,
 	updateTimezone,
+	setQuietHours,
+	clearQuietHours,
+	listReminders,
+	updateReminder,
+	clearReminders,
 
 	// Mood & Health
 	logMoodEntry,

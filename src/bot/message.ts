@@ -185,6 +185,12 @@ export async function handleMessage(
 	const media = extractMediaFromMessage(msg);
 	if (!userText.trim() && !media) return;
 
+	// Track last activity so proactive outreach doesn't double-text:
+	// the cron spontaneous-outreach guard reads last_seen_<userId> and
+	// skips if the user messaged within the last 3 hours. 7-day TTL
+	// clears stale keys for dormant users.
+	await env.CHAT_KV.put(`last_seen_${userId}`, String(Date.now()), { expirationTtl: 7 * 86400 });
+
 	// B7: Listening mode. If the user started a brain-dump session
 	// via /listen, buffer their message and react with 👀 — DON'T run
 	// the AI pipeline. The buffered messages will be synthesised as a
@@ -302,8 +308,12 @@ export async function handleMessage(
 	// degrades to null (empty string) on any failure so a weather API
 	// outage never blocks message handling.
 	const isSubstantive = userText.length > 5;
+	// Computed before context assembly so it can gate discoveries out
+	// of the chat context on emotional turns (best practice: don't
+	// surface "things I read" while someone is in distress).
+	const isEmotional = /\b(anxious|depressed|panic|overwhelm|scared|lonely|empty|hopeless|angry|frustrated|sad|grief|trigger|manic|racing|numb|crying|breakdown|struggling|worried|stressed)\b/i.test(userText);
 	const [memCtx, semanticCtx, weather] = await Promise.all([
-		isSubstantive ? memory.getFormattedContext(env, userId) : Promise.resolve(''),
+		isSubstantive ? memory.getFormattedContext(env, userId, !isEmotional) : Promise.resolve(''),
 		isSubstantive ? vector.getSemanticContext(env, userId, userText) : Promise.resolve(''),
 		getWeather(env, userId, userTz).catch(() => null),
 	]);
@@ -311,7 +321,6 @@ export async function handleMessage(
 	// CoALA: batch episode + procedural queries
 	let episodeCtx = '';
 	let proceduralCtx = '';
-	const isEmotional = /\b(anxious|depressed|panic|overwhelm|scared|lonely|empty|hopeless|angry|frustrated|sad|grief|trigger|manic|racing|numb|crying|breakdown|struggling|worried|stressed)\b/i.test(userText);
 
 	if (isEmotional) {
 		const [episodes, insights] = await Promise.all([

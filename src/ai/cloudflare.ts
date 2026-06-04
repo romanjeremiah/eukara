@@ -56,12 +56,24 @@ export class CloudflareProvider implements AIProvider {
 			'@cf/meta/llama-4-scout-17b-16e-instruct',
 		].includes(this.model);
 
-		// Grounding-capable subset (verified against CF docs 2026-06-02).
-		// Only models confirmed to accept `web_search_options` with valid
-		// behaviour are listed. Adding a model here enables Decision B
-		// always-on grounding when config.enableGrounding is true.
+		// Grounding-capable subset. Only models confirmed to accept
+		// `web_search_options` are listed. Adding a model here enables
+		// Decision B always-on grounding when config.enableGrounding is true.
+		//
+		// 2026-06-03: Gemma 4 26B grounding RE-ENABLED. The CF model schema
+		// confirms `web_search_options` is an accepted parameter
+		// (search_context_size enum low|medium|high; user_location.type
+		// 'approximate' + approximate{city,country,region,timezone}), and our
+		// payload matches it exactly. The schema does not forbid `tools` +
+		// `web_search_options` together.
+		// https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/
+		// Residual risk: a live `5006: anyOf at '/' not met ... /web_search_`
+		// was seen earlier today despite the valid shape (published schema vs
+		// runtime validator drift). If it recurs it breaks the casual lane,
+		// which has no fallback. Mitigation if needed: catch the 5006 in
+		// chat() and retry once without web_search_options.
 		this.supportsGrounding = [
-			'@cf/google/gemma-4-26b-a4b-it',
+			'@cf/google/gemma-4-26b-a4b-it',  // re-enabled 2026-06-03 (schema-verified)
 		].includes(this.model);
 	}
 

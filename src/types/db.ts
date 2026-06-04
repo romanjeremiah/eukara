@@ -45,6 +45,14 @@ export interface MemoryRow {
 	fact: string;
 	importance_score: number;
 	created_at: string;
+	/**
+	 * Supersession flag (2026-06-03). NULL means the memory is current
+	 * and surfaces in default retrieval. A timestamp means the user has
+	 * reported a change that contradicts this fact and the model called
+	 * supersede_memory; the row is retained in the database but excluded
+	 * from default retrieval.
+	 */
+	superseded_at: string | null;
 }
 
 export interface ReminderRow {

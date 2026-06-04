@@ -1,4 +1,340 @@
 ================================================================
+2026-06-03  Reminder management tools (list / update / clear)
+================================================================
+
+Bug: bot answered "clear out all reminders" by emitting
+tool_use list_reminders({context:"all"}) and could not clear them.
+
+Root cause (same over-promising pattern as quiet hours): Eukara only
+registered set_reminder + update_timezone. No list_reminders,
+update_reminder, or any delete/clear tool existed. The persona's TOOL
+SELECTION HARD CONSTRAINTS told the model to use
+(set_reminder, list_reminders, update_reminder), so it called an
+unregistered tool, and there was no clear tool at all. The reminders
+SERVICE, however, already implemented everything
+(listReminders / getReminder / updateReminder / softCancel / deleteAll);
+only the tool wrappers were missing.
+
+Fix (Roma chose: add the tools so the bot can do it itself):
+  - src/tools/reminder-tools.ts: import { defineTool, ok, empty, err };
+    added list_reminders (status filter, London-formatted due time),
+    update_reminder (ownership-checked reschedule/edit/cancel one),
+    clear_reminders.
+  - src/tools/index.ts: registered the three under Scheduling.
+  - src/config/personas.ts: hard-constraints reminder line now lists
+    clear_reminders too.
+
+Decision (Claude's, not overridden): clear_reminders SOFT-cancels all
+pending (loops softCancel; rows kept, reversible). Hard deleteAll stays
+reserved for /forget. Tool description tells the model to confirm before
+a bulk clear if intent is ambiguous.
+
+Not done: the one-off clearing of Roma's existing reminders (he did not
+ask for it; option 1 declined). due_at confirmed number (Unix seconds)
+in types/db.ts, so wrappers typecheck under strict.
+
+Pending (Roma): npx tsc --noEmit, deploy, then test "clear all
+reminders" -> soft-cancel; list/update.
+
+================================================================
+2026-06-03  Re-enable Gemma 4 grounding + fix never[] type error
+================================================================
+
+tsc --noEmit (run after the spontaneous-outreach batch) surfaced a
+pre-existing error in src/ai/cloudflare.ts, NOT from that batch:
+
+  TS2345: Argument of type 'string' is not assignable to parameter
+  of type 'never'.   ].includes(this.model)
+
+Cause: the 2026-06-03 Gemma grounding hotfix commented out the only
+element of the supportsGrounding array, leaving an empty literal which
+TS infers as never[]; .includes(string) then fails. That hotfix had
+shipped without a clean typecheck.
+
+Checked official CF docs (model schema + Parameters page, Roma
+screenshot) for the gemma-4-26b-a4b-it web_search_options shape:
+  - web_search_options IS an accepted input parameter.
+  - search_context_size: enum low|medium|high, default medium.
+  - user_location.type 'approximate' (required) + approximate{city,
+    country,region,timezone} (required).
+  - Our payload matches exactly. Schema does NOT forbid tools +
+    web_search_options together. Output annotations (url_citation)
+    match our parser.
+  https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/
+
+Decision (Roma): Option A, plain re-enable, trust the docs.
+Uncommented '@cf/google/gemma-4-26b-a4b-it' in supportsGrounding[]
+(src/ai/cloudflare.ts). This both re-enables Gemma grounding and fixes
+the never[] type error (array is now a non-empty string[]).
+
+Residual risk (documented in code): the live 5006 was seen earlier
+today despite the valid shape, i.e. published schema vs runtime
+validator drift. If it recurs it breaks the casual lane (CF Gemma
+default, ~80% traffic, no cascade fallback) and the Pro-lane tier-3
+fallback. Rejected mitigation kept on record: catch 5006 in chat() and
+retry once without web_search_options.
+
+Verify (Roma): npx tsc --noEmit clean; deploy; send a casual message
+that should trigger search and confirm a grounded reply with
+url_citation annotations and NO 5006 in tail logs. If 5006 returns,
+re-comment the line to roll back, then consider the retry mitigation.
+
+================================================================
+2026-06-03  Spontaneous outreach: interest-driven research sharing
+================================================================
+
+Ported Xaridotis's autonomous "reads something you'd like and texts
+you about it" loop into Eukara, built better. Implemented on disk,
+NOT yet typechecked or deployed (awaiting npx tsc --noEmit + wrangler).
+
+Decisions D1 to D5 locked with Roma before editing. Full rationale in
+decisions/2026-06-03-spontaneous-outreach.md.
+
+What changed:
+  - NEW src/services/curiosity.ts: maybeRunResearch. Twice weekly
+    (Tue + Fri 04:00 local), self-gating via KV idempotency
+    auto_research_<userId>_<date>. Derives interests from the user's
+    own memories (DEFAULT_INTERESTS fallback only), runs ONE grounded
+    Gemini + Google Search call, saves a `discovery` memory with the
+    source link retained ("Research: <text> [source: <uri>]").
+  - src/router/queue.ts: proactive generation (spontaneous outreach,
+    health check-ins, med nudge) now routes through the real persona
+    (BASE_INSTRUCTION + FORMATTING_RULES) on Gemini, not the generic
+    "caring AI companion" stub on Gemma. spontaneous_outreach now
+    pulls 50 memories, drops clinical/structural categories
+    (OUTREACH_EXCLUDED_CATEGORIES), weights selection toward
+    discoveries then ideas, builds a content-aware prompt. Removed
+    now-unused CloudflareProvider + CF_MODELS imports.
+  - src/router/cron.ts: calls maybeRunResearch; added quiet-hours and
+    last-seen (>= 3h) guards to the outreach enqueue.
+  - src/services/user.ts: isQuietTime / setQuietHours / clearQuietHours
+    (KV quiet_until_<userId>, Unix seconds, TTL derived from window).
+  - src/tools/reminder-tools.ts + src/tools/index.ts: set_quiet_hours
+    and clear_quiet_hours tools registered. These back the persona
+    QUIET HOURS directive, which previously referenced tools that did
+    not exist.
+  - src/services/memory.ts: getFormattedContext(includeDiscoveries=true).
+    Discoveries split from growth so they can be gated.
+  - src/bot/message.ts: writes last_seen_<userId> early; computes
+    isEmotional before context assembly and passes !isEmotional to
+    getFormattedContext, so discoveries are gated out of emotional
+    turns (Eukara keeps discoveries in chat otherwise, unlike
+    Xaridotis which isolates them).
+
+Verification pending (Roma): tsc --noEmit (watch curiosity.ts
+grounding-metadata access and the now-unused MENTAL_HEALTH_DIRECTIVE
+import in queue.ts, harmless under current tsconfig); deploy; confirm
+the model calls set_quiet_hours on a quiet request; after a Tue/Fri
+04:00 run, check D1 for a discovery memory with [source: ...] and that
+a later outreach surfaces it with the link.
+
+================================================================
+2026-06-03  Post-deploy hotfix: Gemma grounding + NO RECEIPTS leakage
+================================================================
+
+Two issues surfaced after deploying the persona hardening batch.
+
+1. Cloudflare AI schema validation error (5006) on the casual
+   Gemma 4 26B route:
+     anyOf at '/' not met: required properties at '/audio' are
+     'voice,format', ... '/web_search_<truncated>
+   Triggered on user message "what can I do about my anxiety"
+   which routed default_casual → Gemma 4 with enableGrounding=true.
+
+   Verified against
+   https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/
+   that the payload shape we send (search_context_size + user_location
+   with type/approximate/country/timezone) matches the documented schema.
+   So the failure is either:
+     (a) Cloudflare deployed a stricter validator that breaks the
+         previously-working combination, or
+     (b) an undocumented constraint when `tools` + `web_search_options`
+         are both set on the same call.
+
+   Hotfix: Gemma removed from supportsGrounding[] in
+   src/ai/cloudflare.ts. Casual lane now runs without web_search_options,
+   no inline citations on casual replies. Function calling still works.
+   Revisit when CF clarifies the schema or we test the no-tools case.
+
+2. NO RECEIPTS rule verbatim leakage:
+   User said "I am exhausted", bot replied "You've been carrying this
+   for days. Of course you are." — the exact example phrasing from the
+   rule. Classic prompt-leakage: the model treated the illustrative
+   "if X then say Y" example as a template.
+
+   Hotfix: rewrote the NO RECEIPTS rule in src/config/personas.ts to
+   describe the principle without any verbatim example output. Added
+   a meta-rule ("do not treat the banned phrases as a template either")
+   to head off rephrased copies. The banned-phrases list is retained
+   because those are anti-patterns to avoid, not templates to produce.
+
+DEPLOY
+  Roma to run after these edits:
+    cd ~/OneDrive/Documents/GitHub/eukara
+    npx tsc --noEmit
+    npx wrangler deploy --minify
+  (No migration needed; both changes are code-only.)
+
+SMOKE TESTS
+  • "what can I do about my anxiety" → no 5006 error
+  • "I am exhausted" → response is not the verbatim "You've been
+    carrying this for days. Of course you are." line
+  • Response length scales appropriately with the user's emotional
+    load — a real emotional disclosure should get more than 11 words
+  • General casual messages still work (we lost inline citations,
+    not casual replies)
+
+
+================================================================
+2026-06-03  Persona hardening, lens expansion, memory supersession
+================================================================
+
+Large persona update + memory-supersession feature. Followed an
+extended research session comparing Xaridotis and Eukara personas,
+cross-checking Anthropic / AISI / Cheng et al. research against
+three user-supplied feedback documents.
+
+DECISIONS DOC
+  decisions/2026-06-03-persona-hardening-and-lens-expansion.md
+  Captures full scope, design choices, smoke tests, deferred items.
+
+CHANGES SHIPPED (this commit)
+
+Persona (src/config/personas.ts) — 9 distinct edits:
+  1. NO SILVER LININGS rule (VOICE DISCIPLINE). Bans unprompted
+     reassurance phrases ("you've got this", "things will get
+     better", "at least…", etc). Presence beats comfort.
+  2. AVOID AI TELLS rule (VOICE DISCIPLINE). Bans 8 AI-tell words:
+     delve, leverage (verb), tapestry, testament, unwavering,
+     navigate (metaphor), embark on, in the realm of.
+  3. HONOUR STATED USER CONSTRAINTS rule (VOICE DISCIPLINE).
+     Adapted from Xaridotis ACTIVE_USER_CONSTRAINTS block, but as a
+     plain rule (not XML-block injection — Xaridotis has no
+     upstream injection code; verified by grep). Bans permissive
+     overrides ("You deserve…", "After a long day…", "Treat
+     yourself…") when user has stated a constraint.
+  4. Creative/generative gear added to HOW YOU ADAPT. New fourth
+     mode between analytical-sharp and emotional-warm: opinionated
+     collaborative pushback for brainstorming / "what if" work.
+     Replaces "Peer Reviewer" framing (rejected — power-dynamic
+     wrong for Eukara's non-judgmental identity).
+  5. Conditional framework-naming rule (BASE THERAPEUTIC FRAMEWORKS
+     + MHD intro). Replaces absolute ban with: default translate,
+     mirror when user uses the term first, explain on request,
+     allowed in psychoeducation. Never in active distress / venting
+     / mid-flow check-ins.
+  6. MI roll-with-resistance added to MHD section 5. When the user
+     resists medication, do NOT push or persuade — reflect, ask
+     what matters, hold both sides at once.
+  7. MHD section 11 expanded with:
+       - 7 common schemas in Schema lens (abandonment, mistrust,
+         defectiveness, failure, subjugation, self-sacrifice,
+         emotional deprivation)
+       - New CBT lens (5 cognitive patterns: all-or-nothing,
+         catastrophising, mind-reading, emotional reasoning,
+         discounting positives)
+       - New Somatic lens (body-location prompts, nervous-system
+         shape recognition, never name technical labels at user)
+  8. Narrative externalisation added to MHD section 14 translation
+     table ("my anxiety" → "the anxiety" when fusion is high).
+  9. New MHD section 15: RELATIONSHIP CONFLICT workflow. 5 moves
+     (Gottman complaint-vs-criticism, surface-vs-deeper feeling,
+     perspective-taking sparingly, accountability without shame,
+     rehearsal not script). Explicit ceiling: not a couples
+     therapist, does not pick sides.
+  + TOOL SELECTION HARD CONSTRAINTS block ported into
+     SECOND_BRAIN_DIRECTIVE. Critical line: "During an EMOTIONAL
+     TURN, do NOT auto-call save_therapeutic_note,
+     get_therapeutic_notes, or save_memory." Plus the new
+     supersession rule (see below).
+
+Mood synthesis (src/bot/mood-callbacks.ts):
+  Heuristic injection expanded 2 → 4 categories. Was pulling
+  trigger + schema; now also pulls pattern + avoidance. Same
+  graceful degradation pattern (each call .catch(() => [])).
+  heuristicsUsed log count updated to sum all four.
+
+Memory supersession + date annotations (Option B + C from
+the planning conversation. EWA rejected because it actively
+forgets long-term identity facts on a schedule, fighting Roma's
+stated value "remember things long-term").
+  Option B (src/services/memory.ts):
+    getFormattedContext now appends (today/Nd ago/Nw ago) to
+    factual, learned, feedback, and triples sections (previously
+    only therapeutic notes had this). Lets the model resolve
+    contradictions itself when it sees old + new in same context.
+    No retrieval change. No forgetting.
+  Option C (migrations/0002_memories_supersession.sql,
+            src/services/memory.ts,
+            src/types/db.ts,
+            src/tools/memory-tools.ts,
+            src/tools/index.ts,
+            schema.sql):
+    Schema: ALTER TABLE memories ADD COLUMN superseded_at DATETIME.
+    Type: MemoryRow.superseded_at: string | null.
+    Service: WHERE superseded_at IS NULL filter on all four
+    retrieval functions (getMemories, getMemoriesByCategory,
+    getRecentTherapeuticMemories, getMemoriesSince).
+    New service function supersedeMemory(env, userId, memoryId).
+    New tool supersede_memory registered in tools/index.ts.
+    Persona rule in TOOL SELECTION HARD CONSTRAINTS block tells the
+    model when to use it: only on explicit user-stated changes,
+    never on inferred contradictions, never during emotional turns.
+    Old memories are RETAINED in the database; just excluded from
+    default retrieval. Future-proof for an include_superseded flag.
+
+DEPLOY
+  Pending. To run on Roma's machine:
+    cd ~/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/eukara
+    npx wrangler d1 migrations apply DB --remote
+    npx tsc --noEmit
+    npx wrangler deploy --minify
+
+SMOKE TESTS (post-deploy)
+  Persona:
+    1. "I am exhausted" → must not open with "I hear that…"
+    2. "I want healthy food on the way home" → no "you deserve a
+       treat" override
+    3. Brainstorm a half-baked idea → pushes back, doesn't flatter
+    4. "What's a schema?" → explains (psychoeducation context)
+    5. Vent in distress → no framework names, no premature reframe
+    6. "I always fail at this" → bot names shape in plain language
+    7. Partner conflict mention → uses complaint-vs-criticism frame
+       silently
+    8. "I'm fine without my meds" → rolls with resistance, no push
+    9. Emotional message → stays in prose, no immediate
+       save_therapeutic_note call
+  Mood synthesis:
+    10. Trigger /mood flow → log shows heuristicsUsed reflecting
+        all 4 categories
+    11. [KNOWN HEURISTICS] block contains pattern + avoidance
+        sections when those memories exist
+  Memory supersession:
+    12. "I moved from London to Manchester" → model should
+        supersede the London memory and save the Manchester one
+    13. Query memory after supersession → only Manchester surfaces
+    14. D1 query → London row still in table with superseded_at set
+  Date annotations:
+    15. Send a message that triggers memory context → system prompt
+        should show factual/learned/feedback/triples with relative
+        age suffix
+
+DEFERRED (still pending across both projects)
+  • Eukara: midday checkin, style_card consolidation, DLQ, topics
+    routing, tagger lite
+  • Eukara model swap: gemini-3.1-pro-preview → verify or move to
+    gemini-2.5-pro / gemini-3.1-pro-preview-customtools
+  • Xaridotis: port no-receipts, asymmetric pacing, no-silver-linings,
+    AI-tells ban, dissociative category, and supersession back from
+    Eukara after Eukara stabilises
+  • Photo upload investigation (paused) — mood_journal photo_r2_key
+    always NULL
+  • vitest broken at config-load — needs npm reset
+  • Vectorize quality upgrade (768d → 1536d) deferred
+  • Claude Sonnet integration (Phase B, unwired)
+
+
+================================================================
 2026-06-03  Voice-note transcription leak fix
 ================================================================
 

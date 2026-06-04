@@ -19,6 +19,19 @@ export const saveMemory = defineTool(
 	}
 );
 
+export const supersedeMemory = defineTool(
+	'supersede_memory',
+	"Mark an outdated memory as superseded when the user explicitly reports a change that contradicts it (e.g. 'I prefer dry wine now, not sweet', 'I moved to London'). The row is retained in the database for audit but excluded from default retrieval. Always pair with a save_memory call for the new fact. Do NOT use during emotional turns. Do NOT use on inferred contradictions — only on explicit user-stated changes.",
+	{
+		memory_id: { type: 'integer', description: 'The id of the outdated memory to supersede. Get this from the memory context block where each fact is listed.' },
+	},
+	['memory_id'],
+	async (args, env, ctx) => {
+		await memory.supersedeMemory(env, ctx.userId, args.memory_id as number);
+		return ok({ memory_id: args.memory_id });
+	}
+);
+
 export const saveEpisode = defineTool(
 	'save_episode',
 	'Record a structured episode from a significant interaction.',

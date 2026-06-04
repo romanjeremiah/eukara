@@ -13,8 +13,7 @@
 // ============================================================
 
 import { log } from '../lib/logger';
-import { CF_MODELS, GEMINI_MODELS } from '../config/models';
-import { CloudflareProvider } from '../ai/cloudflare';
+import { GEMINI_MODELS } from '../config/models';
 import { GeminiProvider } from '../ai/gemini';
 import { BASE_INSTRUCTION, MENTAL_HEALTH_DIRECTIVE, FORMATTING_RULES } from '../config/personas';
 import { MOOD_POLL_OPTIONS, MOOD_POLL_QUESTION } from '../config/moodScale';
@@ -71,6 +70,60 @@ interface QueueTask {
 }
 
 const CHECKIN_THREAD_ID = 'default';
+
+// Categories excluded from spontaneous outreach selection: clinical,
+// therapeutic, and structural data that should never be surfaced as a
+// casual "thinking of you" share. Everything else (facts, ideas,
+// discoveries, preferences, observations) is fair game.
+const OUTREACH_EXCLUDED_CATEGORIES = [
+	'pattern', 'schema', 'trigger', 'avoidance', 'coping',
+	'homework', 'insight', 'growth', 'feedback', 'triple', 'research_ref',
+];
+
+interface OutreachMemory { category: string; fact: string }
+
+/**
+ * Weighted pick of a memory to surface. Prefers discoveries (the
+ * interest-driven research), then ideas, falling back to any casual
+ * memory. Mirrors the Xaridotis selection weighting.
+ */
+function pickOutreachMemory(memories: OutreachMemory[]): OutreachMemory | null {
+	if (!memories.length) return null;
+	const discoveries = memories.filter(m => m.category === 'discovery');
+	const ideas = memories.filter(m => m.category === 'idea' || m.category === 'brain_dump');
+	const roll = Math.random();
+	let pool: OutreachMemory[];
+	if (discoveries.length && roll < 0.5) pool = discoveries;
+	else if (ideas.length && roll < 0.7) pool = ideas;
+	else pool = memories;
+	return pool[Math.floor(Math.random() * pool.length)] ?? null;
+}
+
+/**
+ * Build the generation prompt for the chosen memory. Discoveries are
+ * framed as "something you read" with their source preserved so the
+ * user can verify; everything else is framed as a passing thought.
+ * Grounding is NOT re-run here: the discovery was already grounded at
+ * research time, this only rephrases it in Eukara's voice.
+ */
+function buildOutreachPrompt(chosen: OutreachMemory): string {
+	if (chosen.category === 'discovery') {
+		// Discovery facts are stored as "Research: <text> [source: <uri>]".
+		const sourceMatch = chosen.fact.match(/\[source:\s*([^\]]+)\]/);
+		const source = sourceMatch?.[1]?.trim();
+		const body = chosen.fact
+			.replace(/^Research:\s*/, '')
+			.replace(/\s*\[source:[^\]]+\]\s*$/, '')
+			.trim();
+		return `You came across this recently and thought they would find it interesting:\n\n"${body}"\n\n`
+			+ `Text them about it out of the blue, like a friend who read something and wanted to share. 1 to 2 sentences. `
+			+ (source ? `Include the link naturally: ${source}. ` : '')
+			+ `Frame it as something you read, not settled fact. Do not offer help. Do not ask how they are.`;
+	}
+	return `A passing thought about something you know about them:\n\n"${chosen.fact}"\n\n`
+		+ `Send a short, casual out-of-the-blue message about it, like a friend texting. 1 to 2 sentences. `
+		+ `Do not offer help. Do not be a therapist. Just share the thought.`;
+}
 
 export async function handleQueue(batch: MessageBatch, env: Env): Promise<void> {
 	for (const msg of batch.messages) {
@@ -241,9 +294,22 @@ async function processTask(task: QueueTask, env: Env, attempts: number): Promise
 		}
 
 		case 'spontaneous_outreach': {
+			// Interest-driven casual share. Pull recent memories, keep
+			// the casual (non-clinical) ones, weight selection toward
+			// discoveries and ideas, and hand the chosen item to the
+			// persona-voiced generator. The cron guards (sociable hours,
+			// 5% roll, daily cap, 3h-since-chat, quiet hours) have
+			// already passed by the time this runs.
+			const all = await memory.getMemories(env, userId, 50).catch(() => []);
+			const casual = all.filter(m => !OUTREACH_EXCLUDED_CATEGORIES.includes(m.category));
+			if (!casual.length) break;
+
+			const chosen = pickOutreachMemory(casual);
+			if (!chosen) break;
+
 			const greeting = await generateCheckinMessage(env, chatId, userId,
 				'[automatic spontaneous outreach trigger]',
-				'Send a spontaneous, brief 1-2 sentence check-in message.',
+				buildOutreachPrompt(chosen),
 				'',
 				300
 			);
@@ -355,12 +421,17 @@ async function generateCheckinMessage(
 	let greeting = fallbackMessage;
 
 	try {
-		const provider = new CloudflareProvider(env.AI, CF_MODELS.chat);
+		// Tone fix (2026-06-03): proactive messages now generate through
+		// Eukara's real persona voice (BASE + FORMATTING) on Gemini, not
+		// the generic "caring AI companion" stub on the edge model.
+		// Infrequent (a few per week) so model cost is negligible and the
+		// voice consistency is worth it.
+		const provider = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.pro);
 		const response = await provider.chat(
 			[{ role: 'user', content: generationPrompt }],
-			[],
+			undefined,
 			{
-				systemInstruction: 'You are a caring AI companion. Be warm, brief, natural.',
+				systemInstruction: `${BASE_INSTRUCTION}\n\n${FORMATTING_RULES}`,
 				temperature: 1.0,
 				maxTokens,
 				enableGrounding: false,

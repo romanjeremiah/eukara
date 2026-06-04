@@ -213,7 +213,10 @@ export async function runEmotionsDoneWork(
 	// compare today's signals against KNOWN HEURISTICS instead of
 	// summarising in a vacuum. Both degrade to [] on error — missing
 	// heuristics should not crash the synthesis.
-	const [history, therapeuticNotes, relevantEpisodes, semanticCtx, triggers, schemas] = await Promise.all([
+	//
+	// 2026-06-03 (heuristic expansion 2→4): now also pulling 'pattern'
+	// and 'avoidance' categories. Same graceful degradation.
+	const [history, therapeuticNotes, relevantEpisodes, semanticCtx, triggers, schemas, patterns, avoidances] = await Promise.all([
 		mood.getHistory(env, userId, 30, 'evening').catch(() => []),
 		memory.getRecentTherapeuticMemories(env, userId, 30).catch(() => []),
 		episode.getRecentEpisodes(env, userId, 5).catch(() => []),
@@ -224,6 +227,8 @@ export async function runEmotionsDoneWork(
 		).catch(() => ''),
 		memory.getMemoriesByCategory(env, userId, 'trigger', 10).catch(() => []),
 		memory.getMemoriesByCategory(env, userId, 'schema', 10).catch(() => []),
+		memory.getMemoriesByCategory(env, userId, 'pattern', 10).catch(() => []),
+		memory.getMemoriesByCategory(env, userId, 'avoidance', 10).catch(() => []),
 	]);
 
 	const historyContext = mood.formatHistoryForContext(history, 10);
@@ -241,13 +246,24 @@ export async function runEmotionsDoneWork(
 	// friction between today's data and these heuristics rather than
 	// summarising the data in isolation. Empty block when no heuristics
 	// exist yet — graceful degradation for new users.
-	const heuristicsContext = (triggers.length || schemas.length)
+	//
+	// 2026-06-03 (heuristic expansion 2→4): now formats four categories
+	// (triggers, schemas, patterns, avoidances). Each is a separate
+	// labelled block so the model can attribute the friction.
+	const heuristicsAny = triggers.length || schemas.length || patterns.length || avoidances.length;
+	const heuristicsContext = heuristicsAny
 		? '[KNOWN HEURISTICS]\n'
 			+ (triggers.length
 				? 'Known triggers:\n' + triggers.slice(0, 8).map(t => `- ${t.fact}`).join('\n') + '\n'
 				: '')
 			+ (schemas.length
-				? 'Known schemas/patterns:\n' + schemas.slice(0, 8).map(s => `- ${s.fact}`).join('\n')
+				? 'Known schemas/patterns:\n' + schemas.slice(0, 8).map(s => `- ${s.fact}`).join('\n') + '\n'
+				: '')
+			+ (patterns.length
+				? 'Known recurring patterns:\n' + patterns.slice(0, 8).map(p => `- ${p.fact}`).join('\n') + '\n'
+				: '')
+			+ (avoidances.length
+				? 'Known avoidances:\n' + avoidances.slice(0, 8).map(a => `- ${a.fact}`).join('\n')
 				: '')
 		: '';
 
@@ -318,7 +334,7 @@ export async function runEmotionsDoneWork(
 		posCount: posSelected.length,
 		negCount: negSelected.length,
 		dissCount: dissSelected.length,
-		heuristicsUsed: triggers.length + schemas.length,
+		heuristicsUsed: triggers.length + schemas.length + patterns.length + avoidances.length,
 		summaryLen: summary.length,
 	});
 

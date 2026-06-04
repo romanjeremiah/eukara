@@ -10,6 +10,7 @@ import { formatTime } from '../lib/formatting';
 import * as telegram from '../lib/telegram';
 import * as user from '../services/user';
 import * as reminders from '../services/reminders';
+import * as curiosity from '../services/curiosity';
 
 interface ScheduleConfig { hour: number; minute: number }
 
@@ -41,13 +42,31 @@ export async function handleCron(env: Env): Promise<void> {
 			await checkConsolidation(env, userId, localTime);
 		} catch (e) { log.error('cron_consolidation_error', { userId, msg: (e as Error).message }); }
 
-		// Spontaneous outreach
+		// Autonomous interest-driven research (twice weekly, 04:00
+		// local). Self-gating producer: writes `discovery` memories
+		// that the spontaneous-outreach consumer later surfaces.
+		try {
+			await curiosity.maybeRunResearch(env, userId, localTime);
+		} catch (e) { log.error('cron_research_error', { userId, msg: (e as Error).message }); }
+
+		// Spontaneous outreach: interest-driven casual share. Guards
+		// (2026-06-03): sociable hours only, ~5% roll, max one per day,
+		// not within 3h of the last message (don't double-text), and
+		// silent during quiet hours. Selection + generation happen in
+		// the queue consumer.
 		try {
 			if (hour >= 10 && hour <= 19 && Math.random() <= 0.05) {
 				const key = `spontaneous_${userId}_${today}`;
 				if (!await env.CHAT_KV.get(key)) {
-					await env.TASK_QUEUE.send({ type: 'spontaneous_outreach', userId, chatId: userId });
-					await env.CHAT_KV.put(key, '1', { expirationTtl: 86400 });
+					const quiet = await user.isQuietTime(env, userId);
+					const lastSeenRaw = await env.CHAT_KV.get(`last_seen_${userId}`);
+					const hoursSinceChat = lastSeenRaw
+						? (Date.now() - Number(lastSeenRaw)) / 3_600_000
+						: Infinity;
+					if (!quiet && hoursSinceChat >= 3) {
+						await env.TASK_QUEUE.send({ type: 'spontaneous_outreach', userId, chatId: userId });
+						await env.CHAT_KV.put(key, '1', { expirationTtl: 86400 });
+					}
 				}
 			}
 		} catch (e) { log.error('cron_outreach_error', { userId, msg: (e as Error).message }); }

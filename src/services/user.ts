@@ -131,3 +131,40 @@ export async function updateProfileFromObservation(
 		`UPDATE user_profiles SET ${fields.join(', ')} WHERE user_id = ?`
 	).bind(...values).run();
 }
+
+// ============================================================
+// Quiet hours (do-not-disturb for proactive outreach)
+//
+// Stored in KV as `quiet_until_${userId}` = Unix seconds (string).
+// Gates proactive outreach only (spontaneous shares, non-clinical
+// check-ins). Clinical / medication care runs regardless, per the
+// persona QUIET HOURS directive. Added 2026-06-03 to back the
+// set_quiet_hours / clear_quiet_hours tools the persona already
+// references but which were never implemented.
+// ============================================================
+
+const quietKey = (userId: number): string => `quiet_until_${userId}`;
+
+/** True if the user is currently within a quiet-hours window. */
+export async function isQuietTime(env: Env, userId: number): Promise<boolean> {
+	const raw = await env.CHAT_KV.get(quietKey(userId));
+	if (!raw) return false;
+	const until = Number(raw);
+	if (!Number.isFinite(until)) return false;
+	return Date.now() / 1000 < until;
+}
+
+/**
+ * Set a quiet-hours window ending at `endUnix` (Unix seconds). The KV
+ * TTL is derived from the window so the key self-clears shortly after
+ * it ends (60s floor guards against past/now timestamps).
+ */
+export async function setQuietHours(env: Env, userId: number, endUnix: number): Promise<void> {
+	const ttl = Math.max(60, Math.floor(endUnix - Date.now() / 1000) + 60);
+	await env.CHAT_KV.put(quietKey(userId), String(endUnix), { expirationTtl: ttl });
+}
+
+/** Clear any active quiet-hours window. */
+export async function clearQuietHours(env: Env, userId: number): Promise<void> {
+	await env.CHAT_KV.delete(quietKey(userId));
+}
