@@ -1,4 +1,268 @@
 ================================================================
+2026-06-04  Pro-lane cascade reorder: flash-first, four tiers
+================================================================
+
+Context: this morning's voice-note reminder revealed pro-latest
+as a slow door for every Pro-lane turn. Tail showed:
+  - tier1_pro_latest timed out after 90000ms
+  - 503 UNAVAILABLE on the second turn
+  - 2-minute total round-trip
+The cascade resilience held (flash recovered both rounds) but
+pro-latest's instability was being paid as a 90s tax per failure
+on what should be sub-2-second turns. Voice-note triggered route
+'multimodal_input' which goes straight to pro-latest.
+
+Roma decided to demote pro-latest from Tier 1 to Tier 2 and add
+gemini-3.1-flash-lite as a deep Tier 4 fallback. Verified gemini-
+3.1-flash-lite capabilities against the official Google docs page
+(last updated 2026-05-27): function calling, search grounding,
+thinking, and multimodal inputs all supported. Tool combination
+implicit via 3.x family pattern.
+
+Locked decisions:
+  - Pro lane cascade only (Tier 1-4). Casual lane (Gemma
+    default), router branching logic, and complexity patterns
+    untouched.
+  - Timeouts rebalanced 30s / 60s / 30s / 30s. Worst case 150s,
+    still well under the queue's 15-min budget.
+  - thinkingEffort='dynamic' on all three Gemini tiers (model
+    decides). Tier 3 (CF Gemma) keeps 'medium' as before.
+  - Cross-provider resilience preserved by keeping CF Gemma at
+    Tier 3 between the two Gemini fallbacks.
+
+Files touched:
+
+  src/config/models.ts
+    GEMINI_MODELS restructured:
+      proPrimary: 'gemini-3.5-flash'        (NEW field, Tier 1)
+      proLatest:  'gemini-pro-latest'        (unchanged identifier,
+                                              now Tier 2)
+      flashLite:  'gemini-3.1-flash-lite'   (REPOINTED, was alias
+                                              to gemini-3.5-flash,
+                                              now the real flash-
+                                              lite, Tier 4)
+      pro:        REMOVED                    (was unused, technical
+                                              debt cleanup)
+    Comment block fully rewritten to document the four-tier
+    cascade with timeouts and reasoning.
+
+  src/ai/router.ts
+    All four Pro-lane decisions (sticky_pro_context, multimodal_
+    input, active_health_checkin, emotional_content) switched
+    from GEMINI_MODELS.proLatest to GEMINI_MODELS.proPrimary.
+    Header comment updated. Casual lane and complexity patterns
+    unchanged.
+
+  src/bot/message.ts chatWithProLaneFallback:
+    Cascade rewritten end to end:
+      Tier 1 (30s): route.model = proPrimary = gemini-3.5-flash
+                    label 'tier1_flash'
+      Tier 2 (60s): GEMINI_MODELS.proLatest = gemini-pro-latest
+                    label 'tier2_pro_latest'  (NEW)
+      Tier 3 (30s): CF_MODELS.chat = @cf/google/gemma-4-26b
+                    label 'tier3_cf_gemma'  (unchanged)
+      Tier 4 (30s): GEMINI_MODELS.flashLite = gemini-3.1-flash-lite
+                    label 'tier4_flash_lite'  (NEW)
+    Log event names follow tier number; recovery logs are info,
+    failures are warn except the final all-tiers-exhausted which
+    is error and re-throws.
+
+  --- Post-typecheck rename pass ---
+
+  `npx tsc --noEmit` after the cascade reorder surfaced 7 callsites
+  referencing `GEMINI_MODELS.pro` (removed in the rename). All were
+  using flash directly via that field, so the fix was a behaviour-
+  preserving rename to `GEMINI_MODELS.proPrimary` (still points at
+  gemini-3.5-flash). No model changes. Files:
+
+    src/ai/gemini.ts:55           constructor default model
+    src/bot/mood-callbacks.ts:284 mood emotion synthesis
+    src/bot/poll.ts:173           clinical-concern response (score 0-1/9-10)
+    src/bot/poll.ts:274           mood analysis (score 2-8)
+    src/router/queue.ts:429       proactive check-in greeting
+    src/router/queue.ts:526       weekly Sunday report
+    src/services/curiosity.ts:72  autonomous Tue/Fri research
+
+  Architectural note (deferred): these seven sites construct
+  GeminiProvider directly and DO NOT go through the new four-tier
+  cascade. If flash is sick globally, each falls back to its own
+  static string / silent skip rather than retrying on pro-latest /
+  CF Gemma / flash-lite. Cascade only protects the user-message
+  hot path. Worth lifting into a shared helper if/when these
+  background paths start failing, but not in scope for this batch.
+
+Expected behaviour after deploy:
+  - Voice notes and emotional content go to flash, not pro-latest.
+    Sub-3-second turns become normal again.
+  - pro-latest still answers when flash fails (it does sometimes,
+    especially on complex inputs).
+  - Tail log labels change: 'tier1_flash' replaces 'tier1_pro_
+    latest'. New event types: pro_lane_tier4_recovered /
+    pro_lane_tier4_failed.
+
+Deferred:
+  - Eukara model swap on Xaridotis side (use this cascade pattern
+    there when stabilised).
+  - Tier 3 vs Tier 4 ordering experiment (currently CF Gemma
+    before flash-lite). If Google outages happen, CF wins. If
+    only pro-latest is sick, flash-lite would be quicker. Current
+    order prioritises cross-provider resilience over speed; can
+    revisit if telemetry shows Tier 4 is rarely hit.
+
+Verify before deploy: npx tsc --noEmit. Roma deploys via
+npx wrangler deploy --minify.
+
+Smoke tests after deploy:
+  1. Send a text message (non-emotional). Should route to default
+     casual (CF Gemma) per existing router logic. No change.
+  2. Send an emotional text ("I feel anxious about work"). Should
+     route to gemini-3.5-flash. Tail log: 'model_route' with
+     model='gemini-3.5-flash', reason='emotional_content'.
+  3. Send a voice note. Should route to gemini-3.5-flash. Tail
+     log: model='gemini-3.5-flash', reason='multimodal_input'.
+     Sub-3-second turn typical.
+  4. (Hard to force) verify Tier 2 fallback by waiting for a
+     natural flash failure. Tail will show pro_lane_tier1_failed
+     followed by pro_lane_tier2_recovered with model=
+     'gemini-pro-latest'.
+  5. Tier 4 only reachable if Google AND Cloudflare both fail.
+     Not testable without intentionally breaking infra; observe
+     in production if/when it happens.
+
+Decision doc: decisions/2026-06-04-cascade-reorder.md
+
+
+
+Session opened with the Voice button broken (toast + chat action
+shown, no voice arrived). Three-step diagnostic confirmed the path
+is healthy on Eukara's side: voice_start → voice_generated
+(1856ms, 65 KB OGG) → voice_sent (totalMs 1940). The remaining
+gap was that sendVoice silently swallowed Telegram's response.
+Added a one-shot diagnostic log inside sendVoice; the next repro
+surfaced:
+  "description":"Bad Request: VOICE_MESSAGES_FORBIDDEN","httpStatus":400.
+Root cause: Telegram Premium privacy setting on Roma's account
+restricting bot voice messages. Setting changed Telegram-side
+and voice now works.
+
+Diagnostic logs reverted after confirmation. Per Roma's directive
+(b), kept a minimal warn-only log in sendVoice for future Telegram-
+side rejections — the silent-swallow bug applied to ANY non-ok
+response, not just VOICE_MESSAGES_FORBIDDEN, so making it visible
+is worth five lines. Same pattern in sendPhoto/sendDocument left
+untouched until a real failure hits them.
+
+--- Reminder context port (Option A minus TTS) ---
+
+Five-file batch porting Xaridotis-style reminder context to Eukara.
+Locked decisions:
+  - Decision 1b: soft-cancel preserved. Tool's cancel:true maps
+    internally to status='cancelled'. Row retained for audit. Never
+    hard-delete from update_reminder (deleteAll stays in /forget).
+  - Decision 3: persona field stored in metadata even though Eukara
+    is single-persona today. Always 'eukara' literal. Future-proof.
+  - firstName fetched once at save time via user.getProfile so a
+    name change between scheduling and firing doesn't retro-edit.
+  - Field rename source_context → reason with read-time fallback
+    for back-compat with pre-2026-06-04 rows.
+  - No ToolContext changes. firstName lookup happens inside the
+    set_reminder execute path (one DB read per save, infrequent).
+
+Files touched:
+
+  src/lib/telegram.ts
+    sendVoice: parse JSON response, warn-only log on !data.ok.
+    bufferBytes + errorCode + description captured. Behaviour
+    unchanged — silent failures are now visible silent failures.
+
+  src/services/reminders.ts
+    ReminderMetadata extended:
+      + reason (canonical 'why', supersedes source_context)
+      + originalRequest (user's verbatim message)
+      + firstName (snapshot at save time)
+      + persona (always 'eukara' for now)
+      + createdAt (Unix seconds at save)
+    source_context marked @deprecated, kept for back-compat reads.
+    No function signature changes.
+
+  src/tools/reminder-tools.ts
+    set_reminder:
+      - Description carries SMART TIMING heuristic (+5/+15/+30/+60min
+        for casual asks; ask only for major future events)
+      - task_message description has 24-hour rule + second-person
+        / imperative perspective rule with examples
+      - context description: brief, one sentence, 24-hour, second-
+        person, with examples
+      - New original_user_request parameter
+      - Execute fetches user.getProfile for firstName, builds full
+        metadata (reason/originalRequest/firstName/persona/createdAt/
+        origin), passes through createReminder
+      - Returns display_hint string for the confirmation message
+      - Dedup hit returns duplicate_skipped with note explaining
+        to the model to NOT claim a new save
+
+    list_reminders:
+      - Description rewritten as "THE ONLY tool for reading
+        reminders" with explicit anti-SQL framing
+      - Returns per-item context field (sliced 120 chars from
+        metadata.reason, falling back to metadata.source_context
+        for legacy rows)
+      - Returns timezone + note to anchor the model's matching
+
+    update_reminder (overhauled):
+      - Switched params to Xaridotis shape: new_text /
+        new_due_at_timestamp / new_recurrence_type / new_context /
+        cancel (boolean)
+      - cancel:true short-circuits to softCancel (Decision 1b)
+      - new_context merges into existing metadata so firstName /
+        persona / originalRequest survive the edit
+      - Returns new_state with due_at_local for confirmation
+
+  src/router/cron.ts deliverReminders:
+      - Imports escapeHtml + ReminderMetadata type
+      - HTML-escapes reminder.text and the context reason before
+        embedding in HTML body (Telegram would 400 on raw entities)
+      - Appends <blockquote expandable>{reason}</blockquote> when
+        metadata.reason / source_context present
+      - Inline keyboard added with 🔊 Voice + 🗑️ Delete buttons
+        (same callback_data as bot replies; existing handlers in
+        bot/callback.ts handle both paths identically, zero new
+        wiring)
+      - Eukara's existing message format retained (header line with
+        formatTime tg-time entity), only the blockquote + keyboard
+        added on top. Per Roma's locked decision.
+
+  src/config/personas.ts SECOND_BRAIN_DIRECTIVE item 2:
+      - Reminder block expanded with PERSPECTIVE RULE, 24-hour rule,
+        original_user_request requirement, AFTER SETTING display_hint
+        hint, and EDITING / CANCELLING workflow (list → update)
+
+Deferred:
+  - sendPhoto / sendDocument silent-swallow fix — same pattern, not
+    yet triggered in production, applied lazily when needed.
+  - Phase 2 voice-switching architecture parked at Roma's request
+    ("we will need to plan it properly"). D-A through D-E unanswered.
+
+Verify before deploy: npx tsc --noEmit. Roma deploys via
+npx wrangler deploy --minify.
+
+Smoke tests after deploy:
+  1. Ask Eukara for a reminder with context. Confirm metadata in D1
+     captures firstName + originalRequest + persona + reason.
+  2. Wait for cron delivery. Confirm message has blockquote with
+     reason + Voice/Delete buttons.
+  3. Press Voice on delivered reminder. Confirm voice arrives (now
+     that the Telegram privacy setting is fixed).
+  4. Call list_reminders. Confirm context field on each item.
+  5. Call update_reminder with new_context. Confirm reason updates
+     without losing firstName/persona/originalRequest in metadata.
+  6. Call update_reminder with cancel:true. Confirm row stays in DB
+     with status='cancelled'.
+
+Decision doc: decisions/2026-06-04-reminder-context-port.md
+
+
+================================================================
 2026-06-03  Reminder management tools (list / update / clear)
 ================================================================
 

@@ -426,7 +426,7 @@ async function generateCheckinMessage(
 		// the generic "caring AI companion" stub on the edge model.
 		// Infrequent (a few per week) so model cost is negligible and the
 		// voice consistency is worth it.
-		const provider = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.pro);
+		const provider = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.proPrimary);
 		const response = await provider.chat(
 			[{ role: 'user', content: generationPrompt }],
 			undefined,
@@ -523,7 +523,7 @@ Tone: warm, observant, personal. You know this person. Use their mood data as ev
 
 	let text: string;
 	try {
-		const provider = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.pro);
+		const provider = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.proPrimary);
 		const response = await provider.chat(
 			[{ role: 'user', content: prompt }],
 			[],

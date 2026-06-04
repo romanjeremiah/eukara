@@ -32,25 +32,35 @@ import { getWeather, formatWeatherForContext } from '../services/weather';
 // ============================================================
 // Pro-lane cascade
 //
-// 2026-06-02 (afternoon): full reorder. Three different infrastructure
-// surfaces so a single provider failure can't break end-user replies.
+// 2026-06-04: reordered to flash-first. Four tiers across two
+// providers so neither a single model failure nor a single
+// provider outage can break end-user replies.
 //
-//   Tier 1 (90s):  gemini-pro-latest        — best quality, Google Pro,
-//                                              auto-aliased to current latest
-//   Tier 2 (45s):  gemini-3.5-flash         — same family (thoughtSignature
-//                                              continuity), much faster
-//   Tier 3 (30s):  @cf/google/gemma-4-26b   — Cloudflare edge GPU, no
-//                                              Google dependency at all
+//   Tier 1 (30s):  gemini-3.5-flash         — primary. 3.x family,
+//                                              multimodal, tool
+//                                              combination, fast.
+//   Tier 2 (60s):  gemini-pro-latest         — deeper reasoning
+//                                              when flash isn't
+//                                              enough. Slower; we
+//                                              tolerate it because
+//                                              this path is rare.
+//   Tier 3 (30s):  @cf/google/gemma-4-26b    — Cloudflare edge GPU,
+//                                              no Google dependency.
+//                                              Cross-provider
+//                                              resilience.
+//   Tier 4 (30s):  gemini-3.1-flash-lite     — deepest Gemini
+//                                              fallback. Small,
+//                                              cheap, supports tool
+//                                              calls and grounding.
+//                                              Almost always works.
 //
 // Per-tier timeouts via Promise.race (wall-clock), not AbortSignal:
-// provider-agnostic, no SDK-specific plumbing. Total worst-case 165s,
-// well within the queue consumer's 15-min wall-clock budget.
+// provider-agnostic, no SDK-specific plumbing. Total worst-case
+// 150s, well within the queue consumer's 15-min wall-clock budget.
 //
-// Pattern lifted from Xaridotis B2C cascade (gemini-bot/src/config/
-// cascades.js LAYER_B2C_TIERS) minus OpenAI/Anthropic middle tiers.
-//
-// Activates for ANY Gemini route (emotional, multimodal, active checkin,
-// sticky context). Casual CF routes fail through to the outer catch.
+// Activates for ANY Gemini route (emotional, multimodal, active
+// checkin, sticky context). Casual CF routes fail through to the
+// outer catch.
 // ============================================================
 
 /**
@@ -93,7 +103,9 @@ async function chatWithProLaneFallback(
 	// (Gemma/Qwen) don't — they re-throw to the outer handler.
 	const isProLane = route.provider === 'gemini';
 
-	// Tier 1: configured route (typically gemini-pro-latest), 90s budget.
+	// Tier 1: configured route (gemini-3.5-flash by default), 30s budget.
+	// 3.x family supports tool combination and multimodal. This is the
+	// fast path; anything longer than 30s suggests something is wrong.
 	try {
 		const response = await withTimeout(
 			provider.chat(args.messages, args.tools, {
@@ -102,10 +114,10 @@ async function chatWithProLaneFallback(
 				systemInstruction: args.systemInstruction,
 				enableGrounding: args.enableGrounding,
 			}),
-			90_000,
-			'tier1_pro_latest'
+			30_000,
+			'tier1_flash'
 		);
-		return { response, tierUsed: 'tier1_pro_latest' };
+		return { response, tierUsed: 'tier1_flash' };
 	} catch (err) {
 		const error = err as Error;
 		if (!isProLane) {
@@ -115,30 +127,34 @@ async function chatWithProLaneFallback(
 		log.warn('pro_lane_tier1_failed', { model: route.model, msg: error.message });
 	}
 
-	// Tier 2: gemini-3.5-flash, same family as Tier 1 so tool combination
-	// + thoughtSignature continuity keep working. 45s budget.
+	// Tier 2: gemini-pro-latest. Deeper reasoning when flash fails or
+	// isn't enough. Same family, so tool combination + thoughtSignature
+	// continuity keep working. 60s budget — pro-latest can be slower,
+	// and a slow correct answer beats a fast wrong one at this tier.
 	try {
-		const flash = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.flashLite);
+		const proLatest = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.proLatest);
 		const response = await withTimeout(
-			flash.chat(args.messages, args.tools, {
+			proLatest.chat(args.messages, args.tools, {
 				temperature: 1.0,
 				thinkingEffort: 'dynamic',
 				systemInstruction: args.systemInstruction,
 				enableGrounding: args.enableGrounding,
 			}),
-			45_000,
-			'tier2_gemini_flash'
+			60_000,
+			'tier2_pro_latest'
 		);
-		log.info('pro_lane_tier2_recovered', { model: GEMINI_MODELS.flashLite });
-		return { response, tierUsed: 'tier2_gemini_flash' };
+		log.info('pro_lane_tier2_recovered', { model: GEMINI_MODELS.proLatest });
+		return { response, tierUsed: 'tier2_pro_latest' };
 	} catch (err) {
 		const error = err as Error;
-		log.warn('pro_lane_tier2_failed', { model: GEMINI_MODELS.flashLite, msg: error.message });
+		log.warn('pro_lane_tier2_failed', { model: GEMINI_MODELS.proLatest, msg: error.message });
 	}
 
 	// Tier 3: Cloudflare Gemma 4 (edge GPU, no Google dependency), 30s
 	// budget. Grounding capability matches — CloudflareProvider passes
-	// web_search_options through when enableGrounding is set.
+	// web_search_options through when enableGrounding is set. Critical
+	// for cross-provider resilience: if Google is fully down, this tier
+	// still answers.
 	try {
 		const cfFallback = new CloudflareProvider(env.AI, CF_MODELS.chat);
 		const response = await withTimeout(
@@ -155,7 +171,33 @@ async function chatWithProLaneFallback(
 		return { response, tierUsed: 'tier3_cf_gemma' };
 	} catch (err) {
 		const error = err as Error;
-		log.error('pro_lane_tier3_failed', { model: CF_MODELS.chat, msg: error.message });
+		log.warn('pro_lane_tier3_failed', { model: CF_MODELS.chat, msg: error.message });
+	}
+
+	// Tier 4: gemini-3.1-flash-lite. Deepest Gemini fallback. Small
+	// model, fast by design, supports function calling + search
+	// grounding (verified against Google docs 2026-05-27). 30s budget.
+	// Reached only when both Google Pro/Flash AND Cloudflare Gemma have
+	// failed in the same turn — rare but possible during multi-provider
+	// degradation. Last line of defence; if this also fails, surface the
+	// error to the user with model info.
+	try {
+		const flashLite = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.flashLite);
+		const response = await withTimeout(
+			flashLite.chat(args.messages, args.tools, {
+				temperature: 1.0,
+				thinkingEffort: 'dynamic',
+				systemInstruction: args.systemInstruction,
+				enableGrounding: args.enableGrounding,
+			}),
+			30_000,
+			'tier4_flash_lite'
+		);
+		log.info('pro_lane_tier4_recovered', { model: GEMINI_MODELS.flashLite });
+		return { response, tierUsed: 'tier4_flash_lite' };
+	} catch (err) {
+		const error = err as Error;
+		log.error('pro_lane_tier4_failed', { model: GEMINI_MODELS.flashLite, msg: error.message });
 		// All tiers exhausted — throw the last error so the outer catch
 		// surfaces it to the user with model info.
 		throw error;

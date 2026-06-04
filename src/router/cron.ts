@@ -6,10 +6,11 @@
 // ============================================================
 
 import { log } from '../lib/logger';
-import { formatTime } from '../lib/formatting';
+import { formatTime, escapeHtml } from '../lib/formatting';
 import * as telegram from '../lib/telegram';
 import * as user from '../services/user';
 import * as reminders from '../services/reminders';
+import type { ReminderMetadata } from '../services/reminders';
 import * as curiosity from '../services/curiosity';
 
 interface ScheduleConfig { hour: number; minute: number }
@@ -195,6 +196,17 @@ async function deliverReminders(env: Env, userId: number): Promise<void> {
 	const due = await reminders.listDuePending(env, userId, nowUnix, 10);
 	if (!due.length) return;
 
+	// Inline keyboard: Voice (reads the reminder text aloud via TTS)
+	// + Delete (removes the delivered message from chat). Same
+	// callback_data shape as bot replies, so the existing handlers in
+	// bot/callback.ts handle both cases identically. No new wiring.
+	const reminderMarkup = {
+		inline_keyboard: [[
+			{ text: '🔊 Voice', callback_data: 'action_voice' },
+			{ text: '🗑️ Delete', callback_data: 'action_delete_msg' },
+		]],
+	};
+
 	for (const reminder of due) {
 		// Format the original scheduled time with the tg-time entity.
 		// Falls back to no label if due_at is missing — the reminder
@@ -202,15 +214,37 @@ async function deliverReminders(env: Env, userId: number): Promise<void> {
 		const dueLabel = reminder.due_at
 			? formatTime(reminder.due_at, new Date(reminder.due_at * 1000).toLocaleString('en-GB'), 't')
 			: '';
-		const message = dueLabel
-			? `⏰ <b>Reminder</b> · ${dueLabel}\n${reminder.text}`
-			: `⏰ <b>Reminder:</b> ${reminder.text}`;
+
+		// Extract context reason from metadata for the expandable
+		// blockquote. 2026-06-04 reminder context port. Falls back to
+		// legacy `source_context` for rows written before the field
+		// rename so older reminders deliver without a missing blockquote.
+		let contextReason = '';
+		try {
+			const meta = JSON.parse(reminder.metadata || '{}') as ReminderMetadata;
+			contextReason = (meta.reason || meta.source_context || '').trim();
+		} catch { /* malformed metadata; deliver without context */ }
+
+		// All user-generated fields go through escapeHtml: the model
+		// can write &, <, > in reminder text or context and Telegram's
+		// HTML parser would 400 on raw entities.
+		const safeText = escapeHtml(reminder.text);
+		const safeReason = contextReason ? escapeHtml(contextReason) : '';
+
+		const headerLine = dueLabel
+			? `⏰ <b>Reminder</b> · ${dueLabel}\n${safeText}`
+			: `⏰ <b>Reminder:</b> ${safeText}`;
+
+		const message = safeReason
+			? `${headerLine}\n<blockquote expandable>${safeReason}</blockquote>`
+			: headerLine;
 
 		// Use the proper send wrapper so we get retries, error logging,
 		// and the plain-text fallback if HTML parsing fails.
 		try {
 			const res = await telegram.sendMessage(
-				reminder.chat_id, reminder.thread_id || 'default', message, env
+				reminder.chat_id, reminder.thread_id || 'default', message, env,
+				{ markup: reminderMarkup }
 			);
 			if (!res.ok) {
 				log.warn('reminder_send_failed', { id: reminder.id, userId, description: res.description });

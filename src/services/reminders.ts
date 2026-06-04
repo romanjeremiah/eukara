@@ -49,8 +49,47 @@ const DEDUP_WINDOW_SEC = 60;
  */
 export interface ReminderMetadata {
 	origin?: string;
-	/** Conversation turn or memory id that triggered this. */
+	/**
+	 * Conversation turn or memory id that triggered this.
+	 * @deprecated since 2026-06-04: use `reason` going forward.
+	 * Kept on the type for backward compatibility with rows written
+	 * before the field rename. Read paths fall back to this when
+	 * `reason` is absent.
+	 */
 	source_context?: string;
+	/**
+	 * The 'why' behind this reminder, phrased as the user would say
+	 * it to themselves. Second-person, brief, one sentence. Ported
+	 * from Xaridotis 2026-06-04. Surfaced in cron delivery as an
+	 * expandable blockquote and returned by list_reminders so the
+	 * model can match user intent to the right reminder by content.
+	 */
+	reason?: string;
+	/**
+	 * The user's original message that triggered this reminder.
+	 * Captured for audit and to give the model context if the user
+	 * later wants to edit. Not surfaced in delivery.
+	 */
+	originalRequest?: string;
+	/**
+	 * First name from user_profiles at the time of save. Fetched
+	 * once at save rather than at delivery so a name change between
+	 * scheduling and firing doesn't retro-edit a reminder. Used in
+	 * group-chat delivery prefixes; harmless in 1:1 chats.
+	 */
+	firstName?: string;
+	/**
+	 * Which persona created the reminder. Single-persona for now
+	 * (always 'eukara') but recorded for future multi-persona where
+	 * delivery voice/style might differ by persona.
+	 */
+	persona?: string;
+	/**
+	 * Unix seconds when the reminder was created. Redundant with
+	 * the row's created_at column but stored alongside the rest of
+	 * the model-supplied context for self-contained metadata.
+	 */
+	createdAt?: number;
 	/** Richer recurrence than the recurrence_type column can express. */
 	recurrence?: {
 		kind?: 'cron' | 'last_of_month' | 'nth_weekday';
@@ -170,7 +209,7 @@ export async function getReminder(
  */
 export async function updateReminder(
 	env: Env, userId: number, id: number,
-	updates: Partial<Omit<ReminderRow, 'id' | 'user_id' | 'created_at' | 'updated_at'>> & {
+	updates: Partial<Omit<ReminderRow, 'id' | 'user_id' | 'created_at' | 'updated_at' | 'metadata'>> & {
 		metadata?: ReminderMetadata | string | null;
 	}
 ): Promise<void> {

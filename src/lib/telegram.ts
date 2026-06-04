@@ -400,7 +400,21 @@ export async function sendVoice(
 	if (replyId) formData.append('reply_parameters', JSON.stringify({ message_id: replyId }));
 
 	const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/sendVoice`, { method: 'POST', body: formData });
-	return res.json() as Promise<TelegramApiResponse<TelegramMessage>>;
+	const data = await res.json() as TelegramApiResponse<TelegramMessage>;
+	// 2026-06-04: surface non-ok responses. sendVoice bypasses tgApi
+	// (multipart form-data, not JSON), so without this the caller has
+	// no visibility into Telegram-side rejections (e.g.
+	// VOICE_MESSAGES_FORBIDDEN, codec issues, size limits). Warn-only;
+	// behaviour is unchanged.
+	if (!data.ok) {
+		log.warn('telegram_voice_not_ok', {
+			httpStatus: res.status,
+			errorCode: data.error_code,
+			description: data.description,
+			bufferBytes: buffer.byteLength,
+		});
+	}
+	return data;
 }
 
 export async function sendDocument(

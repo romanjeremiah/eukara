@@ -5,17 +5,24 @@
 // Routes ~80% of traffic to free CF AI, reserves Gemini
 // for irreplaceable capabilities.
 //
-// 2026-06-02 changes:
-//   - Pro slot is now gemini-3.5-flash (Gemini 3 family). Supports
-//     tool combination so custom tools + Google Search coexist on
-//     the same call.
-//   - enableGrounding=true on Gemma default_casual and on all Gemini
-//     Pro routes. Model decides per-turn whether to actually search;
-//     billing is per-query, not per-turn.
-//   - default_casual no longer sets thinkingEffort='low' (F7). The
-//     model's natural default applies.
-//   - TaskComplexity widened to include 'minimal' for symmetry with
-//     the Gemini thinkingLevel scale.
+// 2026-06-04 changes:
+//   - Pro lane primary is now `gemini-3.5-flash` (was
+//     `gemini-pro-latest`). Pro-latest demoted to Tier 2 fallback
+//     in the cascade. Reason: pro-latest's Google-side instability
+//     was costing every Pro turn 30-90s before falling through.
+//     Flash handles multimodal + tool combination at a fraction of
+//     the latency.
+//   - All four Pro-lane decisions (sticky_pro_context,
+//     multimodal_input, active_health_checkin, emotional_content)
+//     now point to GEMINI_MODELS.proPrimary. The cascade in
+//     bot/message.ts handles falling through to pro-latest, then
+//     CF Gemma, then gemini-3.1-flash-lite.
+//
+// 2026-06-02 changes (still in effect):
+//   - enableGrounding=true on Gemma default_casual and all Gemini
+//     Pro routes.
+//   - default_casual no longer sets thinkingEffort='low'.
+//   - TaskComplexity widened to include 'minimal'.
 // ============================================================
 
 import type { AIProvider, ModelRoute } from '../types/ai';
@@ -54,7 +61,7 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 	if (forceProLane) {
 		return {
 			provider: 'gemini',
-			model: GEMINI_MODELS.proLatest,
+			model: GEMINI_MODELS.proPrimary,
 			thinkingEffort: 'dynamic',
 			reason: 'sticky_pro_context',
 			enableGrounding: true,
@@ -66,7 +73,7 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 	if (hasMedia) {
 		return {
 			provider: 'gemini',
-			model: GEMINI_MODELS.proLatest,
+			model: GEMINI_MODELS.proPrimary,
 			thinkingEffort: 'dynamic',
 			reason: 'multimodal_input',
 			enableGrounding: true,
@@ -77,7 +84,7 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 	if (healthCheckinActive) {
 		return {
 			provider: 'gemini',
-			model: GEMINI_MODELS.proLatest,
+			model: GEMINI_MODELS.proPrimary,
 			thinkingEffort: 'dynamic',
 			reason: 'active_health_checkin',
 			enableGrounding: true,
@@ -88,7 +95,7 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 	if (COMPLEXITY_PATTERNS.emotional.test(userText)) {
 		return {
 			provider: 'gemini',
-			model: GEMINI_MODELS.proLatest,
+			model: GEMINI_MODELS.proPrimary,
 			thinkingEffort: 'dynamic',
 			reason: 'emotional_content',
 			enableGrounding: true,

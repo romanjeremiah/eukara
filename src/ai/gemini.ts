@@ -52,7 +52,7 @@ export class GeminiProvider implements AIProvider {
 
 	constructor(apiKey: string, model?: string) {
 		this.apiKey = apiKey;
-		this.model = model ?? GEMINI_MODELS.pro;
+		this.model = model ?? GEMINI_MODELS.proPrimary;
 	}
 
 	async chat(

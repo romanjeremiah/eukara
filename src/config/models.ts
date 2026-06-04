@@ -36,36 +36,52 @@ export const CF_MODELS = {
 /**
  * Gemini models (paid, used for complex/emotional/therapeutic).
  *
- * 2026-06-02 (afternoon, post-timeout debugging): cascade reorder.
- * Tier 1 now `gemini-pro-latest` (auto-aliased to Google's latest
- * stable Pro) for highest-quality emotional/therapeutic turns.
- * Tier 2 stays `gemini-3.5-flash` (same family for thoughtSignature
- * continuity, much faster). Tier 3 is Gemma on CF (different
- * infrastructure, no Google dependency, very fast).
+ * 2026-06-04: cascade reorder. The 2026-06-02 layout put
+ * `gemini-pro-latest` at Tier 1 for quality, but Google-side
+ * instability (90s timeouts, 503 UNAVAILABLE under load) made it
+ * a slow door for every Pro-lane turn. Reordered to flash-first.
  *
- * Pattern lifted from Xaridotis B2C cascade (gemini-bot/src/config/
- * cascades.js LAYER_B2C_TIERS) minus the OpenAI / Anthropic middle
- * tiers (Eukara doesn't have those providers wired).
+ * Tier 1 (primary):  `gemini-3.5-flash` — same 3.x family,
+ *                    supports tool combination (custom tools +
+ *                    Google Search on one call) and multimodal.
+ *                    Fast, reliable. Handles the vast majority of
+ *                    Pro-lane turns by itself.
+ * Tier 2 (fallback): `gemini-pro-latest` — deeper reasoning when
+ *                    flash isn't enough or when flash itself fails.
+ *                    Promoted from primary to fallback so its
+ *                    instability no longer taxes every turn.
+ * Tier 3 (fallback): `@cf/google/gemma-4-26b` — Cloudflare edge
+ *                    GPU. Cross-provider resilience: if all-Google
+ *                    is down (rare but real), CF still works.
+ *                    Different infrastructure entirely.
+ * Tier 4 (fallback): `gemini-3.1-flash-lite` — deepest Gemini
+ *                    fallback. Small, cheap, multimodal, supports
+ *                    function calling + search grounding. Google
+ *                    themselves use it as a router-classifier in
+ *                    Gemini CLI, validating it as a reliable
+ *                    last-resort that can still call tools.
  *
  * Per-tier timeouts (wall-clock via Promise.race in message.ts):
- *   Tier 1 (proLatest):  90s — heavyweight, grounding + tools + thinking
- *   Tier 2 (flash):      45s — same family, faster
- *   Tier 3 (gemma):      30s — edge GPU, should never exceed
+ *   Tier 1 (flash):       30s — fast, anything longer is unhealthy
+ *   Tier 2 (pro-latest):  60s — reasoning takes longer; tolerate it
+ *   Tier 3 (gemma):       30s — edge GPU, never slow
+ *   Tier 4 (flash-lite):  30s — small model, fast by design
  *
- * Other slots:
- *   - flashLite: kept as alias for callers that want "fast Gemini".
- *     Currently also points at gemini-3.5-flash (same as flash).
- *   - flash: retired in earlier rewrite; not reintroduced. Use
- *     proLatest, flashLite, or image.
+ * Worst case 150s. Inside the queue consumer 15-min wall-clock
+ * budget with room to spare.
+ *
+ * Other slots (unchanged):
  *   - image: Nano Banana 2 (gemini-3.1-flash-image), STABLE.
- *   - tts: currently dead config — lib/tts.ts uses Google Cloud TTS
+ *   - tts: dead config — lib/tts.ts uses Google Cloud TTS
  *     (Chirp3-HD voice) directly. Kept for future migration.
  */
 export const GEMINI_MODELS = {
-	// Cascade order for emotional / Pro-lane turns.
+	/** Tier 1 (primary) for Pro lane. Low-latency multimodal. */
+	proPrimary: 'gemini-3.5-flash',
+	/** Tier 2 (fallback). Deeper reasoning when needed. */
 	proLatest: 'gemini-pro-latest',
-	pro: 'gemini-3.5-flash',
-	flashLite: 'gemini-3.5-flash',
+	/** Tier 4 (deep fallback). Cost-effective, multimodal, tool-capable. */
+	flashLite: 'gemini-3.1-flash-lite',
 	image: 'gemini-3.1-flash-image',
 	tts: 'gemini-2.5-pro-preview-tts',
 } as const;

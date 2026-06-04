@@ -69,7 +69,7 @@ export async function maybeRunResearch(env: Env, userId: number, localTime: Date
 
 	try {
 		const interests = await deriveInterests(env, userId);
-		const provider = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.pro);
+		const provider = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.proPrimary);
 
 		const prompt = `Find ONE concrete, genuinely interesting development from the last 7 days that someone with these interests would care about:
 

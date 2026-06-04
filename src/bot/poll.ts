@@ -170,7 +170,7 @@ export async function runClinicalConcernWork(
 
 	let response: string;
 	try {
-		const provider = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.pro);
+		const provider = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.proPrimary);
 		const result = await provider.chat(
 			[{ role: 'user', content: prompt }],
 			[],
@@ -271,7 +271,7 @@ export async function runMoodAnalysisWork(
 	// top of the clinical prompt.
 	let analysis: string;
 	try {
-		const provider = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.pro);
+		const provider = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.proPrimary);
 		const response = await provider.chat(
 			[{ role: 'user', content: analysisPrompt }],
 			[],
