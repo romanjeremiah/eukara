@@ -30,37 +30,45 @@ import * as persona from '../services/persona';
 import { getWeather, formatWeatherForContext } from '../services/weather';
 
 // ============================================================
-// Pro-lane cascade
+// AI chat with lane-appropriate fallback
 //
-// 2026-06-04: reordered to flash-first. Four tiers across two
-// providers so neither a single model failure nor a single
-// provider outage can break end-user replies.
+// Two distinct strategies depending on which lane the router picked.
+// 2026-06-04: split from a single function because the previous
+// shared Tier-1 wrapper silently halved the casual-lane budget
+// (90s to 30s) during the morning cascade reorder, hard-failing CF
+// Gemma turns under load with no fallback.
 //
-//   Tier 1 (30s):  gemini-3.5-flash         — primary. 3.x family,
-//                                              multimodal, tool
-//                                              combination, fast.
-//   Tier 2 (60s):  gemini-pro-latest         — deeper reasoning
-//                                              when flash isn't
-//                                              enough. Slower; we
-//                                              tolerate it because
-//                                              this path is rare.
-//   Tier 3 (30s):  @cf/google/gemma-4-26b    — Cloudflare edge GPU,
-//                                              no Google dependency.
-//                                              Cross-provider
-//                                              resilience.
-//   Tier 4 (30s):  gemini-3.1-flash-lite     — deepest Gemini
-//                                              fallback. Small,
-//                                              cheap, supports tool
-//                                              calls and grounding.
-//                                              Almost always works.
+// PRO LANE (route.provider === 'gemini')
+// Four-tier cascade across Google + Cloudflare for emotional,
+// multimodal, active-checkin, and sticky-context turns where
+// resilience matters more than minimising spend.
+//
+//   Tier 1 (30s):  gemini-3.5-flash         3.x family, multimodal,
+//                                            tool combination, fast.
+//   Tier 2 (60s):  gemini-pro-latest         Deeper reasoning when
+//                                            flash isn't enough.
+//   Tier 3 (30s):  @cf/google/gemma-4-26b    Cross-provider resilience,
+//                                            no Google dependency.
+//   Tier 4 (30s):  gemini-3.1-flash-lite     Last-resort Gemini.
+//
+// CASUAL LANE (route.provider !== 'gemini', typically CF Gemma)
+// Single call with one conditional retry. Routine non-emotional
+// chat where the priority is fast happy-path response and graceful
+// degradation when grounding misbehaves.
+//
+//   Attempt 1 (60s, 'casual_primary'):
+//     as configured (with grounding if route allows).
+//   Attempt 2 (30s, 'casual_no_grounding'):
+//     retries the same model without web_search_options. Triggers
+//     ONLY on timeout or CF 5006 schema validation error AND only
+//     when grounding was enabled on Attempt 1. Other failures
+//     (network, auth, content filter) re-throw immediately.
+//
+// Total worst-case wall clock: Pro lane 150s, casual lane 90s.
+// Both sit well within the queue consumer's 15-min budget.
 //
 // Per-tier timeouts via Promise.race (wall-clock), not AbortSignal:
-// provider-agnostic, no SDK-specific plumbing. Total worst-case
-// 150s, well within the queue consumer's 15-min wall-clock budget.
-//
-// Activates for ANY Gemini route (emotional, multimodal, active
-// checkin, sticky context). Casual CF routes fail through to the
-// outer catch.
+// provider-agnostic, no SDK-specific plumbing.
 // ============================================================
 
 /**
@@ -93,19 +101,23 @@ type ChatArgs = {
 	enableGrounding: boolean;
 };
 
-async function chatWithProLaneFallback(
+type ProviderChat = (
+	m: AIMessage[],
+	t: AITool[],
+	c: { temperature: number; thinkingEffort: ModelRoute['thinkingEffort']; systemInstruction: string; enableGrounding?: boolean }
+) => Promise<AIResponse>;
+
+/**
+ * Pro lane: 4-tier cascade across Google + Cloudflare for high-stakes turns.
+ * Tier-by-tier rationale in the header comment block above.
+ */
+async function runProCascade(
 	route: ModelRoute,
-	provider: { chat: (m: AIMessage[], t: AITool[], c: { temperature: number; thinkingEffort: ModelRoute['thinkingEffort']; systemInstruction: string; enableGrounding?: boolean }) => Promise<AIResponse> },
+	provider: { chat: ProviderChat },
 	args: ChatArgs,
 	env: Env,
 ): Promise<{ response: AIResponse; tierUsed: string }> {
-	// Any Gemini route is Pro lane and cascades. Casual CF routes
-	// (Gemma/Qwen) don't — they re-throw to the outer handler.
-	const isProLane = route.provider === 'gemini';
-
 	// Tier 1: configured route (gemini-3.5-flash by default), 30s budget.
-	// 3.x family supports tool combination and multimodal. This is the
-	// fast path; anything longer than 30s suggests something is wrong.
 	try {
 		const response = await withTimeout(
 			provider.chat(args.messages, args.tools, {
@@ -119,18 +131,11 @@ async function chatWithProLaneFallback(
 		);
 		return { response, tierUsed: 'tier1_flash' };
 	} catch (err) {
-		const error = err as Error;
-		if (!isProLane) {
-			// Non-Pro lanes don't cascade. Re-throw for the outer handler.
-			throw error;
-		}
-		log.warn('pro_lane_tier1_failed', { model: route.model, msg: error.message });
+		log.warn('pro_lane_tier1_failed', { model: route.model, msg: (err as Error).message });
 	}
 
-	// Tier 2: gemini-pro-latest. Deeper reasoning when flash fails or
-	// isn't enough. Same family, so tool combination + thoughtSignature
-	// continuity keep working. 60s budget — pro-latest can be slower,
-	// and a slow correct answer beats a fast wrong one at this tier.
+	// Tier 2: gemini-pro-latest. Same family as Tier 1 (tool combination +
+	// thoughtSignature continuity preserved), 60s budget for slower turns.
 	try {
 		const proLatest = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.proLatest);
 		const response = await withTimeout(
@@ -146,15 +151,10 @@ async function chatWithProLaneFallback(
 		log.info('pro_lane_tier2_recovered', { model: GEMINI_MODELS.proLatest });
 		return { response, tierUsed: 'tier2_pro_latest' };
 	} catch (err) {
-		const error = err as Error;
-		log.warn('pro_lane_tier2_failed', { model: GEMINI_MODELS.proLatest, msg: error.message });
+		log.warn('pro_lane_tier2_failed', { model: GEMINI_MODELS.proLatest, msg: (err as Error).message });
 	}
 
-	// Tier 3: Cloudflare Gemma 4 (edge GPU, no Google dependency), 30s
-	// budget. Grounding capability matches — CloudflareProvider passes
-	// web_search_options through when enableGrounding is set. Critical
-	// for cross-provider resilience: if Google is fully down, this tier
-	// still answers.
+	// Tier 3: Cloudflare Gemma 4. Cross-provider resilience, 30s budget.
 	try {
 		const cfFallback = new CloudflareProvider(env.AI, CF_MODELS.chat);
 		const response = await withTimeout(
@@ -170,17 +170,13 @@ async function chatWithProLaneFallback(
 		log.info('pro_lane_tier3_recovered', { model: CF_MODELS.chat });
 		return { response, tierUsed: 'tier3_cf_gemma' };
 	} catch (err) {
-		const error = err as Error;
-		log.warn('pro_lane_tier3_failed', { model: CF_MODELS.chat, msg: error.message });
+		log.warn('pro_lane_tier3_failed', { model: CF_MODELS.chat, msg: (err as Error).message });
 	}
 
-	// Tier 4: gemini-3.1-flash-lite. Deepest Gemini fallback. Small
-	// model, fast by design, supports function calling + search
-	// grounding (verified against Google docs 2026-05-27). 30s budget.
+	// Tier 4: gemini-3.1-flash-lite. Last-resort Gemini, 30s budget.
 	// Reached only when both Google Pro/Flash AND Cloudflare Gemma have
 	// failed in the same turn — rare but possible during multi-provider
-	// degradation. Last line of defence; if this also fails, surface the
-	// error to the user with model info.
+	// degradation. If this also fails, surface the error to the user.
 	try {
 		const flashLite = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.flashLite);
 		const response = await withTimeout(
@@ -198,10 +194,96 @@ async function chatWithProLaneFallback(
 	} catch (err) {
 		const error = err as Error;
 		log.error('pro_lane_tier4_failed', { model: GEMINI_MODELS.flashLite, msg: error.message });
-		// All tiers exhausted — throw the last error so the outer catch
-		// surfaces it to the user with model info.
 		throw error;
 	}
+}
+
+/**
+ * Casual lane: single call with one conditional retry.
+ *
+ * Retry triggers ONLY when both:
+ *   - The first attempt failed with a timeout OR a CF 5006 schema
+ *     validation error (the two known modes that a grounding
+ *     disable would actually fix).
+ *   - Grounding was actually enabled on the first attempt.
+ *
+ * Other failures (network, auth, content filter) re-throw immediately
+ * because a grounding-off retry wouldn't help and would just double
+ * the user's wait time.
+ */
+async function runCasualCall(
+	route: ModelRoute,
+	provider: { chat: ProviderChat },
+	args: ChatArgs,
+): Promise<{ response: AIResponse; tierUsed: string }> {
+	// Attempt 1: as configured. 60s gives CF Gemma room for grounding
+	// latency without being unbounded.
+	try {
+		const response = await withTimeout(
+			provider.chat(args.messages, args.tools, {
+				temperature: 1.0,
+				thinkingEffort: args.thinkingEffort,
+				systemInstruction: args.systemInstruction,
+				enableGrounding: args.enableGrounding,
+			}),
+			60_000,
+			'casual_primary'
+		);
+		return { response, tierUsed: 'casual_primary' };
+	} catch (err) {
+		const error = err as Error;
+		const msg = error.message;
+		const isTimeout = msg.includes('timed out');
+		const is5006 = msg.includes('5006') || msg.toLowerCase().includes('anyof at');
+
+		if (!args.enableGrounding || (!isTimeout && !is5006)) {
+			throw error;
+		}
+
+		log.warn('casual_retry_without_grounding', {
+			model: route.model,
+			reason: isTimeout ? 'timeout' : 'schema_5006',
+			msg,
+		});
+	}
+
+	// Attempt 2: same model, grounding disabled. 30s budget. This path
+	// is fast because grounding was the reason Attempt 1 was slow.
+	try {
+		const response = await withTimeout(
+			provider.chat(args.messages, args.tools, {
+				temperature: 1.0,
+				thinkingEffort: args.thinkingEffort,
+				systemInstruction: args.systemInstruction,
+				enableGrounding: false,
+			}),
+			30_000,
+			'casual_no_grounding'
+		);
+		log.info('casual_no_grounding_recovered', { model: route.model });
+		return { response, tierUsed: 'casual_no_grounding' };
+	} catch (err) {
+		const error = err as Error;
+		log.error('casual_no_grounding_failed', { model: route.model, msg: error.message });
+		throw error;
+	}
+}
+
+/**
+ * Dispatch chat to the appropriate strategy based on route lane.
+ * Pro lane gets the 4-tier cascade; casual lane gets single-call
+ * with grounding-disabled retry.
+ */
+async function chatWithFallback(
+	route: ModelRoute,
+	provider: { chat: ProviderChat },
+	args: ChatArgs,
+	env: Env,
+): Promise<{ response: AIResponse; tierUsed: string }> {
+	if (route.provider === 'gemini') {
+		return runProCascade(route, provider, args, env);
+	}
+	return runCasualCall(route, provider, args);
 }
 
 // Telegram's Bot API caps file downloads at 20MB. Anything larger would
@@ -430,7 +512,7 @@ export async function handleMessage(
 
 	try {
 		for (let round = 0; round < maxToolRounds; round++) {
-			const { response, tierUsed } = await chatWithProLaneFallback(route, provider, {
+			const { response, tierUsed } = await chatWithFallback(route, provider, {
 				messages,
 				tools,
 				systemInstruction,

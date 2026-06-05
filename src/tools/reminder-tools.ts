@@ -84,6 +84,21 @@ export const setReminder = defineTool(
 			metadata,
 		});
 
+		// Pre-format the scheduled time in the user's local timezone so
+		// the model embeds the string directly rather than interpreting
+		// a template. Earlier display_hint approach leaked the literal
+		// '[time]' placeholder into user-visible replies — 2026-06-04 fix.
+		const tz = await user.getUserTimezone(env, ctx.userId);
+		const scheduledAtLocal = new Date((args.due_at_timestamp as number) * 1000).toLocaleString('en-GB', {
+			timeZone: tz,
+			weekday: 'short',
+			day: '2-digit',
+			month: 'short',
+			hour: '2-digit',
+			minute: '2-digit',
+			hour12: false,
+		});
+
 		// Dedup guard hit: tell the model so it can respond honestly to
 		// the user ("that reminder is already scheduled") rather than
 		// confirming a save that didn't happen.
@@ -91,14 +106,16 @@ export const setReminder = defineTool(
 			return ok({
 				status: 'duplicate_skipped',
 				existing_reminder_id: result.id,
-				note: 'A near-identical reminder is already scheduled for the same time slot. No new reminder was created. Tell the user the reminder is already in place rather than claiming you scheduled a new one.',
+				scheduled_at_local: scheduledAtLocal,
+				note: 'A near-identical reminder is already scheduled for the same time slot. No new reminder was created. Tell the user the reminder is already in place (using scheduled_at_local for the time) rather than claiming you scheduled a new one.',
 			});
 		}
 
 		return ok({
-			scheduled_at_utc: args.due_at_timestamp,
 			reminder_id: result.id,
-			display_hint: 'Use this in your confirmation message to show the time in the user\'s timezone: include the text "Scheduled for: [time]" and the system will render it natively.',
+			scheduled_at_utc: args.due_at_timestamp,
+			scheduled_at_local: scheduledAtLocal,
+			note: 'Confirm to the user briefly. Embed scheduled_at_local verbatim in your reply (e.g. "Scheduled for: <scheduled_at_local>" or weave it naturally). Do NOT wrap it in brackets or paraphrase.',
 		});
 	}
 );
