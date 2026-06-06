@@ -22,6 +22,12 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 );
 
 -- 2. PERSONA CONFIG (per-user personality evolution)
+-- Five slider columns capture the conversational mode (tone /
+-- formality / humour / emoji / therapeutic). Two additional sliders
+-- shape delivery (verbosity) and proactive cadence (proactivity_level).
+-- Modes are defined in src/config/persona-presets.ts and assigned
+-- via the /persona command. Free-text columns at the end hold
+-- the per-user style card and evolved traits.
 CREATE TABLE IF NOT EXISTS persona_config (
     user_id INTEGER PRIMARY KEY,
     tone TEXT DEFAULT 'warm',
@@ -29,6 +35,8 @@ CREATE TABLE IF NOT EXISTS persona_config (
     humour_level TEXT DEFAULT 'moderate',
     emoji_style TEXT DEFAULT 'moderate',
     therapeutic_approach TEXT DEFAULT 'supportive',
+    verbosity TEXT DEFAULT 'standard',
+    proactivity_level TEXT DEFAULT 'normal',
     topics_of_interest TEXT,
     communication_notes TEXT,
     evolved_traits TEXT,

@@ -1,3 +1,32 @@
+/**
+ * Persona reinforcement prepended to every mood-response prompt
+ * (2026-06-05). Purpose: counteract the way the persona's NO RECEIPTS
+ * and NO SILVER LININGS rules push the model into literary distance
+ * ("the heavy static anchor", "the gray flatness") and meta-commentary
+ * ("I am not going to push a fix") when real distress is on the table.
+ *
+ * Both of those failures came from the model interpreting the persona's
+ * anti-sycophancy rules as a ban on direct acknowledgement. In genuine
+ * distress, "I hear you" / "I am right here with you" is PRESENCE, not
+ * a customer-service receipt — the persona's NO RECEIPTS rule does not
+ * apply to these openers in a mood-response context.
+ *
+ * Compare Xaridotis's response that landed (Image 3 in the 2026-06-05
+ * comparison): "I hear you, and I am right here with you. It's incredibly
+ * heavy to carry that kind of darkness..." against Eukara's that did not:
+ * "It is exhausting when that gray flatness takes over... I am not going
+ * to try to push a fix or find a silver lining."
+ *
+ * Keep this short — it sits at the top of every mood prompt and competes
+ * with the rest of the prompt for attention.
+ */
+export const MOOD_RESPONSE_REINFORCEMENT = `PERSONA EMPHASIS FOR THIS TURN:
+• Speak person-to-person. Use "you" and "I". No literary third-person about their state ("the gray flatness", "the heavy anchor", "the internal landscape").
+• Genuine distress permits warm openers — "I hear you", "I'm right here with you", "I'm here" — these are PRESENCE, not sycophancy. The NO RECEIPTS rule does not apply to mood-response openers.
+• Do not announce what you are or are not going to do ("I'm not going to push a fix", "I'm just here in the quiet"). The user does not need a status report on your posture.
+• Do not analyse the score, weave multi-day pattern observations, or quote their own previous words back at them.
+• Brief is better than thorough.`;
+
 // ============================================================
 // Poll Answer Handler
 //
@@ -163,9 +192,25 @@ export async function runClinicalConcernWork(
 
 	let prompt: string;
 	if (score <= 1) {
-		prompt = `The user just logged their mood as ${score}/10, which on the bipolar scale indicates severe depression or crisis. Respond with deep compassion. Acknowledge the weight of what they're sharing. Remind them gently about Samaritans (116 123, UK) and SHOUT (text 85258). Ask ONE grounded question about what's weighing on them — do NOT stack questions. Keep the response under 5 sentences. Do not use clinical jargon.`;
+		prompt = `${MOOD_RESPONSE_REINFORCEMENT}
+
+The user just logged their mood as ${score}/10 — severe depression range on the bipolar scale. They need to feel met, not analysed.
+
+Lead with direct acknowledgement ("I hear you", "I'm right here with you", or a natural variation). Acknowledge the weight briefly, in the second person. Mention Samaritans (116 123) and SHOUT (text 85258) once, embedded naturally — not as a footer. End with ONE short grounded question about what is heaviest right now.
+
+Length: 3-4 short sentences. The user does not have bandwidth for more.
+
+After your message, emotion buttons appear — do NOT ask about emotions; the buttons handle that.`;
 	} else {
-		prompt = `The user just logged their mood as ${score}/10, which on the bipolar scale indicates mania or severe hypomania. Acknowledge calmly. Raise safety concerns (sleep, impulsive decisions, spending) without lecturing. Ask ONE grounded question about their sleep or current environment. Keep the response under 5 sentences. Do not use clinical jargon.`;
+		prompt = `${MOOD_RESPONSE_REINFORCEMENT}
+
+The user just logged their mood as ${score}/10 — manic or severely hypomanic range.
+
+Acknowledge the elevation calmly, second person. Note one concrete concern (sleep, big decisions, spending) gently — don't lecture. End with ONE short grounded question about their sleep or current environment.
+
+Length: 3-4 short sentences. Steady tone — your job is to land them gently, not to harsh-stop.
+
+After your message, emotion buttons appear — do NOT ask about emotions; the buttons handle that.`;
 	}
 
 	let response: string;
@@ -338,28 +383,60 @@ interface AnalysisInputs {
 function buildAnalysisPrompt(inputs: AnalysisInputs): string {
 	const { score, historyContext, clinicalContext, episodeContext, semanticCtx } = inputs;
 
-	return `The user just logged their mood as ${score}/10 on the bipolar scale. Analyse the data below and respond with a meaningful, grounded acknowledgement.
+	// 2026-06-05: complete rewrite of the synthesis prompt after the
+	// "heavy static anchor" incident. Old prompt asked the model to
+	// "analyse the data" and "weave one observation in" — the model
+	// dutifully produced literary observations about Roma's emotional
+	// state at 2/10, the exact failure mode the persona warns against.
+	//
+	// New prompt is modelled on Xaridotis's runScoreAck (lib equivalent
+	// in gemini-bot src/services/moodMicroAck.js): score-banded tone
+	// calibration, no requested analysis, no pattern weaving. The 30-day
+	// history is still passed in but only as background for grounding,
+	// not as material to recite or pattern-match against.
+	//
+	// Tone bands match Xaridotis's MOOD_ACK_TIERS prompt verbatim:
+	//   0-2: gentle, grounded, no platitudes
+	//   3-5: warm, present
+	//   6-8: light, affirming
+	//   9-10: matched energy (handled in runClinicalConcernWork)
 
-TODAY:
-Mood score: ${score}/10
+	const bandGuidance =
+		score <= 2
+			? 'Tone: gentle, grounded, no platitudes. Match the heaviness, do not observe it. Lead with acknowledgement ("I\'m here", "that\'s a heavy day", or natural variation). One short sentence + one short question. That is the whole turn.'
+			: score <= 5
+				? 'Tone: warm, present. 2-3 short sentences. Acknowledge with care. End with one short question that invites them to say more if they want to.'
+				: score <= 8
+					? 'Tone: light, affirming. 2-3 short sentences. Curious without being effusive. End with one short question about what is driving the day.'
+					: 'Tone: matched energy, calm. 2-3 short sentences. Note the elevation without alarm. End with one short grounded question.';
 
-RECENT MOOD HISTORY:
-${historyContext}
+	// Context passed for the model's grounding only — not material to
+	// recite. The model has frequently treated the data block as content
+	// to analyse; the explicit "GROUNDING (do not recite)" framing plus
+	// the negative list in OUTPUT below are the guard against that.
+	return `${MOOD_RESPONSE_REINFORCEMENT}
 
-${clinicalContext || '(No therapeutic notes on file yet.)'}
+The user just logged their mood as ${score}/10 on the bipolar scale.
 
-${episodeContext || '(No past episodes to reference.)'}
+${bandGuidance}
 
+GROUNDING (for your awareness only — do NOT recite, summarise, or weave patterns from this; only let it shape tone):
+${historyContext || '(no recent history)'}
+${clinicalContext || ''}
+${episodeContext || ''}
 ${semanticCtx || ''}
 
-YOUR RESPONSE (3-5 sentences, natural prose, not a bulleted list):
-1. Acknowledge the score without repeating it numerically. If it stands out against recent days (up, down, stable), note that briefly.
-2. If therapeutic notes or past episodes reveal a pattern relevant to this score, weave one observation in — without sounding clinical.
-3. End with a question that invites the user to say more, worded naturally. Ask EXACTLY one question.
+OUTPUT IS NOT:
+• A multi-day pattern observation
+• A literary narration of their state ("the heavy anchor", "the gray flatness")
+• An announcement of what you are or are not doing
+• A clinical or therapeutic frame
+• Anything longer than 3 short sentences
 
-After your message, the user will be shown Positive/Negative emotion buttons to tap — do NOT ask about emotions in your text; the buttons handle that.
+OUTPUT IS:
+A warm friend acknowledging them in the second person, with one gentle hook to continue if they want.
 
-Do not mention the data structure, the score number more than once, or how you generated this analysis. Just speak.`;
+After your message, emotion buttons appear — do NOT ask about emotions; the buttons handle that.`;
 }
 
 /**

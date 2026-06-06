@@ -315,6 +315,12 @@ export async function handleMessage(
 	// clears stale keys for dormant users.
 	await env.CHAT_KV.put(`last_seen_${userId}`, String(Date.now()), { expirationTtl: 7 * 86400 });
 
+	// 2026-06-04: a user message ends the proactive-silence chain.
+	// Reset the unanswered counter so the cron escalation guard can
+	// resume outreach. Best-effort: delete failures don't matter, the
+	// key has a 7-day TTL and the worst case is one missed outreach.
+	await env.CHAT_KV.delete(`proactive_unanswered_${userId}`).catch(() => {});
+
 	// B7: Listening mode. If the user started a brain-dump session
 	// via /listen, buffer their message and react with 👀 — DON'T run
 	// the AI pipeline. The buffered messages will be synthesised as a
@@ -648,75 +654,86 @@ export async function handleMessage(
 			]],
 		};
 
-		// attemptSend: one delivery attempt with the given text. Returns
-		// true on success (Telegram ok=true), false on any failure.
-		// Logs the actual failure details so we can diagnose.
-		const attemptSend = async (body: string, asPlainText: boolean): Promise<boolean> => {
-			sendAttempts++;
-			try {
-				if (body.length > 3900) {
-					const chunks = splitMessage(body);
-					for (let i = 0; i < chunks.length; i++) {
-						const isLast = i === chunks.length - 1;
-						const res = await telegram.sendMessage(chatId, threadId, chunks[i]!, env, {
-							replyId: i === 0 ? messageId : undefined,
-							markup: isLast ? btns : undefined,
-						});
-						if (!res.ok) {
-							sendError = `chunk ${i}: ${res.description ?? 'unknown'}`;
-							return false;
-						}
-					}
-					return true;
-				}
-				const res = await telegram.sendMessage(chatId, threadId, body, env, {
-					replyId: messageId,
-					markup: btns,
-				});
-				if (!res.ok) {
-					sendError = res.description ?? 'unknown';
-					return false;
-				}
-				return true;
-			} catch (err) {
-				// Network-level / fetch failures thrown by tgApi
-				sendError = `${asPlainText ? 'plain ' : ''}fetch threw: ${(err as Error).message}`;
-				return false;
-			}
-		};
+		// Sending uses per-chunk fallback. Each chunk is attempted as HTML;
+		// on failure (most commonly a Telegram 400 over malformed entities)
+		// the same chunk is retried as plain text. If both fail for a chunk,
+		// the chunk is lost and the loop continues with the next one so the
+		// user still gets the rest of the message rather than nothing.
+		//
+		// 2026-06-04: this replaces the previous design where any chunked-
+		// send failure triggered a full re-send of the entire message as
+		// plain text. That caused visible duplication (user saw the first
+		// few HTML chunks followed by the entire plain version), which read
+		// as random truncated fragments in the chat.
 
-		// First try with the formatted HTML output.
-		sent = await attemptSend(fullText, false);
-
-		// Fallback: if the HTML send failed (typically a 400 "can't
-		// parse entities"), strip all tags and try plain text. The user
-		// gets something rather than nothing, and we capture the
-		// original failure in sendError for diagnosis.
-		if (!sent) {
-			log.warn('send_html_failed_trying_plain', {
-				chatId,
-				userId,
-				error: sendError,
-				textLen: fullText.length,
-			});
-			const plainText = fullText
-				.replace(/<[^>]+>/g, '')  // strip all tags
+		const stripToPlain = (s: string): string =>
+			s
+				.replace(/<[^>]+>/g, '')
 				.replace(/&lt;/g, '<')
 				.replace(/&gt;/g, '>')
 				.replace(/&amp;/g, '&')
 				.replace(/&quot;/g, '"')
 				.trim();
-			if (plainText) {
-				sent = await attemptSend(plainText, true);
+
+		// Send one chunk with HTML-then-plain fallback. Returns true if the
+		// chunk landed in either form.
+		const sendChunkWithFallback = async (
+			chunkBody: string,
+			opts: { replyId?: number; markup?: typeof btns | undefined }
+		): Promise<boolean> => {
+			sendAttempts++;
+			try {
+				const res = await telegram.sendMessage(chatId, threadId, chunkBody, env, opts);
+				if (res.ok) return true;
+				sendError = res.description ?? 'unknown';
+			} catch (err) {
+				sendError = `fetch threw: ${(err as Error).message}`;
 			}
+
+			const plain = stripToPlain(chunkBody);
+			if (!plain) return false;
+			sendAttempts++;
+			try {
+				const res = await telegram.sendMessage(chatId, threadId, plain, env, opts);
+				if (res.ok) {
+					log.warn('chunk_html_failed_plain_succeeded', {
+						chatId,
+						userId,
+						prevError: sendError,
+					});
+					return true;
+				}
+				sendError = `plain: ${res.description ?? 'unknown'}`;
+			} catch (err) {
+				sendError = `plain fetch threw: ${(err as Error).message}`;
+			}
+			return false;
+		};
+
+		// Split into chunks if needed; short replies stay as a single element.
+		const chunks = fullText.length > 3900 ? splitMessage(fullText) : [fullText];
+		const failedChunks: number[] = [];
+
+		for (let i = 0; i < chunks.length; i++) {
+			const isFirst = i === 0;
+			const isLast = i === chunks.length - 1;
+			const ok = await sendChunkWithFallback(chunks[i]!, {
+				replyId: isFirst ? messageId : undefined,
+				markup: isLast ? btns : undefined,
+			});
+			if (!ok) failedChunks.push(i);
 		}
 
+		sent = failedChunks.length === 0;
+
 		if (!sent) {
-			log.error('send_failed_fully', {
+			log.error('send_failed_chunks', {
 				chatId,
 				userId,
-				error: sendError,
+				failedChunks,
+				totalChunks: chunks.length,
 				attempts: sendAttempts,
+				lastError: sendError,
 				textLen: fullText.length,
 			});
 		}

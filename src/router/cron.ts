@@ -9,9 +9,26 @@ import { log } from '../lib/logger';
 import { formatTime, escapeHtml } from '../lib/formatting';
 import * as telegram from '../lib/telegram';
 import * as user from '../services/user';
+import * as persona from '../services/persona';
 import * as reminders from '../services/reminders';
 import type { ReminderMetadata } from '../services/reminders';
 import * as curiosity from '../services/curiosity';
+
+// Per-user spontaneous-outreach behaviour, dialled by
+// persona_config.proactivity_level (2026-06-04). Each entry tunes
+//   rollRate:       per-minute Math.random() chance of attempting
+//   hourStart/End:  socially appropriate window (London local)
+//   maxUnanswered:  pause after this many unanswered proactive messages
+// in a row. The unanswered counter lives in KV under
+// `proactive_unanswered_${userId}`, incremented after each send and
+// cleared whenever the user sends a message (in bot/message.ts).
+const PROACTIVITY_PROFILES = {
+	low:    { rollRate: 0.02, hourStart: 11, hourEnd: 17, maxUnanswered: 1 },
+	normal: { rollRate: 0.05, hourStart: 10, hourEnd: 19, maxUnanswered: 2 },
+	high:   { rollRate: 0.08, hourStart: 9,  hourEnd: 21, maxUnanswered: 3 },
+} as const;
+
+type ProactivityLevel = keyof typeof PROACTIVITY_PROFILES;
 
 interface ScheduleConfig { hour: number; minute: number }
 
@@ -50,13 +67,23 @@ export async function handleCron(env: Env): Promise<void> {
 			await curiosity.maybeRunResearch(env, userId, localTime);
 		} catch (e) { log.error('cron_research_error', { userId, msg: (e as Error).message }); }
 
-		// Spontaneous outreach: interest-driven casual share. Guards
-		// (2026-06-03): sociable hours only, ~5% roll, max one per day,
-		// not within 3h of the last message (don't double-text), and
-		// silent during quiet hours. Selection + generation happen in
-		// the queue consumer.
+		// Spontaneous outreach: interest-driven casual share. Cadence and
+		// window are dialled per-user via persona_config.proactivity_level
+		// (low / normal / high, see PROACTIVITY_PROFILES above). Guards in
+		// order: sociable hour window, probabilistic roll, daily cap,
+		// quiet-hours respect, 3h-since-last-message cooloff, and the
+		// escalation guard that pauses outreach after maxUnanswered
+		// proactive messages in a row without a user reply.
 		try {
-			if (hour >= 10 && hour <= 19 && Math.random() <= 0.05) {
+			const personaConfig = await persona.getPersonaConfig(env, userId);
+			const level: ProactivityLevel = (
+				(['low', 'normal', 'high'] as const).includes(personaConfig.proactivity_level as ProactivityLevel)
+					? personaConfig.proactivity_level as ProactivityLevel
+					: 'normal'
+			);
+			const cfg = PROACTIVITY_PROFILES[level];
+
+			if (hour >= cfg.hourStart && hour <= cfg.hourEnd && Math.random() <= cfg.rollRate) {
 				const key = `spontaneous_${userId}_${today}`;
 				if (!await env.CHAT_KV.get(key)) {
 					const quiet = await user.isQuietTime(env, userId);
@@ -64,9 +91,15 @@ export async function handleCron(env: Env): Promise<void> {
 					const hoursSinceChat = lastSeenRaw
 						? (Date.now() - Number(lastSeenRaw)) / 3_600_000
 						: Infinity;
-					if (!quiet && hoursSinceChat >= 3) {
+					const unanswered = Number(
+						await env.CHAT_KV.get(`proactive_unanswered_${userId}`)
+					) || 0;
+
+					if (!quiet && hoursSinceChat >= 3 && unanswered < cfg.maxUnanswered) {
 						await env.TASK_QUEUE.send({ type: 'spontaneous_outreach', userId, chatId: userId });
 						await env.CHAT_KV.put(key, '1', { expirationTtl: 86400 });
+					} else if (unanswered >= cfg.maxUnanswered) {
+						log.info('outreach_skipped_escalation', { userId, unanswered, max: cfg.maxUnanswered });
 					}
 				}
 			}

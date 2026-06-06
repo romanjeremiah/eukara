@@ -20,6 +20,8 @@ export interface PersonaPreset {
 	humour_level: string;
 	emoji_style: string;
 	therapeutic_approach: string;
+	verbosity: string;
+	proactivity_level: string;
 }
 
 export const PERSONA_PRESETS: readonly PersonaPreset[] = [
@@ -33,6 +35,8 @@ export const PERSONA_PRESETS: readonly PersonaPreset[] = [
 		humour_level: 'moderate',
 		emoji_style: 'moderate',
 		therapeutic_approach: 'supportive',
+		verbosity: 'standard',
+		proactivity_level: 'normal',
 	},
 	{
 		id: 'warm',
@@ -44,6 +48,8 @@ export const PERSONA_PRESETS: readonly PersonaPreset[] = [
 		humour_level: 'low',
 		emoji_style: 'moderate',
 		therapeutic_approach: 'gentle',
+		verbosity: 'standard',
+		proactivity_level: 'high',
 	},
 	{
 		id: 'direct',
@@ -55,6 +61,8 @@ export const PERSONA_PRESETS: readonly PersonaPreset[] = [
 		humour_level: 'dry',
 		emoji_style: 'minimal',
 		therapeutic_approach: 'challenging',
+		verbosity: 'terse',
+		proactivity_level: 'low',
 	},
 	{
 		id: 'playful',
@@ -66,6 +74,8 @@ export const PERSONA_PRESETS: readonly PersonaPreset[] = [
 		humour_level: 'high',
 		emoji_style: 'expressive',
 		therapeutic_approach: 'supportive',
+		verbosity: 'standard',
+		proactivity_level: 'high',
 	},
 	{
 		id: 'minimal',
@@ -77,6 +87,8 @@ export const PERSONA_PRESETS: readonly PersonaPreset[] = [
 		humour_level: 'low',
 		emoji_style: 'none',
 		therapeutic_approach: 'supportive',
+		verbosity: 'terse',
+		proactivity_level: 'low',
 	},
 ] as const;
 

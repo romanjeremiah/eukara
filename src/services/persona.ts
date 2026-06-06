@@ -33,6 +33,8 @@ const DEFAULT_PERSONA: PersonaConfigRow = {
 	humour_level: 'moderate',
 	emoji_style: 'moderate',
 	therapeutic_approach: 'supportive',
+	verbosity: 'standard',
+	proactivity_level: 'normal',
 	topics_of_interest: null,
 	communication_notes: null,
 	evolved_traits: null,
@@ -65,7 +67,8 @@ export async function updatePersonaConfig(
 	env: Env, userId: number, updates: Partial<PersonaConfigRow>
 ): Promise<void> {
 	const allowed = ['tone', 'formality', 'humour_level', 'emoji_style',
-		'therapeutic_approach', 'topics_of_interest', 'communication_notes', 'evolved_traits'];
+		'therapeutic_approach', 'verbosity', 'proactivity_level',
+		'topics_of_interest', 'communication_notes', 'evolved_traits'];
 	const fields = Object.entries(updates).filter(([k]) => allowed.includes(k));
 	if (!fields.length) return;
 
@@ -107,13 +110,18 @@ export async function buildSystemInstruction(
 		? Math.floor((Date.now() - new Date(profile.first_seen_at + 'Z').getTime()) / 86400000)
 		: 0;
 
-	// Per-user persona overlay: tone, formality, humour, evolved traits.
+	// Per-user persona overlay: tone, formality, humour, verbosity,
+	// evolved traits. proactivity_level is NOT included — it's a runtime
+	// gate for the cron outreach loop, not a tone instruction; surfacing
+	// it as text would invite the model to interpret it as a verbal
+	// instruction ("act high-proactivity") which isn't what it means.
 	const personaOverlay = [
 		`Tone: ${persona.tone}`,
 		`Formality: ${persona.formality}`,
 		`Humour: ${persona.humour_level}`,
 		`Emoji usage: ${persona.emoji_style}`,
 		`Therapeutic approach: ${persona.therapeutic_approach}`,
+		`Verbosity: ${persona.verbosity}`,
 		persona.communication_notes ? `Communication notes: ${persona.communication_notes}` : '',
 		persona.evolved_traits ? `Evolved personality traits (learned from this user): ${persona.evolved_traits}` : '',
 		persona.topics_of_interest ? `User's stated interests: ${persona.topics_of_interest}` : '',

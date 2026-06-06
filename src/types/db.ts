@@ -32,6 +32,20 @@ export interface PersonaConfigRow {
 	humour_level: string;
 	emoji_style: string;
 	therapeutic_approach: string;
+	/**
+	 * Delivery length preference (2026-06-04). 'terse' favours one-line
+	 * replies and tighter prose; 'standard' is natural-length; 'detailed'
+	 * encourages more elaborated answers. Read into the persona overlay
+	 * block so the model sees it on every turn.
+	 */
+	verbosity: string;
+	/**
+	 * Outreach cadence dial (2026-06-04). 'low' suppresses spontaneous
+	 * outreach (window shrinks, roll rate halves); 'normal' is current
+	 * behaviour; 'high' widens the window and raises the roll rate.
+	 * Read by cron, not surfaced in the system prompt.
+	 */
+	proactivity_level: string;
 	topics_of_interest: string | null;
 	communication_notes: string | null;
 	evolved_traits: string | null;

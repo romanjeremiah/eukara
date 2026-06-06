@@ -1,9 +1,16 @@
 // ============================================================
 // Vector Search Service
 // Semantic search keyed by userId for per-user isolation.
+//
+// Memory facts are stored in D1; Vectorize holds embeddings with
+// truncated metadata for fast preview/filtering. Retrieval always
+// rehydrates the full fact from D1 by id so the model never sees
+// mid-word truncation in its context.
 // ============================================================
 
+import type { MemoryRow } from '../types/db';
 import { CF_MODELS } from '../config/models';
+import { queryAll } from '../lib/db';
 import { log } from '../lib/logger';
 import { runAI } from '../lib/ai-gateway';
 
@@ -73,11 +80,42 @@ export async function getSemanticContext(
 	const top = reranked.slice(0, maxResults);
 	if (!top.length) return '';
 
+	// Rehydrate full facts from D1 by id. Vectorize metadata.fact is
+	// capped at 200 chars when stored (see services/memory.ts:indexInVectorize),
+	// which produced mid-word truncations in the model's context window
+	// and bled into user-facing replies. Looking up the full row by id
+	// costs one extra D1 round-trip per turn but guarantees the model
+	// sees complete observations.
+	const ids = top
+		.map(r => r.id)
+		.filter((id): id is string => typeof id === 'string' && id.length > 0);
+	if (!ids.length) return '';
+
+	const placeholders = ids.map(() => '?').join(',');
+	let fullMemories: MemoryRow[] = [];
+	try {
+		fullMemories = await queryAll<MemoryRow>(
+			env.DB.prepare(
+				`SELECT id, user_id, category, fact, importance_score, created_at, superseded_at
+				 FROM memories
+				 WHERE id IN (${placeholders}) AND user_id = ? AND superseded_at IS NULL`
+			).bind(...ids, userId)
+		);
+	} catch (e) {
+		log.error('semantic_rehydrate_error', { msg: (e as Error).message });
+		return '';
+	}
+
+	if (!fullMemories.length) return '';
+
+	// Preserve the semantic ranking order from Vectorize/reranker.
+	const factsById = new Map<string, MemoryRow>();
+	for (const m of fullMemories) factsById.set(String(m.id), m);
+
 	let ctx = '\nSemantically relevant memories:\n';
 	for (const r of top) {
-		const fact = (r.metadata?.fact as string) ?? '';
-		const category = (r.metadata?.category as string) ?? '';
-		if (fact) ctx += `- [${category}] ${fact}\n`;
+		const m = factsById.get(r.id);
+		if (m && m.fact) ctx += `- [${m.category}] ${m.fact}\n`;
 	}
 	return ctx;
 }

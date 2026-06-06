@@ -73,7 +73,12 @@ const PLANNING_PATTERNS: RegExp[] = [
 	/^\s*I (?:should|need to|will|am going to|have to|must|can|could|might|may)\s*:/i,
 	/^\s*I (?:should|need to|will|have to|must) (?:call|invoke|use|trigger|fire|log|save|record|capture|note|acknowledge)\b/i,
 	/^\s*First,? I('ll| will| should| need)/i,
-	/^\s*Let me (?:check|call|invoke|trigger|log|see|verify|run|use)\s+(?:the|my|a|an)\b/i,
+	// 2026-06-04: removed `Let me (check|call|invoke|...) (the|my|a|an)` pattern.
+	// It produced false-positives on legitimate conversational openers like
+	// "Let me check the calendar" or "Let me see what we said before" — patterns
+	// the persona's FORMATTING_RULES explicitly endorses. The other patterns
+	// here ("Based on the directive", "The user responded", "Plan:", explicit
+	// tool action verbs) catch real planning leakage without striking legit speech.
 	/^\s*If I have tool/i,
 	/^\s*Let's assume (?:the|that)/i,
 	/^\s*(?:Step|Action) \d+:?\s+(?:Call|Invoke|Log|Save|Record|Trigger)/i,

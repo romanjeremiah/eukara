@@ -29,6 +29,7 @@ import {
 	MENTAL_HEALTH_DIRECTIVE,
 	FORMATTING_RULES,
 } from '../config/personas';
+import { MOOD_RESPONSE_REINFORCEMENT } from './poll';
 import { classifyEmotion } from '../config/emotions';
 import * as telegram from '../lib/telegram';
 import { normaliseMarkdown, stripLeakedThoughts, formatTime } from '../lib/formatting';
@@ -368,45 +369,48 @@ function buildSummaryPrompt(inputs: SummaryInputs): string {
 		heuristicsContext,
 	} = inputs;
 
-	// 2026-06-03: prompt rewritten for heuristic injection. The model is
-	// instructed to find FRICTION between today's data and the known
-	// heuristics block, rather than summarising the data on its own.
-	// This addresses the "averaging into neutral prose" problem: a
-	// summary of [score 4, anxious, tired] reads the same for every
-	// user; a contradiction ("high sleep but low energy") is specific.
-	//
-	// Dissociative emotions are partitioned separately because they
-	// represent altered-perception states rather than affective valence.
-	// The prompt acknowledges that distinction so the model doesn't
-	// collapse "numb" into "sad" or treat "depersonalised" as a
-	// negative feeling.
-	return `The user just completed their full mood check-in. Today's data is below, alongside heuristics you already know about them. Find the friction — do not summarise.
+	// 2026-06-05: rewritten alongside buildAnalysisPrompt to address the
+	// same literary-distance failure mode. The previous version explicitly
+	// banned "I hear you" / "It sounds like" openers in the prompt body,
+	// which forced the model into third-person narration ("the gray
+	// flatness", "the heavy anchor"). The MOOD_RESPONSE_REINFORCEMENT
+	// constant prepended here carves out genuine distress as a context
+	// where "I hear you" is presence, not sycophancy. Friction-finding
+	// is still requested for scores >= 4, where the user has bandwidth
+	// for it; below that it's dropped entirely.
 
-TODAY'S CHECK-IN:
+	const score = todayScore ?? 5;
+	const lowScore = score <= 3;
+	const highScore = score >= 8;
+
+	const depthGuidance = lowScore
+		? `LOW-SCORE GUIDANCE: this is a heavy day. The user does not have bandwidth for friction-finding or multi-day pattern observations. Lead with direct acknowledgement ("I'm here", "I hear you", or a natural variation). Acknowledge the emotions they picked, briefly, without listing them all back. End with ONE short question that invites them to say more about the loudest part — or a single steady observation that leaves space. Length: 2-3 short sentences total.`
+		: highScore
+			? `HIGH-SCORE GUIDANCE: the user is in hypomania or mania range. Match their energy calmly without amplifying it. Note one concrete grounding concern (sleep, big decisions, spending). End with ONE short question about sleep or current environment. Length: 3-4 short sentences.`
+			: `MID-SCORE GUIDANCE: friction-finding is welcome here. Compare today's data against KNOWN HEURISTICS, past episodes, and recent history. Point out a specific contradiction or echo — "high sleep but flat energy", "same shape as Tuesday", "the trigger you flagged last month is back". Avoid generic trend descriptions ("a mixed day", "your mood is variable"). End with EITHER one short open-ended question OR one steady observation. Length: 3-5 short sentences.`;
+
+	return `${MOOD_RESPONSE_REINFORCEMENT}
+
+The user just completed their full mood check-in.
+
+TODAY:
 Mood score: ${todayScore ?? 'not recorded'}/10
-Positive emotions selected: ${posSelected.length ? posSelected.join(', ') : 'none'}
-Negative emotions selected: ${negSelected.length ? negSelected.join(', ') : 'none'}
-Dissociative / altered-state emotions selected: ${dissSelected.length ? dissSelected.join(', ') : 'none'}
+Positive emotions: ${posSelected.length ? posSelected.join(', ') : 'none'}
+Negative emotions: ${negSelected.length ? negSelected.join(', ') : 'none'}
+Dissociative / altered-state emotions: ${dissSelected.length ? dissSelected.join(', ') : 'none'}
 
-RECENT MOOD HISTORY:
+${depthGuidance}
+
+If dissociative emotions are present, take them seriously — these are altered-perception states, not valence labels. Acknowledge briefly, without rushing to fix.
+
+GROUNDING (for your awareness only — do NOT recite, quote, or list these back to the user):
 ${historyContext}
-
-${heuristicsContext || '(No known triggers or schemas on file yet.)'}
-
+${heuristicsContext}
 ${clinicalContext}
-
 ${episodeContext}
-
 ${semanticCtx}
 
-YOUR RESPONSE (3-5 sentences, natural prose, no list):
-
-1. Acknowledge what they shared today, in your own register. Do NOT validate the receipt of information — ban opening phrases like "I hear you", "That makes sense", "It sounds like". React directly to the content instead.
-2. Find the friction. Compare today's data against the KNOWN HEURISTICS, past episodes, and recent history. Point out a specific contradiction or echo — "high sleep but flat energy", "this is the same shape as Tuesday", "the trigger you flagged last month is back" — something concrete. Avoid generic trend descriptions ("a mixed day", "your mood is variable").
-3. If dissociative emotions are present, take them seriously. These are altered-perception states, not valence labels. Acknowledge without rushing to fix.
-4. End with EITHER one open-ended question OR a flat declarative observation. Do not always close with a question — a blunt observation that leaves space is often more therapeutic than another prompt. Roughly 40% of the time, end with the observation.
-
-Never use clinical framework names. Never narrate the user's feelings back to them. You know this person. Speak to them, not at them.`;
+Never use clinical framework names. Never narrate the user's feelings back to them in third-person literary terms. Speak to them, not at them.`;
 }
 
 function fallbackSummary(selected: string[]): string {

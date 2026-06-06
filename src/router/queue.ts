@@ -80,22 +80,53 @@ const OUTREACH_EXCLUDED_CATEGORIES = [
 	'homework', 'insight', 'growth', 'feedback', 'triple', 'research_ref',
 ];
 
-interface OutreachMemory { category: string; fact: string }
+interface OutreachMemory {
+	category: string;
+	fact: string;
+	importance_score?: number;
+	created_at?: string;
+}
 
 /**
- * Weighted pick of a memory to surface. Prefers discoveries (the
- * interest-driven research), then ideas, falling back to any casual
- * memory. Mirrors the Xaridotis selection weighting.
+ * Weighted pick of a memory to surface. Two-stage selection:
+ *   1. Saliency scoring (2026-06-04 Inner Thoughts cherry-pick) ranks
+ *      memories by importance * recency, then narrows to the top third.
+ *      Recency uses an exponential decay with a 14-day half-life so a
+ *      week-old discovery beats a month-old idea without ignoring older
+ *      facts entirely.
+ *   2. Category-weighted random pick from the salient pool, mirroring
+ *      the Xaridotis weighting (discoveries first, then ideas, then
+ *      any remaining casual memory).
  */
 function pickOutreachMemory(memories: OutreachMemory[]): OutreachMemory | null {
 	if (!memories.length) return null;
-	const discoveries = memories.filter(m => m.category === 'discovery');
-	const ideas = memories.filter(m => m.category === 'idea' || m.category === 'brain_dump');
+
+	const now = Date.now();
+	const HALF_LIFE_MS = 14 * 86400 * 1000;
+	const scored = memories.map(m => {
+		const created = m.created_at
+			? new Date(m.created_at + 'Z').getTime()
+			: 0;
+		const ageMs = Math.max(0, now - created);
+		const recency = Math.pow(0.5, ageMs / HALF_LIFE_MS);
+		const importance = m.importance_score ?? 1;
+		return { mem: m, score: importance * recency };
+	});
+	scored.sort((a, b) => b.score - a.score);
+
+	// Top third by saliency (minimum of 3 items so a sparse memory bank
+	// doesn't collapse to a single option). The category-pool selection
+	// below operates on this subset.
+	const topCount = Math.max(3, Math.ceil(scored.length / 3));
+	const top = scored.slice(0, topCount).map(s => s.mem);
+
+	const discoveries = top.filter(m => m.category === 'discovery');
+	const ideas = top.filter(m => m.category === 'idea' || m.category === 'brain_dump');
 	const roll = Math.random();
 	let pool: OutreachMemory[];
 	if (discoveries.length && roll < 0.5) pool = discoveries;
 	else if (ideas.length && roll < 0.7) pool = ideas;
-	else pool = memories;
+	else pool = top;
 	return pool[Math.floor(Math.random() * pool.length)] ?? null;
 }
 
@@ -295,11 +326,12 @@ async function processTask(task: QueueTask, env: Env, attempts: number): Promise
 
 		case 'spontaneous_outreach': {
 			// Interest-driven casual share. Pull recent memories, keep
-			// the casual (non-clinical) ones, weight selection toward
-			// discoveries and ideas, and hand the chosen item to the
-			// persona-voiced generator. The cron guards (sociable hours,
-			// 5% roll, daily cap, 3h-since-chat, quiet hours) have
-			// already passed by the time this runs.
+			// the casual (non-clinical) ones, weight selection by saliency
+			// (importance * recency) within the discovery / idea / general
+			// category pools, and hand the chosen item to the persona-voiced
+			// generator. The cron guards (per-user proactivity dial, daily
+			// cap, 3h-since-chat, quiet hours, escalation limit) have already
+			// passed by the time this runs.
 			const all = await memory.getMemories(env, userId, 50).catch(() => []);
 			const casual = all.filter(m => !OUTREACH_EXCLUDED_CATEGORIES.includes(m.category));
 			if (!casual.length) break;
@@ -313,7 +345,27 @@ async function processTask(task: QueueTask, env: Env, attempts: number): Promise
 				'',
 				300
 			);
-			if (greeting) await sendTelegram(token, chatId, greeting);
+			if (greeting) {
+				await sendTelegram(token, chatId, greeting);
+				// 2026-06-04 Inner Thoughts escalation guard. Increment
+				// unanswered counter after each successful send. Cleared
+				// when the user sends any message (bot/message.ts). When
+				// the count crosses persona_config.proactivity_level's
+				// maxUnanswered (1/2/3 for low/normal/high), cron pauses
+				// further outreach until the user replies.
+				try {
+					const current = Number(
+						await env.CHAT_KV.get(`proactive_unanswered_${userId}`)
+					) || 0;
+					await env.CHAT_KV.put(
+						`proactive_unanswered_${userId}`,
+						String(current + 1),
+						{ expirationTtl: 7 * 86400 }
+					);
+				} catch (e) {
+					log.warn('outreach_counter_write_failed', { userId, msg: (e as Error).message });
+				}
+			}
 			break;
 		}
 
