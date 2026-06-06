@@ -39,18 +39,10 @@ export const messageEffect = defineTool(
 	}
 );
 
-export const sendChecklist = defineTool(
-	'send_checklist',
-	'Send a formatted checklist to the user. Use for task lists, action items, or tracking progress.',
-	{
-		title: { type: 'string', description: 'Checklist title' },
-		items: { type: 'array', items: { type: 'string' }, description: 'Checklist items' },
-	},
-	['title', 'items'],
-	async (args, env, ctx) => {
-		const items = args.items as string[];
-		const text = `<b>${args.title}</b>\n\n${items.map((item, i) => `☐ ${item}`).join('\n')}`;
-		await telegram.sendMessage(ctx.chatId, ctx.threadId, text, env);
-		return ok();
-	}
-);
+// NOTE: 2026-06-06 — the prior static `sendChecklist` was replaced by
+// `createChecklist` in src/tools/checklist-tools.ts. That version renders
+// an interactive Telegram inline keyboard whose buttons toggle ticked /
+// unticked state via the chk| callback handler in src/bot/callback.ts.
+// The static text-only version had no progress tracking and no
+// completion feedback, so the upgraded tool fully supersedes it.
+

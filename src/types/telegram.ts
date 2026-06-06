@@ -98,6 +98,12 @@ export interface TelegramMessage {
 	sticker?: TelegramSticker;
 	document?: TelegramDocument;
 	reply_to_message?: TelegramMessage;
+	// reply_markup is the inline keyboard attached when the bot sent the
+	// message. Used by callback handlers that need to mutate the keyboard
+	// in place (interactive checklists, mood flow state edits) without
+	// losing the rest of the markup. Per Bot API spec the field is optional;
+	// only present on messages the bot sent with reply_markup set.
+	reply_markup?: TelegramInlineKeyboardMarkup;
 	entities?: Array<{
 		type: string;
 		offset: number;

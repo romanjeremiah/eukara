@@ -1,4 +1,119 @@
 ================================================================
+2026-06-06  Phase 1: Persona port from Xaridotis + interactive checklist tool
+================================================================
+
+Context: Roma is preparing to test Eukara with additional users and
+wants Eukara's persona to mirror Xaridotis (his primary bot) so the
+two products feel like sister products rather than divergent codebases.
+This reverses the 2026-06-03-eukara-architecture-principles doctrine
+which positioned Eukara as architecturally independent.
+
+Triggered by: comparison of Eukara vs Xaridotis replies to "I feel
+depressed" — Eukara produced literary distance ("It is exhausting
+when that gray flatness takes over... I'm not going to push a fix"),
+Xaridotis produced direct presence ("I hear you, and I am right
+here with you. It's incredibly heavy..."). Roma preferred Xaridotis.
+Eukara's reply was the literal output of NO RECEIPTS + NO SILVER
+LININGS rules; the model resorted to literary third-person
+observation as the "safe" alternative because direct presence was
+banned.
+
+Phase 1 (this session, Eukara only):
+
+  Persona (src/config/personas.ts)
+    - Five exports now match Xaridotis byte-for-byte with three
+      intentional divergences: {NAME}=Eukara, PROJECT REALITY=
+      TypeScript, MHD §10 drops auto-deploy.
+    - Removed from BASE_TEMPLATE: NO RECEIPTS, NO SILVER LININGS,
+      ASYMMETRIC PACING, AVOID AI TELLS, HONOUR USER CONSTRAINTS
+      (last one preserved as ACTIVE USER CONSTRAINTS at top of
+      SECOND_BRAIN_DIRECTIVE), creative/generative tone branch,
+      extended framework list, three-conditions-for-named-vocabulary.
+    - Baseline: "warm but unperformed" → "observational and sparing".
+    - KEPT in Eukara MHD (pending Phase 2 promotion to Xaridotis):
+      §3 dissociative emotions, §5 medication ambivalence MI, §11
+      CBT and Somatic lenses, §15 Relationship Conflict.
+    - MHD §10 (ADAPTIVE SURVIVAL ROUTINES) renamed to CHECKLIST
+      TOOL USE; auto-deploy at mood 2/3/8 removed; replaced with
+      contextual-use guidance.
+    - SECOND_BRAIN_DIRECTIVE: added ACTIVE USER CONSTRAINTS section
+      at top, TOPICS section at bottom, expanded TOOL SELECTION
+      HARD CONSTRAINTS to match Xaridotis structure while keeping
+      Eukara's MEMORY SUPERSESSION bullet.
+    - FORMATTING_RULES: restored Xaridotis verbose version with
+      explicit markdown→HTML conversion examples.
+    - NEW export: CASUAL_REGISTER_DIRECTIVE (Xaridotis verbatim,
+      dead text until intent classifier wired).
+
+  Interactive checklist tool
+    - NEW src/tools/checklist-tools.ts (port of Xaridotis's
+      ../gemini-bot/src/tools/checklist.js). Provides createChecklist
+      tool (registered as create_checklist), with progress bar via
+      buildChecklistText helper. Tool description explicitly tells
+      the model NOT to auto-deploy on mood scores.
+    - REMOVED static sendChecklist from src/tools/media-tools.ts
+      (left a comment noting the supersession). The static version
+      had no progress tracking; the new version is strictly better.
+    - MODIFIED src/tools/index.ts: registers createChecklist,
+      removes sendChecklist reference.
+    - MODIFIED src/bot/callback.ts: adds chk| callback handler
+      mirroring Xaridotis chk| at handlers.js:3040. Imports
+      buildChecklistText. Mutates inline_keyboard in place, rebuilds
+      progress text, editMessage with new content + keyboard.
+    - MODIFIED src/types/telegram.ts: added optional
+      reply_markup?: TelegramInlineKeyboardMarkup to TelegramMessage.
+      Per Bot API 9.6 spec the field exists on messages the bot
+      sent with reply_markup set; Eukara's types just hadn't
+      modelled it before.
+
+  Decision document
+    - NEW decisions/2026-06-06-port-xaridotis-persona.md
+    - Supersedes 2026-06-03-eukara-architecture-principles.md on
+      Eukara's architectural independence doctrine.
+
+Verification
+
+  - npx tsc --noEmit: clean after persona rewrite, again after
+    callback handler add, final clean state confirmed at session end.
+  - No deploy this session (Roma's call when to ship).
+
+Phase 2 (next session, Xaridotis backports — NOT YET DONE)
+
+  - Promote Eukara's MHD additions to Xaridotis MHD: §3 dissociative,
+    §5 medication MI, §11 CBT and Somatic, §15 Relationship Conflict.
+  - Drop Xaridotis MHD §10 auto-deploy (same change Eukara had).
+  - Add MEMORY SUPERSESSION bullet to Xaridotis SECOND_BRAIN
+    TOOL SELECTION (supersession infrastructure already exists
+    in code; only the persona-level instruction needs to land).
+  - Remove AI signature footers ("via gemini-...") from outbound
+    messages. 27 caller sites of formatReplyWithSignature in
+    Xaridotis src/. Decide whether to delete the function or gate
+    it behind a debug flag.
+
+Phase 3 (Xaridotis multi-user — NEEDS DESIGN CONVERSATION)
+
+  Pre-work investigation confirmed Xaridotis schema is already
+  multi-tenant-ready (user_id columns + FKs + indexes everywhere).
+  Memory supersession and spontaneous outreach already exist in
+  Xaridotis (the document Roma pasted recommending their port was
+  partially out of date).
+
+  What's actually needed for genuine multi-user:
+    A. Cron handlers stop assuming env.OWNER_ID (iterate authorised
+       users instead).
+    B. Authorisation middleware on webhook entry.
+    C. Per-user topic IDs (Roma's specific thread IDs hardcoded
+       in config currently).
+    D. Vectorize metadata filter audit (likely already correct).
+    E. D1 query audit for explicit WHERE user_id = ?.
+    F. /start onboarding flow for new users.
+
+  Half a day to a day of work plus testing. Open question for
+  Roma: is Xaridotis genuinely going multi-user, or was the
+  request a discipline-for-Eukara framing?
+
+================================================================
+================================================================
 2026-06-04  Pro-lane cascade reorder: flash-first, four tiers
 ================================================================
 

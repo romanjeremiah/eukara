@@ -30,7 +30,10 @@ import { readWebpage, webSearchTavily } from './web-tools';
 import { readRepoFile, patchRepoFile } from './github-tools';
 
 // Media
-import { generateImage, messageEffect, sendChecklist } from './media-tools';
+import { generateImage, messageEffect } from './media-tools';
+
+// Checklist (interactive, port from Xaridotis 2026-06-06)
+import { createChecklist } from './checklist-tools';
 
 // Research
 import { searchResearch, startDeepResearch } from './research-tools';
@@ -82,7 +85,9 @@ export const allTools: AITool[] = [
 	// Media
 	generateImage,
 	messageEffect,
-	sendChecklist,
+
+	// Checklist (interactive, port from Xaridotis 2026-06-06)
+	createChecklist,
 
 	// Research
 	searchResearch,

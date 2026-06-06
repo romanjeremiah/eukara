@@ -19,6 +19,7 @@ import {
 import { getPresetById } from '../config/persona-presets';
 import { findPresetByTz } from '../config/timezone-presets';
 import { handleEmotionToggle, handleEmotionsDone } from './mood-callbacks';
+import { buildChecklistText } from '../tools/checklist-tools';
 import * as user from '../services/user';
 import * as persona from '../services/persona';
 import * as memory from '../services/memory';
@@ -277,6 +278,41 @@ export async function handleCallback(
 				text: 'Failed to set timezone',
 			}).catch(() => {});
 		}
+
+	// --- Interactive checklist toggle ---
+	// callback_data is `chk|<index>|<title slice>`. Tapping a row
+	// flips its prefix between ☐ and ✅, then we rebuild the
+	// progress text (▓3░░ + percent + done/total) and edit the
+	// message with the updated keyboard. Mirrors Xaridotis's
+	// chk| handler in ../gemini-bot/src/bot/handlers.js verbatim.
+	} else if (data.startsWith('chk|')) {
+		const parts = data.split('|');
+		const index = parseInt(parts[1] ?? '', 10);
+		const title = parts[2] || 'Checklist';
+
+		const markup = query.message?.reply_markup;
+		const row = markup?.inline_keyboard?.[index];
+		const button = row?.[0];
+		if (!markup || !markup.inline_keyboard || !row || !button) {
+			await telegram.answerCallbackQuery(query.id, env).catch(() => {});
+			return;
+		}
+
+		if (button.text.startsWith('✅')) {
+			button.text = `☐  ${button.text.replace(/^✅\s+/, '')}`;
+		} else {
+			button.text = `✅  ${button.text.replace(/^☐\s+/, '')}`;
+		}
+
+		const newText = buildChecklistText(title, markup.inline_keyboard);
+		await telegram.editMessage(
+			chatId,
+			msgId,
+			newText,
+			env,
+			markup as unknown as Record<string, unknown>
+		);
+		await telegram.answerCallbackQuery(query.id, env).catch(() => {});
 
 	// --- Noop (dismiss buttons) ---
 	} else if (data === 'noop') {
