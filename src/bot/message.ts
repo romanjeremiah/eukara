@@ -96,15 +96,15 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
 type ChatArgs = {
 	messages: AIMessage[];
 	tools: AITool[];
-	systemInstruction: string;
-	thinkingEffort: ModelRoute['thinkingEffort'];
+	systemInstruction?: string;
+	thinkingLevel?: 'LOW' | 'MEDIUM' | 'HIGH';
 	enableGrounding: boolean;
 };
 
 type ProviderChat = (
 	m: AIMessage[],
 	t: AITool[],
-	c: { temperature: number; thinkingEffort: ModelRoute['thinkingEffort']; systemInstruction: string; enableGrounding?: boolean }
+	c: { systemInstruction?: string; thinkingLevel?: 'LOW' | 'MEDIUM' | 'HIGH'; enableGrounding?: boolean }
 ) => Promise<AIResponse>;
 
 /**
@@ -121,9 +121,8 @@ async function runProCascade(
 	try {
 		const response = await withTimeout(
 			provider.chat(args.messages, args.tools, {
-				temperature: 1.0,
-				thinkingEffort: args.thinkingEffort,
 				systemInstruction: args.systemInstruction,
+				thinkingLevel: args.thinkingLevel,
 				enableGrounding: args.enableGrounding,
 			}),
 			30_000,
@@ -140,9 +139,8 @@ async function runProCascade(
 		const proLatest = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.proLatest);
 		const response = await withTimeout(
 			proLatest.chat(args.messages, args.tools, {
-				temperature: 1.0,
-				thinkingEffort: 'dynamic',
 				systemInstruction: args.systemInstruction,
+				thinkingLevel: args.thinkingLevel,
 				enableGrounding: args.enableGrounding,
 			}),
 			60_000,
@@ -159,9 +157,8 @@ async function runProCascade(
 		const cfFallback = new CloudflareProvider(env.AI, CF_MODELS.chat);
 		const response = await withTimeout(
 			cfFallback.chat(args.messages, args.tools, {
-				temperature: 1.0,
-				thinkingEffort: 'medium',
 				systemInstruction: args.systemInstruction,
+				thinkingLevel: args.thinkingLevel,
 				enableGrounding: args.enableGrounding,
 			}),
 			30_000,
@@ -181,9 +178,8 @@ async function runProCascade(
 		const flashLite = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.flashLite);
 		const response = await withTimeout(
 			flashLite.chat(args.messages, args.tools, {
-				temperature: 1.0,
-				thinkingEffort: 'dynamic',
 				systemInstruction: args.systemInstruction,
+				thinkingLevel: args.thinkingLevel,
 				enableGrounding: args.enableGrounding,
 			}),
 			30_000,
@@ -221,9 +217,8 @@ async function runCasualCall(
 	try {
 		const response = await withTimeout(
 			provider.chat(args.messages, args.tools, {
-				temperature: 1.0,
-				thinkingEffort: args.thinkingEffort,
 				systemInstruction: args.systemInstruction,
+				thinkingLevel: args.thinkingLevel,
 				enableGrounding: args.enableGrounding,
 			}),
 			60_000,
@@ -252,9 +247,8 @@ async function runCasualCall(
 	try {
 		const response = await withTimeout(
 			provider.chat(args.messages, args.tools, {
-				temperature: 1.0,
-				thinkingEffort: args.thinkingEffort,
 				systemInstruction: args.systemInstruction,
+				thinkingLevel: args.thinkingLevel,
 				enableGrounding: false,
 			}),
 			30_000,
@@ -521,8 +515,6 @@ export async function handleMessage(
 			const { response, tierUsed } = await chatWithFallback(route, provider, {
 				messages,
 				tools,
-				systemInstruction,
-				thinkingEffort: route.thinkingEffort,
 				enableGrounding: route.enableGrounding ?? false,
 			}, env);
 
@@ -564,24 +556,20 @@ export async function handleMessage(
 					}
 				}
 
+				const userParts: Array<Record<string, unknown>> = [];
+
 				for (const tc of response.toolCalls) {
 					const tool = tools.find(t => t.schema.function.name === tc.name);
 					if (!tool) continue;
 					try {
 						const result = await tool.execute(tc.args, env, toolContext);
 						if (usePreservedParts) {
-							// Gemini expects functionResponse parts in a user
-							// role turn for tool combination.
-							messages.push({
-								role: 'user',
-								content: '',
-								_rawProviderParts: [{
-									functionResponse: {
-										name: tc.name,
-										id: tc.id,
-										response: { content: JSON.stringify(result) },
-									},
-								}],
+							userParts.push({
+								functionResponse: {
+									name: tc.name,
+									id: tc.id,
+									response: { content: JSON.stringify(result) },
+								},
 							});
 						} else {
 							messages.push({ role: 'tool', content: { type: 'tool_result', toolCallId: tc.id, content: JSON.stringify(result) } });
@@ -590,6 +578,15 @@ export async function handleMessage(
 					} catch (e) {
 						log.error('tool_error', { tool: tc.name, msg: (e as Error).message });
 					}
+				}
+
+				if (usePreservedParts && userParts.length > 0) {
+					// Gemini expects all functionResponse parts in a single user turn
+					messages.push({
+						role: 'user',
+						content: '',
+						_rawProviderParts: userParts,
+					});
 				}
 				continue;
 			}
@@ -796,7 +793,6 @@ export async function handleMessage(
 		chatId,
 		provider: route.provider,
 		model: route.model.split('/').pop(),
-		thinking: route.thinkingEffort,
 		route_reason: route.reason,
 		force_pro_lane: !!options?.forceProLane,
 		inputLen: userText.length,

@@ -127,13 +127,8 @@ export interface AIStreamChunk {
 // --- Provider Config ---
 
 export interface AIProviderConfig {
-	temperature?: number;
 	maxTokens?: number;
-	// `dynamic` lets the model decide thinking budget per request.
-	// Recommended default for 2.5 Pro per Google docs (cost-efficient,
-	// 30-50% cheaper than fixed-high). Maps to `thinkingBudget: -1` on
-	// 2.5 family; ignored on 3.x (3.x is always dynamic anyway).
-	thinkingEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'dynamic';
+	thinkingLevel?: 'LOW' | 'MEDIUM' | 'HIGH';
 	systemInstruction?: string;
 	/**
 	 * Always-on grounding flag. Effect depends on provider+model:
@@ -176,12 +171,11 @@ export interface AIProvider {
 
 // --- Model Router Types ---
 
-export type TaskComplexity = 'minimal' | 'low' | 'medium' | 'high' | 'dynamic';
-
 export interface ModelRoute {
 	provider: 'cloudflare' | 'gemini';
 	model: string;
-	thinkingEffort: TaskComplexity;
+	maxTokens?: number;
+	thinkingLevel?: 'LOW' | 'MEDIUM' | 'HIGH';
 	reason: string;
 	/**
 	 * Whether grounding (Google Search / web_search_options) should be

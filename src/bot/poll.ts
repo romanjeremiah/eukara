@@ -221,9 +221,7 @@ After your message, emotion buttons appear — do NOT ask about emotions; the bu
 			[],
 			{
 				systemInstruction: `${BASE_INSTRUCTION}\n\n${MENTAL_HEALTH_DIRECTIVE}\n\n${FORMATTING_RULES}`,
-				temperature: 0.7,
-				maxTokens: 600,
-				thinkingEffort: 'medium',
+				thinkingLevel: 'LOW',
 			}
 		);
 		response = result.text || fallbackAnalysis(score);
@@ -322,9 +320,7 @@ export async function runMoodAnalysisWork(
 			[],
 			{
 				systemInstruction: `${BASE_INSTRUCTION}\n\n${MENTAL_HEALTH_DIRECTIVE}\n\n${FORMATTING_RULES}`,
-				temperature: 1.0,
-				maxTokens: 1500,
-				thinkingEffort: 'medium',
+				thinkingLevel: 'LOW',
 			}
 		);
 		analysis = response.text || fallbackAnalysis(score);

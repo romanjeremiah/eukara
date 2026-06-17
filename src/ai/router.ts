@@ -62,7 +62,6 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 		return {
 			provider: 'gemini',
 			model: GEMINI_MODELS.proPrimary,
-			thinkingEffort: 'dynamic',
 			reason: 'sticky_pro_context',
 			enableGrounding: true,
 		};
@@ -74,7 +73,6 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 		return {
 			provider: 'gemini',
 			model: GEMINI_MODELS.proPrimary,
-			thinkingEffort: 'dynamic',
 			reason: 'multimodal_input',
 			enableGrounding: true,
 		};
@@ -85,7 +83,6 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 		return {
 			provider: 'gemini',
 			model: GEMINI_MODELS.proPrimary,
-			thinkingEffort: 'dynamic',
 			reason: 'active_health_checkin',
 			enableGrounding: true,
 		};
@@ -96,7 +93,6 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 		return {
 			provider: 'gemini',
 			model: GEMINI_MODELS.proPrimary,
-			thinkingEffort: 'dynamic',
 			reason: 'emotional_content',
 			enableGrounding: true,
 		};
@@ -109,8 +105,8 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 		return {
 			provider: 'cloudflare',
 			model: CF_MODELS.code,
-			thinkingEffort: 'high',
 			reason: 'code_content',
+			thinkingLevel: 'HIGH',
 			enableGrounding: false,
 		};
 	}
@@ -120,8 +116,8 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 		return {
 			provider: 'cloudflare',
 			model: CF_MODELS.code,
-			thinkingEffort: 'medium',
 			reason: 'analytical_content',
+			thinkingLevel: 'HIGH',
 			enableGrounding: false,
 		};
 	}
@@ -131,8 +127,8 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 		return {
 			provider: 'cloudflare',
 			model: CF_MODELS.code,
-			thinkingEffort: 'medium',
 			reason: 'long_message',
+			thinkingLevel: 'MEDIUM',
 			enableGrounding: false,
 		};
 	}
@@ -143,8 +139,8 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 	return {
 		provider: 'cloudflare',
 		model: CF_MODELS.chat,
-		thinkingEffort: 'dynamic',
 		reason: 'default_casual',
+		thinkingLevel: 'LOW',
 		enableGrounding: true,
 	};
 }
@@ -191,7 +187,6 @@ export function getProvider(ctx: RouterContext, env: Env): { provider: AIProvide
 		log.info('model_route', {
 			provider: route.provider,
 			model: route.model,
-			thinking: route.thinkingEffort,
 			reason: route.reason,
 			grounding: route.enableGrounding ?? false,
 		});

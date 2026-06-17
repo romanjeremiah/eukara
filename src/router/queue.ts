@@ -193,8 +193,7 @@ async function processTask(task: QueueTask, env: Env, attempts: number): Promise
 			const greeting = await generateCheckinMessage(env, chatId, userId, userPrompt, generationPrompt,
 				task.period === 'morning'
 					? 'Morning! How did you sleep? Have you taken your meds?'
-					: 'Quick check — have you taken your meds?',
-				300
+					: 'Quick check — have you taken your meds?'
 			);
 
 			await sendTelegram(token, chatId, greeting);
@@ -317,8 +316,7 @@ async function processTask(task: QueueTask, env: Env, attempts: number): Promise
 			const greeting = await generateCheckinMessage(env, chatId, userId,
 				'[automatic medication follow-up trigger]',
 				'Send a brief, gentle 1-sentence medication follow-up.',
-				'Just checking — did you manage to take your meds?',
-				200
+				'Just checking — did you manage to take your meds?'
 			);
 			await sendTelegram(token, chatId, greeting);
 			break;
@@ -342,8 +340,7 @@ async function processTask(task: QueueTask, env: Env, attempts: number): Promise
 			const greeting = await generateCheckinMessage(env, chatId, userId,
 				'[automatic spontaneous outreach trigger]',
 				buildOutreachPrompt(chosen),
-				'',
-				300
+				''
 			);
 			if (greeting) {
 				await sendTelegram(token, chatId, greeting);
@@ -467,8 +464,7 @@ async function generateCheckinMessage(
 	userId: number,
 	userPromptForHistory: string,
 	generationPrompt: string,
-	fallbackMessage: string,
-	maxTokens: number,
+	fallbackMessage: string
 ): Promise<string> {
 	let greeting = fallbackMessage;
 
@@ -484,8 +480,7 @@ async function generateCheckinMessage(
 			undefined,
 			{
 				systemInstruction: `${BASE_INSTRUCTION}\n\n${FORMATTING_RULES}`,
-				temperature: 1.0,
-				maxTokens,
+				thinkingLevel: 'LOW',
 				enableGrounding: false,
 			},
 		);
@@ -581,9 +576,7 @@ Tone: warm, observant, personal. You know this person. Use their mood data as ev
 			[],
 			{
 				systemInstruction: `${BASE_INSTRUCTION}\n\n${MENTAL_HEALTH_DIRECTIVE}\n\n${FORMATTING_RULES}`,
-				temperature: 1.0,
-				maxTokens: 1500,
-				thinkingEffort: 'dynamic',
+				thinkingLevel: 'HIGH',
 				enableGrounding: true,
 			}
 		);

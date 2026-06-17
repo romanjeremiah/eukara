@@ -106,14 +106,13 @@ export class CloudflareProvider implements AIProvider {
 		const payload: Record<string, unknown> = {
 			messages: cfMessages,
 			tools: cfTools,
-			temperature: config?.temperature ?? 1.0,
 		};
 
 		if (this.useOpenAICompat) {
 			if (config?.maxTokens != null) {
 				payload.max_completion_tokens = config.maxTokens;
 			}
-			const reasoning = this.toReasoningEffort(config?.thinkingEffort);
+			const reasoning = this.toReasoningEffort(config?.thinkingLevel);
 			if (reasoning) payload.reasoning_effort = reasoning;
 
 			// Decision B (2026-06-02): always-on Google Search via
@@ -171,7 +170,6 @@ export class CloudflareProvider implements AIProvider {
 				this.model as unknown as keyof AiModels,
 				{
 					messages: cfMessages,
-					temperature: config?.temperature ?? 1.0,
 					max_tokens: config?.maxTokens ?? 2048,
 					stream: true,
 				}
@@ -227,6 +225,8 @@ export class CloudflareProvider implements AIProvider {
 	}
 
 	// --- Internal converters ---
+
+
 
 	private convertMessages(
 		messages: AIMessage[],
@@ -300,10 +300,9 @@ export class CloudflareProvider implements AIProvider {
 	 * 'low' | 'medium' | 'high'. We deliberately do NOT pass 'minimal'
 	 * (Gemini-only) nor 'dynamic' (Gemini-only) — those return null/skip.
 	 */
-	private toReasoningEffort(effort?: string): string | undefined {
-		if (!effort) return undefined;
-		const validEfforts = new Set(['low', 'medium', 'high']);
-		return validEfforts.has(effort) ? effort : undefined;
+	private toReasoningEffort(level?: 'LOW' | 'MEDIUM' | 'HIGH'): string | undefined {
+		if (!level) return undefined;
+		return level.toLowerCase();
 	}
 
 	private convertTools(tools: AITool[]): Array<Record<string, unknown>> {

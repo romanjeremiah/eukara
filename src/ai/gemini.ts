@@ -64,7 +64,7 @@ export class GeminiProvider implements AIProvider {
 
 		const geminiContents = this.convertMessages(messages);
 		const { geminiTools, toolConfig, groundingEnabled } = this.buildTools(tools, config);
-		const thinkingConfig = this.convertThinking(config?.thinkingEffort);
+		const thinkingConfig = this.convertThinking(config?.thinkingLevel);
 
 		if (groundingEnabled) {
 			log.info('gemini_grounding_enabled', {
@@ -79,7 +79,6 @@ export class GeminiProvider implements AIProvider {
 				contents: geminiContents,
 				config: {
 					systemInstruction: config?.systemInstruction,
-					temperature: config?.temperature ?? 1.0,
 					maxOutputTokens: config?.maxTokens ?? 4096,
 					tools: geminiTools,
 					toolConfig,
@@ -104,7 +103,7 @@ export class GeminiProvider implements AIProvider {
 
 		const geminiContents = this.convertMessages(messages);
 		const { geminiTools, toolConfig } = this.buildTools(tools, config);
-		const thinkingConfig = this.convertThinking(config?.thinkingEffort);
+		const thinkingConfig = this.convertThinking(config?.thinkingLevel);
 
 		try {
 			const response = await ai.models.generateContentStream({
@@ -112,7 +111,6 @@ export class GeminiProvider implements AIProvider {
 				contents: geminiContents,
 				config: {
 					systemInstruction: config?.systemInstruction,
-					temperature: config?.temperature ?? 1.0,
 					maxOutputTokens: config?.maxTokens ?? 4096,
 					tools: geminiTools,
 					toolConfig,
@@ -279,93 +277,9 @@ export class GeminiProvider implements AIProvider {
 		return [{ functionDeclarations: declarations }];
 	}
 
-	private convertThinking(effort?: string): Record<string, unknown> | undefined {
-		if (!effort) return undefined;
-
-		// Model-family-aware thinking config. Wrong shape returns 400
-		// INVALID_ARGUMENT from Gemini API. Ranges verified against
-		// ai.google.dev docs 2026-05-16 / 2026-06-02:
-		//
-		//   gemini-2.5-pro
-		//     -> thinkingBudget: 128 to 32768, no disable, default 8192
-		//
-		//   gemini-2.5-flash
-		//     -> thinkingBudget: 0 to 24576, supports disable (0),
-		//        default -1 (dynamic)
-		//
-		//   gemini-2.5-flash-lite
-		//     -> thinkingBudget: 0 OR 512-24576, default 0 (disabled)
-		//
-		//   gemini-3.x family (including gemini-3.5-flash,
-		//   gemini-3.1-flash-image, gemini-3.1-flash-lite-preview)
-		//     -> thinkingLevel: 'minimal' | 'low' | 'medium' | 'high'
-		//        Cannot disable. Always dynamic up to level cap.
-		//
-		//   Mixing thinkingBudget + thinkingLevel returns an error.
-		//
-		// `dynamic` maps to thinkingBudget: -1 on 2.5 family (model
-		// auto-scales, max 8192 thinking tokens). On 3.x, 'dynamic' is
-		// the model's default so we return undefined.
-
-		const model = this.model;
-
-		// --- 2.5 family ---
-		if (model.includes('2.5-flash-lite')) {
-			// Flash-Lite: 0 (disabled, default) or 512-24576
-			const budgetMap: Record<string, number> = {
-				minimal: 0,
-				low: 512,
-				medium: 2048,
-				high: 8192,
-				dynamic: -1,
-			};
-			const budget = budgetMap[effort];
-			return budget !== undefined ? { thinkingBudget: budget } : undefined;
-		}
-
-		if (model.includes('2.5-flash')) {
-			// Flash: 0-24576, default -1 dynamic
-			const budgetMap: Record<string, number> = {
-				minimal: 0,
-				low: 512,
-				medium: -1,
-				high: 4096,
-				dynamic: -1,
-			};
-			const budget = budgetMap[effort];
-			return budget !== undefined ? { thinkingBudget: budget } : undefined;
-		}
-
-		if (model.includes('2.5-pro')) {
-			// Pro: 128-32768, NO disable. Dynamic recommended.
-			const budgetMap: Record<string, number> = {
-				minimal: 128,
-				low: 128,
-				medium: -1,
-				high: -1,
-				dynamic: -1,
-			};
-			const budget = budgetMap[effort];
-			return budget !== undefined ? { thinkingBudget: budget } : undefined;
-		}
-
-		// --- 3.x family ---
-		if (model.startsWith('gemini-3')) {
-			// 3.x uses thinkingLevel; 'dynamic' is the model's natural default
-			// so we return undefined for that.
-			if (effort === 'dynamic') return undefined;
-			const levelMap: Record<string, string> = {
-				minimal: 'minimal',
-				low: 'low',
-				medium: 'medium',
-				high: 'high',
-			};
-			const level = levelMap[effort];
-			return level ? { thinkingLevel: level } : undefined;
-		}
-
-		// Unknown model family — fail open.
-		return undefined;
+	private convertThinking(level?: 'LOW' | 'MEDIUM' | 'HIGH'): Record<string, unknown> | undefined {
+		if (!level) return undefined;
+		return { thinkingLevel: level };
 	}
 
 	private parseResponse(response: any): AIResponse {

@@ -97,7 +97,7 @@ Task:
 Return ONLY a raw JSON array:
 [{"category":"preference","fact":"...","importance":1}]
 No markdown, no backticks.`,
-				config: { temperature: 0.2 },
+				config: { thinkingConfig: { thinkingLevel: 'LOW' as any } },
 			});
 
 			const text = response.text ?? '';

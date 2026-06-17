@@ -288,9 +288,7 @@ export async function runEmotionsDoneWork(
 			[],
 			{
 				systemInstruction: `${BASE_INSTRUCTION}\n\n${MENTAL_HEALTH_DIRECTIVE}\n\n${FORMATTING_RULES}`,
-				temperature: 1.0,
-				maxTokens: 2000,
-				thinkingEffort: 'high',
+				thinkingLevel: 'MEDIUM',
 			}
 		);
 		summary = response.text || fallbackSummary(selected);

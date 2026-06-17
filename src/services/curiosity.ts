@@ -82,8 +82,7 @@ Pick the single most interesting item. Write 2 to 3 sentences explaining what it
 			undefined,
 			{
 				systemInstruction: 'You are a sharp research assistant surfacing one fresh, specific, genuinely interesting item. Concise and factual.',
-				temperature: 0.7,
-				maxTokens: 400,
+				thinkingLevel: 'MEDIUM',
 				enableGrounding: true,
 			},
 		);

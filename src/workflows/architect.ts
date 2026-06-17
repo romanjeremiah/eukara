@@ -103,8 +103,8 @@ RESEARCH ACROSS: Telegram Bot API, Gemini API, Cloudflare Workers AI, competitor
 For each of 3 proposals: what it is, why unique, implementation sketch, why it matters for mental health.
 Be bold.`,
 				config: {
-					temperature: 0.7,
 					tools: researchContext ? [] : [{ googleSearch: {} }],
+					thinkingConfig: { thinkingLevel: 'HIGH' as any },
 				},
 			});
 
