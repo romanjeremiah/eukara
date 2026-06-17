@@ -1,15 +1,15 @@
-# **Cloudflare AI Models — Complete Reference**
+# Cloudflare AI Models — Complete Reference
 
-*Generated: 2026-05-18 | Total: 137 models (73 Workers AI \+ 64 Catalog/Partner)*
+*Generated: 2026-05-18 | Total: 137 models (73 Workers AI + 64 Catalog/Partner)*
 
 ---
 
-## **Part 1: Cloudflare Workers AI Models (80 models)**
+## Part 1: Cloudflare Workers AI Models (80 models)
 
 Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 | \# | Model Name | Task | UUID |
-| ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- |
 | 1 | [@cf/pipecat-ai/smart-turn-v2](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/pipecat-ai/smart-turn-v2) | Dumb Pipe | `fe8904cf-e20e-4884-b829-ed7cec0a01cb` |
 | 2 | [@cf/openai/gpt-oss-120b](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/openai/gpt-oss-120b) | Text Generation | `f9f2250b-1048-4a52-9910-d0bf976616a1` |
 | 3 | [@cf/baai/bge-m3](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/baai/bge-m3) | Text Embeddings | `eed32bc1-8775-4985-89ce-dd1405508ad8` |
@@ -93,7 +93,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **1\. @cf/pipecat-ai/smart-turn-v2**
+### 1. @cf/pipecat-ai/smart-turn-v2
 
 **ID:** `fe8904cf-e20e-4884-b829-ed7cec0a01cb`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/pipecat-ai/smart-turn-v2](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/pipecat-ai/smart-turn-v2)  
@@ -105,26 +105,26 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `async_queue`: true  
-* `price`: \[{"unit":"per audio minute","price":0.000338,"currency":"USD"}\]  
+* `price`: [{"unit":"per audio minute","price":0.000338,"currency":"USD"}]  
 * `realtime`: true
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `audio` | object | Yes |  | readable stream with audio data and content-type specified for that data |
 | `dtype` | string | No |  | type of data PCM data that's sent to the inference server as raw array |
 
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `is_complete` | boolean | if true, end-of-turn was detected |
 | `probability` | number | probability of the end-of-turn detection |
 
 ---
 
-### **2\. @cf/openai/gpt-oss-120b**
+### 2. @cf/openai/gpt-oss-120b
 
 **ID:** `f9f2250b-1048-4a52-9910-d0bf976616a1`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/openai/gpt-oss-120b](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/openai/gpt-oss-120b)  
@@ -136,14 +136,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `context_window`: 128000  
-* `price`: \[{"unit":"per M input tokens","price":0.35,"currency":"USD"},{"unit":"per M output tokens","price":0.75,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.35,"currency":"USD"},{"unit":"per M output tokens","price":0.75,"currency":"USD"}]  
 * `function_calling`: true  
 * `reasoning`: true
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -166,7 +166,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **3\. @cf/baai/bge-m3**
+### 3. @cf/baai/bge-m3
 
 **ID:** `eed32bc1-8775-4985-89ce-dd1405508ad8`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/baai/bge-m3](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/baai/bge-m3)  
@@ -178,12 +178,12 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `context_window`: 60000  
-* `price`: \[{"unit":"per M input tokens","price":0.0118,"currency":"USD"}\]
+* `price`: [{"unit":"per M input tokens","price":0.0118,"currency":"USD"}]
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `query` | string | No |  | A query you wish to perform against the provided contexts. If no query is provided the model with re |
 | `contexts` | array | Yes |  | List of provided contexts. Note that the index in this array is important, as the response will refe |
 | `truncate_inputs` | boolean | No | false | When provided with too long context should the model error out or truncate the context to fit? |
@@ -193,7 +193,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | array |  |
 | `shape` | array |  |
 | `pooling` | string | The pooling method used in the embedding process. |
@@ -202,7 +202,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **4\. @cf/huggingface/distilbert-sst-2-int8**
+### 4. @cf/huggingface/distilbert-sst-2-int8
 
 **ID:** `eaf31752-a074-441f-8b70-d593255d2811`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/huggingface/distilbert-sst-2-int8](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/huggingface/distilbert-sst-2-int8)  
@@ -213,18 +213,18 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 **Configuration Properties:**
 
-* `price`: \[{"unit":"per M input tokens","price":0.0263,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.0263,"currency":"USD"}]  
 * `info`: https://huggingface.co/Intel/distilbert-base-uncased-finetuned-sst-2-english-int8-static
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `text` | string | Yes |  | The text that you want to classify |
 
 ---
 
-### **5\. @cf/google/gemma-2b-it-lora**
+### 5. @cf/google/gemma-2b-it-lora
 
 **ID:** `e8e8abe4-a372-4c13-815f-4688ba655c8e`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/google/gemma-2b-it-lora](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/google/gemma-2b-it-lora)  
@@ -242,7 +242,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -263,19 +263,19 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **6\. @cf/black-forest-labs/flux-2-klein-9b**
+### 6. @cf/black-forest-labs/flux-2-klein-9b
 
 **ID:** `e580c765-810c-4da3-936c-a2808892f14c`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/black-forest-labs/flux-2-klein-9b](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/black-forest-labs/flux-2-klein-9b)  
 **Task:** Text-to-Image  
-**Description:** FLUX.2 \[klein\] 9B is a 9 billion parameter model that can generate images from text descriptions and supports multi-reference editing capabilities.  
+**Description:** FLUX.2 [klein] 9B is a 9 billion parameter model that can generate images from text descriptions and supports multi-reference editing capabilities.  
 **Created:** 2026-01-14  
 **Tags:** None
 
@@ -287,18 +287,18 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `multipart` | object | Yes |  |  |
 
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `image` | string | Generated image as Base64 string. |
 
 ---
 
-### **7\. @cf/meta/llama-3-8b-instruct**
+### 7. @cf/meta/llama-3-8b-instruct
 
 **ID:** `e11d8f45-7b08-499a-9eeb-71d4d3c8cbf9`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-3-8b-instruct](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-3-8b-instruct)  
@@ -309,7 +309,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 **Configuration Properties:**
 
-* `price`: \[{"unit":"per M input tokens","price":0.282,"currency":"USD"},{"unit":"per M output tokens","price":0.827,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.282,"currency":"USD"},{"unit":"per M output tokens","price":0.827,"currency":"USD"}]  
 * `context_window`: 7968  
 * `info`: https://llama.meta.com  
 * `planned_deprecation_date`: 2026-05-30  
@@ -318,7 +318,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -339,14 +339,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **8\. @cf/meta/llama-3.2-3b-instruct**
+### 8. @cf/meta/llama-3.2-3b-instruct
 
 **ID:** `d9dc8363-66f4-4bb0-8641-464ee7bfc131`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-3.2-3b-instruct](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-3.2-3b-instruct)  
@@ -357,14 +357,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 **Configuration Properties:**
 
-* `price`: \[{"unit":"per M input tokens","price":0.0509,"currency":"USD"},{"unit":"per M output tokens","price":0.335,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.0509,"currency":"USD"},{"unit":"per M output tokens","price":0.335,"currency":"USD"}]  
 * `context_window`: 80000  
-* `terms`: https://github.com/meta-llama/llama-models/blob/main/models/llama3\_2/LICENSE
+* `terms`: https://github.com/meta-llama/llama-models/blob/main/models/llama3_2/LICENSE
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -385,14 +385,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **9\. @cf/moonshotai/kimi-k2.5**
+### 9. @cf/moonshotai/kimi-k2.5
 
 **ID:** `d7948af7-749a-4fa3-8480-2a9f4215f427`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/moonshotai/kimi-k2.5](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/moonshotai/kimi-k2.5)  
@@ -405,7 +405,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 * `async_queue`: true  
 * `context_window`: 256000  
-* `price`: \[{"unit":"per M input tokens","price":0.6,"currency":"USD"},{"unit":"per M output tokens","price":3,"currency":"USD"},{"unit":"per M cached input tokens","price":0.1,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.6,"currency":"USD"},{"unit":"per M output tokens","price":3,"currency":"USD"},{"unit":"per M cached input tokens","price":0.1,"currency":"USD"}]  
 * `function_calling`: true  
 * `planned_deprecation_date`: 2026-05-30  
 * `reasoning`: true  
@@ -415,7 +415,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `id` | string | A unique identifier for the chat completion. |
 | `object` | string |  |
 | `created` | integer | Unix timestamp (seconds) of when the completion was created. |
@@ -427,7 +427,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **10\. @cf/meta/llama-guard-3-8b**
+### 10. @cf/meta/llama-guard-3-8b
 
 **ID:** `cc80437b-9a8d-4f1a-9c77-9aaf0d226922`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-guard-3-8b](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-guard-3-8b)  
@@ -439,13 +439,13 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `context_window`: 131072  
-* `price`: \[{"unit":"per M input tokens","price":0.484,"currency":"USD"},{"unit":"per M output tokens","price":0.03,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.484,"currency":"USD"},{"unit":"per M output tokens","price":0.03,"currency":"USD"}]  
 * `lora`: true
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `messages` | array | Yes |  | An array of message objects representing the conversation history. |
 | `max_tokens` | integer | No | 256 | The maximum number of tokens to generate in the response. |
 | `temperature` | number | No | 0.6 | Controls the randomness of the output; higher values produce more random results. |
@@ -454,13 +454,13 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | any |  |
 | `usage` | object | Usage statistics for the inference request |
 
 ---
 
-### **11\. @cf/qwen/qwen3-embedding-0.6b**
+### 11. @cf/qwen/qwen3-embedding-0.6b
 
 **ID:** `cb254e3b-372b-4d4e-8526-ada79940427a`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/qwen/qwen3-embedding-0.6b](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/qwen/qwen3-embedding-0.6b)  
@@ -472,12 +472,12 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `context_window`: 8192  
-* `price`: \[{"unit":"per M input tokens","price":0.0118,"currency":"USD"}\]
+* `price`: [{"unit":"per M input tokens","price":0.0118,"currency":"USD"}]
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `queries` | any | No |  |  |
 | `instruction` | string | No | Given a web search query, retrieve relevant passages that answer the query | Optional instruction for the task |
 | `documents` | any | No |  |  |
@@ -486,13 +486,13 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `data` | array |  |
 | `shape` | array |  |
 
 ---
 
-### **12\. @cf/meta/llama-2-7b-chat-fp16**
+### 12. @cf/meta/llama-2-7b-chat-fp16
 
 **ID:** `ca54bcd6-0d98-4739-9b3b-5c8b4402193d`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-2-7b-chat-fp16](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-2-7b-chat-fp16)  
@@ -503,7 +503,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 **Configuration Properties:**
 
-* `price`: \[{"unit":"per M input tokens","price":0.556,"currency":"USD"},{"unit":"per M output tokens","price":6.667,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.556,"currency":"USD"},{"unit":"per M output tokens","price":6.667,"currency":"USD"}]  
 * `context_window`: 4096  
 * `info`: https://ai.meta.com/llama/  
 * `planned_deprecation_date`: 2026-05-30  
@@ -512,7 +512,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -533,14 +533,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **13\. @cf/mistral/mistral-7b-instruct-v0.1**
+### 13. @cf/mistral/mistral-7b-instruct-v0.1
 
 **ID:** `c907d0f9-d69d-4e93-b501-4daeb4fd69eb`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/mistral/mistral-7b-instruct-v0.1](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/mistral/mistral-7b-instruct-v0.1)  
@@ -551,7 +551,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 **Configuration Properties:**
 
-* `price`: \[{"unit":"per M input tokens","price":0.11,"currency":"USD"},{"unit":"per M output tokens","price":0.19,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.11,"currency":"USD"},{"unit":"per M output tokens","price":0.19,"currency":"USD"}]  
 * `context_window`: 2824  
 * `info`: https://mistral.ai/news/announcing-mistral-7b/  
 * `lora`: true  
@@ -560,7 +560,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -581,14 +581,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **14\. @cf/myshell-ai/melotts**
+### 14. @cf/myshell-ai/melotts
 
 **ID:** `c837b2ac-4d9b-4d37-8811-34de60f0c44f`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/myshell-ai/melotts](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/myshell-ai/melotts)  
@@ -599,24 +599,24 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 **Configuration Properties:**
 
-* `price`: \[{"unit":"per audio minute","price":0.000205,"currency":"USD"}\]
+* `price`: [{"unit":"per audio minute","price":0.000205,"currency":"USD"}]
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | A text description of the audio you want to generate |
 | `lang` | string | No | en | The speech language (e.g., 'en' for English, 'fr' for French). Defaults to 'en' if not specified |
 
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `audio` | string | The generated audio in MP3 format, base64-encoded |
 
 ---
 
-### **15\. @cf/mistral/mistral-7b-instruct-v0.2-lora**
+### 15. @cf/mistral/mistral-7b-instruct-v0.2-lora
 
 **ID:** `c58c317b-0c15-4bda-abb6-93e275f282d9`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/mistral/mistral-7b-instruct-v0.2-lora](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/mistral/mistral-7b-instruct-v0.2-lora)  
@@ -634,7 +634,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -655,14 +655,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **16\. @cf/deepgram/aura-2-es**
+### 16. @cf/deepgram/aura-2-es
 
 **ID:** `c5255b94-2161-4779-bd25-54f061829a2a`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/deepgram/aura-2-es](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/deepgram/aura-2-es)  
@@ -674,7 +674,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `async_queue`: true  
-* `price`: \[{"unit":"per 1k characters","price":0.03,"currency":"USD"}\]  
+* `price`: [{"unit":"per 1k characters","price":0.03,"currency":"USD"}]  
 * `partner`: true  
 * `terms`: https://deepgram.com/terms  
 * `realtime`: true
@@ -682,7 +682,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `speaker` | string | No | aquila | Speaker used to produce the audio. |
 | `encoding` | string | No |  | Encoding of the output audio. |
 | `container` | string | No |  | Container specifies the file format wrapper for the output audio. The available options depend on th |
@@ -692,7 +692,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **17\. @cf/openai/whisper**
+### 17. @cf/openai/whisper
 
 **ID:** `c1c12ce4-c36a-4aa6-8da4-f63ba4b8984d`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/openai/whisper](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/openai/whisper)  
@@ -703,19 +703,19 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 **Configuration Properties:**
 
-* `price`: \[{"unit":"per audio minute","price":0.000453,"currency":"USD"}\]  
+* `price`: [{"unit":"per audio minute","price":0.000453,"currency":"USD"}]  
 * `info`: https://openai.com/research/whisper
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `audio` | array | Yes |  | An array of integers that represent the audio data constrained to 8-bit unsigned integer values |
 
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `text` | string | The transcription |
 | `word_count` | number |  |
 | `words` | array |  |
@@ -723,7 +723,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **18\. @cf/pfnet/plamo-embedding-1b**
+### 18. @cf/pfnet/plamo-embedding-1b
 
 **ID:** `bc2b61f6-7eb3-4cdf-94f5-ffc128bd6aa4`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/pfnet/plamo-embedding-1b](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/pfnet/plamo-embedding-1b)  
@@ -734,24 +734,24 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 **Configuration Properties:**
 
-* `price`: \[{"unit":"per M input tokens","price":0.0186,"currency":"USD"}\]
+* `price`: [{"unit":"per M input tokens","price":0.0186,"currency":"USD"}]
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `text` | any | Yes |  | Input text to embed. Can be a single string or a list of strings. |
 
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `data` | array | Embedding vectors, where each vector is a list of floats. |
-| `shape` | array | Shape of the embedding data as \[number\_of\_embeddings, embedding\_dimension\]. |
+| `shape` | array | Shape of the embedding data as [number_of_embeddings, embedding_dimension]. |
 
 ---
 
-### **19\. @hf/mistral/mistral-7b-instruct-v0.2**
+### 19. @hf/mistral/mistral-7b-instruct-v0.2
 
 **ID:** `b97d7069-48d9-461c-80dd-445d20a632eb`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/mistral/mistral-7b-instruct-v0.2](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/mistral/mistral-7b-instruct-v0.2)  
@@ -774,7 +774,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -795,14 +795,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **20\. @cf/llava-hf/llava-1.5-7b-hf**
+### 20. @cf/llava-hf/llava-1.5-7b-hf
 
 **ID:** `af274959-cb47-4ba8-9d8e-5a0a58b6b402`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/llava-hf/llava-1.5-7b-hf](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/llava-hf/llava-1.5-7b-hf)  
@@ -818,7 +818,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `image` | any | Yes |  |  |
 | `temperature` | number | No |  | Controls the randomness of the output; higher values produce more random results. |
 | `prompt` | string | No |  | The input text prompt for the model to generate a response. |
@@ -834,12 +834,12 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `description` | string |  |
 
 ---
 
-### **21\. @cf/deepseek-ai/deepseek-r1-distill-qwen-32b**
+### 21. @cf/deepseek-ai/deepseek-r1-distill-qwen-32b
 
 **ID:** `ad01ab83-baf8-4e7b-8fed-a0a219d4eb45`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/deepseek-ai/deepseek-r1-distill-qwen-32b](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/deepseek-ai/deepseek-r1-distill-qwen-32b)  
@@ -851,14 +851,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `context_window`: 80000  
-* `price`: \[{"unit":"per M input tokens","price":0.497,"currency":"USD"},{"unit":"per M output tokens","price":4.881,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.497,"currency":"USD"},{"unit":"per M output tokens","price":4.881,"currency":"USD"}]  
 * `reasoning`: true  
 * `terms`: https://github.com/deepseek-ai/DeepSeek-R1/blob/main/LICENSE
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -879,14 +879,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **22\. @cf/runwayml/stable-diffusion-v1-5-inpainting**
+### 22. @cf/runwayml/stable-diffusion-v1-5-inpainting
 
 **ID:** `a9abaef0-3031-47ad-8790-d311d8684c6c`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/runwayml/stable-diffusion-v1-5-inpainting](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/runwayml/stable-diffusion-v1-5-inpainting)  
@@ -898,14 +898,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `beta`: true  
-* `price`: \[{"unit":"per step","price":0,"currency":"USD"}\]  
+* `price`: [{"unit":"per step","price":0,"currency":"USD"}]  
 * `info`: https://huggingface.co/runwayml/stable-diffusion-inpainting  
 * `terms`: https://github.com/runwayml/stable-diffusion/blob/main/LICENSE
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | A text description of the image you want to generate |
 | `negative_prompt` | string | No |  | Text describing elements to avoid in the generated image |
 | `height` | integer | No |  | The height of the generated image in pixels |
@@ -920,7 +920,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **23\. @cf/deepgram/flux**
+### 23. @cf/deepgram/flux
 
 **ID:** `a2a2afba-b609-4325-8c41-5791ce962239`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/deepgram/flux](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/deepgram/flux)  
@@ -931,7 +931,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 **Configuration Properties:**
 
-* `price`: \[{"unit":"per audio minute (websocket)","price":0.0077,"currency":"USD"}\]  
+* `price`: [{"unit":"per audio minute (websocket)","price":0.0077,"currency":"USD"}]  
 * `partner`: true  
 * `terms`: https://deepgram.com/terms  
 * `realtime`: true
@@ -939,7 +939,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `encoding` | string | Yes |  | Encoding of the audio stream. Currently only supports raw signed little-endian 16-bit PCM. |
 | `sample_rate` | string | Yes |  | Sample rate of the audio stream in Hz. |
 | `eager_eot_threshold` | string | No |  | End-of-turn confidence required to fire an eager end-of-turn event. When set, enables EagerEndOfTurn |
@@ -952,7 +952,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `request_id` | string | The unique identifier of the request (uuid) |
 | `sequence_id` | integer | Starts at 0 and increments for each message the server sends to the client. |
 | `event` | string | The type of event being reported. |
@@ -965,7 +965,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **24\. @cf/deepgram/nova-3**
+### 24. @cf/deepgram/nova-3
 
 **ID:** `a226909f-eef8-4265-a3a0-90db0422762e`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/deepgram/nova-3](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/deepgram/nova-3)  
@@ -977,7 +977,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `async_queue`: true  
-* `price`: \[{"unit":"per audio minute","price":0.0052,"currency":"USD"},{"unit":"per audio minute (websocket)","price":0.0092,"currency":"USD"}\]  
+* `price`: [{"unit":"per audio minute","price":0.0052,"currency":"USD"},{"unit":"per audio minute (websocket)","price":0.0092,"currency":"USD"}]  
 * `partner`: true  
 * `terms`: https://deepgram.com/terms  
 * `realtime`: true
@@ -985,11 +985,11 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `audio` | object | Yes |  |  |
-| `custom_topic_mode` | string | No |  | Sets how the model will interpret strings submitted to the custom\_topic param. When strict, the mode |
+| `custom_topic_mode` | string | No |  | Sets how the model will interpret strings submitted to the custom_topic param. When strict, the mode |
 | `custom_topic` | string | No |  | Custom topics you want the model to detect within your input audio or text if present Submit up to 1 |
-| `custom_intent_mode` | string | No |  | Sets how the model will interpret intents submitted to the custom\_intent param. When strict, the mod |
+| `custom_intent_mode` | string | No |  | Sets how the model will interpret intents submitted to the custom_intent param. When strict, the mod |
 | `custom_intent` | string | No |  | Custom intents you want the model to detect within your input audio if present |
 | `detect_entities` | boolean | No |  | Identifies and extracts key entities from content in submitted audio |
 | `detect_language` | boolean | No |  | Identifies the dominant language spoken in submitted audio |
@@ -1026,41 +1026,41 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `results` | object |  |
 
 ---
 
-### **25\. @cf/black-forest-labs/flux-1-schnell**
+### 25. @cf/black-forest-labs/flux-1-schnell
 
 **ID:** `9e087485-23dc-47fa-997d-f5bfafc0c7cc`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/black-forest-labs/flux-1-schnell](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/black-forest-labs/flux-1-schnell)  
 **Task:** Text-to-Image  
-**Description:** FLUX.1 \[schnell\] is a 12 billion parameter rectified flow transformer capable of generating images from text descriptions.  
+**Description:** FLUX.1 [schnell] is a 12 billion parameter rectified flow transformer capable of generating images from text descriptions.  
  **Created:** 2024-08-29  
 **Tags:** None
 
 **Configuration Properties:**
 
-* `price`: \[{"unit":"per 512 by 512 tile","price":0.0000528,"currency":"USD"},{"unit":"per step","price":0.000106,"currency":"USD"}\]  
+* `price`: [{"unit":"per 512 by 512 tile","price":0.0000528,"currency":"USD"},{"unit":"per step","price":0.000106,"currency":"USD"}]  
 * `terms`: https://bfl.ai/legal/terms-of-service
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | A text description of the image you want to generate. |
 | `steps` | integer | No | 4 | The number of diffusion steps; higher values can improve quality but take longer. |
 
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `image` | string | The generated image in Base64 format. |
 
 ---
 
-### **26\. @cf/meta/llama-2-7b-chat-int8**
+### 26. @cf/meta/llama-2-7b-chat-int8
 
 **ID:** `9c95c39d-45b3-4163-9631-22f0c0dc3b14`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-2-7b-chat-int8](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-2-7b-chat-int8)  
@@ -1077,7 +1077,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -1098,14 +1098,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **27\. @cf/meta/llama-3.1-8b-instruct-fp8**
+### 27. @cf/meta/llama-3.1-8b-instruct-fp8
 
 **ID:** `9b9c87c6-d4b7-494c-b177-87feab5904db`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-3.1-8b-instruct-fp8](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-3.1-8b-instruct-fp8)  
@@ -1116,14 +1116,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 **Configuration Properties:**
 
-* `price`: \[{"unit":"per M input tokens","price":0.152,"currency":"USD"},{"unit":"per M output tokens","price":0.287,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.152,"currency":"USD"},{"unit":"per M output tokens","price":0.287,"currency":"USD"}]  
 * `context_window`: 32000  
-* `terms`: https://github.com/meta-llama/llama-models/blob/main/models/llama3\_1/LICENSE
+* `terms`: https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/LICENSE
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -1144,14 +1144,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **28\. @cf/meta/llama-3.2-1b-instruct**
+### 28. @cf/meta/llama-3.2-1b-instruct
 
 **ID:** `906a57fd-b018-4d6c-a43e-a296d4cc5839`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-3.2-1b-instruct](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-3.2-1b-instruct)  
@@ -1162,14 +1162,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 **Configuration Properties:**
 
-* `price`: \[{"unit":"per M input tokens","price":0.027,"currency":"USD"},{"unit":"per M output tokens","price":0.201,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.027,"currency":"USD"},{"unit":"per M output tokens","price":0.201,"currency":"USD"}]  
 * `context_window`: 60000  
-* `terms`: https://github.com/meta-llama/llama-models/blob/main/models/llama3\_2/LICENSE
+* `terms`: https://github.com/meta-llama/llama-models/blob/main/models/llama3_2/LICENSE
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -1190,14 +1190,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **29\. @cf/moonshotai/kimi-k2.6**
+### 29. @cf/moonshotai/kimi-k2.6
 
 **ID:** `8a5d00bd-de28-4a28-b37a-ce46d01ebaeb`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/moonshotai/kimi-k2.6](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/moonshotai/kimi-k2.6)  
@@ -1210,7 +1210,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 * `async_queue`: true  
 * `context_window`: 262144  
-* `price`: \[{"unit":"per M input tokens","price":0.95,"currency":"USD"},{"unit":"per M output tokens","price":4,"currency":"USD"},{"unit":"per M cached input tokens","price":0.16,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.95,"currency":"USD"},{"unit":"per M output tokens","price":4,"currency":"USD"},{"unit":"per M cached input tokens","price":0.16,"currency":"USD"}]  
 * `function_calling`: true  
 * `reasoning`: true  
 * `terms`: https://huggingface.co/moonshotai/Kimi-K2.6/blob/main/LICENSE  
@@ -1219,7 +1219,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `id` | string | A unique identifier for the chat completion. |
 | `object` | string |  |
 | `created` | integer | Unix timestamp (seconds) of when the completion was created. |
@@ -1231,7 +1231,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **30\. @cf/zai-org/glm-4.7-flash**
+### 30. @cf/zai-org/glm-4.7-flash
 
 **ID:** `86b3e51a-4b05-43fa-a403-0f27821919d2`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/zai-org/glm-4.7-flash](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/zai-org/glm-4.7-flash)  
@@ -1243,14 +1243,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `context_window`: 131072  
-* `price`: \[{"unit":"per M input tokens","price":0.0605,"currency":"USD"},{"unit":"per M output tokens","price":0.4,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.0605,"currency":"USD"},{"unit":"per M output tokens","price":0.4,"currency":"USD"}]  
 * `function_calling`: true  
 * `reasoning`: true
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `model` | string | No |  | ID of the model to use (e.g. '@cf/zai-org/glm-4.7-flash, etc'). |
 | `audio` | any | No |  |  |
@@ -1258,10 +1258,10 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 | `logit_bias` | any | No |  | Modify the likelihood of specified tokens appearing in the completion. Maps token IDs to bias values |
 | `logprobs` | any | No | false | Whether to return log probabilities of the output tokens. |
 | `top_logprobs` | any | No |  | How many top log probabilities to return at each token position (0-20). Requires logprobs=true. |
-| `max_tokens` | any | No |  | Deprecated in favor of max\_completion\_tokens. The maximum number of tokens to generate. |
+| `max_tokens` | any | No |  | Deprecated in favor of max_completion_tokens. The maximum number of tokens to generate. |
 | `max_completion_tokens` | any | No |  | An upper bound for the number of tokens that can be generated for a completion. |
 | `metadata` | any | No |  | Set of 16 key-value pairs that can be attached to the object. |
-| `modalities` | any | No |  | Output types requested from the model (e.g. \['text'\] or \['text', 'audio'\]). |
+| `modalities` | any | No |  | Output types requested from the model (e.g. ['text'] or ['text', 'audio']). |
 | `n` | any | No | 1 | How many chat completion choices to generate for each input message. |
 | `parallel_tool_calls` | boolean | No | true | Whether to enable parallel function calling during tool use. |
 | `prediction` | any | No |  |  |
@@ -1278,7 +1278,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 | `temperature` | any | No | 1 | Sampling temperature between 0 and 2\. |
 | `tool_choice` | any | No |  |  |
 | `tools` | array | No |  | A list of tools the model may call. |
-| `top_p` | any | No | 1 | Nucleus sampling: considers the results of the tokens with top\_p probability mass. |
+| `top_p` | any | No | 1 | Nucleus sampling: considers the results of the tokens with top_p probability mass. |
 | `user` | string | No |  | A unique identifier representing your end-user, for abuse monitoring. |
 | `web_search_options` | any | No |  |  |
 | `function_call` | any | No |  |  |
@@ -1288,7 +1288,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `id` | string | A unique identifier for the chat completion. |
 | `object` | string |  |
 | `created` | integer | Unix timestamp (seconds) of when the completion was created. |
@@ -1300,7 +1300,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **31\. @cf/microsoft/resnet-50**
+### 31. @cf/microsoft/resnet-50
 
 **ID:** `7f9a76e1-d120-48dd-a565-101d328bbb02`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/microsoft/resnet-50](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/microsoft/resnet-50)  
@@ -1311,18 +1311,18 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 **Configuration Properties:**
 
-* `price`: \[{"unit":"per inference request","price":0.00000251,"currency":"USD"}\]  
+* `price`: [{"unit":"per inference request","price":0.00000251,"currency":"USD"}]  
 * `info`: https://www.microsoft.com/en-us/research/blog/microsoft-vision-model-resnet-50-combines-web-scale-data-and-multi-task-learning-to-achieve-state-of-the-art/
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `image` | array | Yes |  | An array of integers that represent the image data constrained to 8-bit unsigned integer values |
 
 ---
 
-### **32\. @cf/bytedance/stable-diffusion-xl-lightning**
+### 32. @cf/bytedance/stable-diffusion-xl-lightning
 
 **ID:** `7f797b20-3eb0-44fd-b571-6cbbaa3c423b`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/bytedance/stable-diffusion-xl-lightning](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/bytedance/stable-diffusion-xl-lightning)  
@@ -1334,13 +1334,13 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `beta`: true  
-* `price`: \[{"unit":"per step","price":0,"currency":"USD"}\]  
+* `price`: [{"unit":"per step","price":0,"currency":"USD"}]  
 * `info`: https://huggingface.co/ByteDance/SDXL-Lightning
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | A text description of the image you want to generate |
 | `negative_prompt` | string | No |  | Text describing elements to avoid in the generated image |
 | `height` | integer | No |  | The height of the generated image in pixels |
@@ -1355,7 +1355,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **33\. @cf/meta-llama/llama-2-7b-chat-hf-lora**
+### 33. @cf/meta-llama/llama-2-7b-chat-hf-lora
 
 **ID:** `7ed8d8e8-6040-4680-843a-aef402d6b013`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta-llama/llama-2-7b-chat-hf-lora](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta-llama/llama-2-7b-chat-hf-lora)  
@@ -1373,7 +1373,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -1394,14 +1394,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **34\. @cf/meta/llama-3.3-70b-instruct-fp8-fast**
+### 34. @cf/meta/llama-3.3-70b-instruct-fp8-fast
 
 **ID:** `7a143886-c9bb-4a1c-be95-377b1973bc3b`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-3.3-70b-instruct-fp8-fast](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-3.3-70b-instruct-fp8-fast)  
@@ -1414,14 +1414,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 * `async_queue`: true  
 * `context_window`: 24000  
-* `price`: \[{"unit":"per M input tokens","price":0.293,"currency":"USD"},{"unit":"per M output tokens","price":2.253,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.293,"currency":"USD"},{"unit":"per M output tokens","price":2.253,"currency":"USD"}]  
 * `function_calling`: true  
-* `terms`: https://github.com/meta-llama/llama-models/blob/main/models/llama3\_3/LICENSE
+* `terms`: https://github.com/meta-llama/llama-models/blob/main/models/llama3_3/LICENSE
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -1443,7 +1443,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
@@ -1451,7 +1451,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **35\. @cf/ibm-granite/granite-4.0-h-micro**
+### 35. @cf/ibm-granite/granite-4.0-h-micro
 
 **ID:** `7952d0cc-cb00-4e10-be02-667565c2ee0f`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/ibm-granite/granite-4.0-h-micro](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/ibm-granite/granite-4.0-h-micro)  
@@ -1463,13 +1463,13 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `context_window`: 131000  
-* `price`: \[{"unit":"per M input tokens","price":0.017,"currency":"USD"},{"unit":"per M output tokens","price":0.112,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.017,"currency":"USD"},{"unit":"per M output tokens","price":0.112,"currency":"USD"}]  
 * `function_calling`: true
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -1490,14 +1490,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **36\. @cf/lykon/dreamshaper-8-lcm**
+### 36. @cf/lykon/dreamshaper-8-lcm
 
 **ID:** `7912c0ab-542e-44b9-b9ee-3113d226a8b5`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/lykon/dreamshaper-8-lcm](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/lykon/dreamshaper-8-lcm)  
@@ -1513,7 +1513,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | A text description of the image you want to generate |
 | `negative_prompt` | string | No |  | Text describing elements to avoid in the generated image |
 | `height` | integer | No |  | The height of the generated image in pixels |
@@ -1528,7 +1528,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **37\. @cf/leonardo/phoenix-1.0**
+### 37. @cf/leonardo/phoenix-1.0
 
 **ID:** `724608fa-983e-495d-b95c-340d6b7e78be`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/leonardo/phoenix-1.0](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/leonardo/phoenix-1.0)  
@@ -1539,14 +1539,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 **Configuration Properties:**
 
-* `price`: \[{"unit":"per 512 by 512 tile","price":0.00583,"currency":"USD"},{"unit":"per step","price":0.00011,"currency":"USD"}\]  
+* `price`: [{"unit":"per 512 by 512 tile","price":0.00583,"currency":"USD"},{"unit":"per step","price":0.00011,"currency":"USD"}]  
 * `partner`: true  
 * `terms`: https://leonardo.ai/terms-of-service/
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | A text description of the image you want to generate. |
 | `guidance` | number | No | 2 | Controls how closely the generated image should adhere to the prompt; higher values make the image m |
 | `seed` | integer | No |  | Random seed for reproducibility of the image generation |
@@ -1557,7 +1557,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **38\. @cf/stabilityai/stable-diffusion-xl-base-1.0**
+### 38. @cf/stabilityai/stable-diffusion-xl-base-1.0
 
 **ID:** `6d52253a-b731-4a03-b203-cde2d4fae871`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/stabilityai/stable-diffusion-xl-base-1.0](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/stabilityai/stable-diffusion-xl-base-1.0)  
@@ -1569,14 +1569,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `beta`: true  
-* `price`: \[{"unit":"per step","price":0,"currency":"USD"}\]  
+* `price`: [{"unit":"per step","price":0,"currency":"USD"}]  
 * `info`: https://stability.ai/stable-diffusion  
 * `terms`: https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/blob/main/LICENSE.md
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | A text description of the image you want to generate |
 | `negative_prompt` | string | No |  | Text describing elements to avoid in the generated image |
 | `height` | integer | No |  | The height of the generated image in pixels |
@@ -1591,7 +1591,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **39\. @cf/meta/m2m100-1.2b**
+### 39. @cf/meta/m2m100-1.2b
 
 **ID:** `617e7ec3-bf8d-4088-a863-4f89582d91b5`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/m2m100-1.2b](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/m2m100-1.2b)  
@@ -1603,15 +1603,15 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `async_queue`: true  
-* `price`: \[{"unit":"per M input tokens","price":0.342,"currency":"USD"},{"unit":"per M output tokens","price":0.342,"currency":"USD"}\]  
-* `info`: https://github.com/facebookresearch/fairseq/tree/main/examples/m2m\_100  
+* `price`: [{"unit":"per M input tokens","price":0.342,"currency":"USD"},{"unit":"per M output tokens","price":0.342,"currency":"USD"}]  
+* `info`: https://github.com/facebookresearch/fairseq/tree/main/examples/m2m_100  
 * `languages`: english, chinese, french, spanish, arabic, russian, german, japanese, portuguese, hindi  
 * `terms`: https://github.com/facebookresearch/fairseq/blob/main/LICENSE
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `text` | string | Yes |  | The text to be translated |
 | `source_lang` | string | No | en | The language code of the source text (e.g., 'en' for English). Defaults to 'en' if not specified |
 | `target_lang` | string | Yes |  | The language code to translate the text into (e.g., 'es' for Spanish) |
@@ -1620,13 +1620,13 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `translated_text` | string | The translated text in the target language |
 | `request_id` | string | The async request id that can be used to obtain the results. |
 
 ---
 
-### **40\. @cf/ai4bharat/indictrans2-en-indic-1B**
+### 40. @cf/ai4bharat/indictrans2-en-indic-1B
 
 **ID:** `60920ed4-cf72-449a-a0f3-a38456b78262`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/ai4bharat/indictrans2-en-indic-1B](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/ai4bharat/indictrans2-en-indic-1B)  
@@ -1637,29 +1637,29 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 **Configuration Properties:**
 
-* `price`: \[{"unit":"per M input tokens","price":0.342,"currency":"USD"},{"unit":"per M output tokens","price":0.342,"currency":"USD"}\]
+* `price`: [{"unit":"per M input tokens","price":0.342,"currency":"USD"},{"unit":"per M output tokens","price":0.342,"currency":"USD"}]
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `text` | any | Yes |  | Input text to translate. Can be a single string or a list of strings. |
-| `target_language` | string | Yes | hin\_Deva | Target langauge to translate to |
+| `target_language` | string | Yes | hin_Deva | Target langauge to translate to |
 
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `translations` | array | Translated texts |
 
 ---
 
-### **41\. @cf/black-forest-labs/flux-2-klein-4b**
+### 41. @cf/black-forest-labs/flux-2-klein-4b
 
 **ID:** `5cdffa8e-1b1e-48e8-85f1-ab9b943cdd32`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/black-forest-labs/flux-2-klein-4b](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/black-forest-labs/flux-2-klein-4b)  
 **Task:** Text-to-Image  
-**Description:** FLUX.2 \[klein\] is an ultra-fast, distilled image model. It unifies image generation and editing in a single model, delivering state-of-the-art quality enabling interactive workflows, real-time previews, and latency-critical applications.  
+**Description:** FLUX.2 [klein] is an ultra-fast, distilled image model. It unifies image generation and editing in a single model, delivering state-of-the-art quality enabling interactive workflows, real-time previews, and latency-critical applications.  
 **Created:** 2026-01-14  
 **Tags:** None
 
@@ -1671,18 +1671,18 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `multipart` | object | Yes |  |  |
 
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `image` | string | Generated image as Base64 string. |
 
 ---
 
-### **42\. @cf/baai/bge-small-en-v1.5**
+### 42. @cf/baai/bge-small-en-v1.5
 
 **ID:** `57fbd08a-a4c4-411c-910d-b9459ff36c20`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/baai/bge-small-en-v1.5](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/baai/bge-small-en-v1.5)  
@@ -1694,7 +1694,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `async_queue`: true  
-* `price`: \[{"unit":"per M input tokens","price":0.0202,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.0202,"currency":"USD"}]  
 * `info`: https://huggingface.co/BAAI/bge-small-en-v1.5  
 * `max_input_tokens`: 512  
 * `output_dimensions`: 384
@@ -1702,7 +1702,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `text` | any | Yes |  |  |
 | `pooling` | string | No | mean | The pooling method used in the embedding process. \`cls\` pooling will generate more accurate embeddin |
 | `requests` | array | Yes |  | Batch of the embeddings requests to run using async-queue |
@@ -1710,7 +1710,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `shape` | array |  |
 | `data` | array | Embeddings of the requested text values |
 | `pooling` | string | The pooling method used in the embedding process. |
@@ -1718,7 +1718,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **43\. @cf/qwen/qwen2.5-coder-32b-instruct**
+### 43. @cf/qwen/qwen2.5-coder-32b-instruct
 
 **ID:** `51b71d5b-8bc0-4489-a107-95e542b69914`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/qwen/qwen2.5-coder-32b-instruct](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/qwen/qwen2.5-coder-32b-instruct)  
@@ -1730,13 +1730,13 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `context_window`: 32768  
-* `price`: \[{"unit":"per M input tokens","price":0.66,"currency":"USD"},{"unit":"per M output tokens","price":1,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.66,"currency":"USD"},{"unit":"per M output tokens","price":1,"currency":"USD"}]  
 * `lora`: true
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -1757,14 +1757,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **44\. @hf/nousresearch/hermes-2-pro-mistral-7b**
+### 44. @hf/nousresearch/hermes-2-pro-mistral-7b
 
 **ID:** `44774b85-08c8-4bb8-8d2a-b06ebc538a79`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/nousresearch/hermes-2-pro-mistral-7b](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/nousresearch/hermes-2-pro-mistral-7b)  
@@ -1784,7 +1784,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -1805,14 +1805,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **45\. @cf/nvidia/nemotron-3-120b-a12b**
+### 45. @cf/nvidia/nemotron-3-120b-a12b
 
 **ID:** `43dbadb4-2b0a-47e9-8479-34a49b971f1e`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/nvidia/nemotron-3-120b-a12b](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/nvidia/nemotron-3-120b-a12b)  
@@ -1824,7 +1824,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `context_window`: 256000  
-* `price`: \[{"unit":"per M input tokens","price":0.5,"currency":"USD"},{"unit":"per M output tokens","price":1.5,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.5,"currency":"USD"},{"unit":"per M output tokens","price":1.5,"currency":"USD"}]  
 * `function_calling`: true  
 * `reasoning`: true  
 * `terms`: https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-nemotron-open-model-license/
@@ -1832,7 +1832,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `model` | string | No |  | ID of the model to use (e.g. '@cf/zai-org/glm-4.7-flash, etc'). |
 | `audio` | any | No |  |  |
@@ -1840,10 +1840,10 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 | `logit_bias` | any | No |  | Modify the likelihood of specified tokens appearing in the completion. Maps token IDs to bias values |
 | `logprobs` | any | No | false | Whether to return log probabilities of the output tokens. |
 | `top_logprobs` | any | No |  | How many top log probabilities to return at each token position (0-20). Requires logprobs=true. |
-| `max_tokens` | any | No |  | Deprecated in favor of max\_completion\_tokens. The maximum number of tokens to generate. |
+| `max_tokens` | any | No |  | Deprecated in favor of max_completion_tokens. The maximum number of tokens to generate. |
 | `max_completion_tokens` | any | No |  | An upper bound for the number of tokens that can be generated for a completion. |
 | `metadata` | any | No |  | Set of 16 key-value pairs that can be attached to the object. |
-| `modalities` | any | No |  | Output types requested from the model (e.g. \['text'\] or \['text', 'audio'\]). |
+| `modalities` | any | No |  | Output types requested from the model (e.g. ['text'] or ['text', 'audio']). |
 | `n` | any | No | 1 | How many chat completion choices to generate for each input message. |
 | `parallel_tool_calls` | boolean | No | true | Whether to enable parallel function calling during tool use. |
 | `prediction` | any | No |  |  |
@@ -1860,7 +1860,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 | `temperature` | any | No | 1 | Sampling temperature between 0 and 2\. |
 | `tool_choice` | any | No |  |  |
 | `tools` | array | No |  | A list of tools the model may call. |
-| `top_p` | any | No | 1 | Nucleus sampling: considers the results of the tokens with top\_p probability mass. |
+| `top_p` | any | No | 1 | Nucleus sampling: considers the results of the tokens with top_p probability mass. |
 | `user` | string | No |  | A unique identifier representing your end-user, for abuse monitoring. |
 | `web_search_options` | any | No |  |  |
 | `function_call` | any | No |  |  |
@@ -1870,7 +1870,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `id` | string | A unique identifier for the chat completion. |
 | `object` | string |  |
 | `created` | integer | Unix timestamp (seconds) of when the completion was created. |
@@ -1882,7 +1882,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **46\. @cf/baai/bge-base-en-v1.5**
+### 46. @cf/baai/bge-base-en-v1.5
 
 **ID:** `429b9e8b-d99e-44de-91ad-706cf8183658`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/baai/bge-base-en-v1.5](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/baai/bge-base-en-v1.5)  
@@ -1895,7 +1895,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 * `async_queue`: true  
 * `context_window`: 153600  
-* `price`: \[{"unit":"per M input tokens","price":0.0666,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.0666,"currency":"USD"}]  
 * `info`: https://huggingface.co/BAAI/bge-base-en-v1.5  
 * `max_input_tokens`: 512  
 * `output_dimensions`: 768
@@ -1903,7 +1903,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `text` | any | Yes |  |  |
 | `pooling` | string | No | mean | The pooling method used in the embedding process. \`cls\` pooling will generate more accurate embeddin |
 | `requests` | array | Yes |  | Batch of the embeddings requests to run using async-queue |
@@ -1911,7 +1911,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `shape` | array |  |
 | `data` | array | Embeddings of the requested text values |
 | `pooling` | string | The pooling method used in the embedding process. |
@@ -1919,7 +1919,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **47\. @cf/aisingapore/gemma-sea-lion-v4-27b-it**
+### 47. @cf/aisingapore/gemma-sea-lion-v4-27b-it
 
 **ID:** `41ca173f-72d5-4420-8915-49e835d2676e`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/aisingapore/gemma-sea-lion-v4-27b-it](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/aisingapore/gemma-sea-lion-v4-27b-it)  
@@ -1931,12 +1931,12 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `context_window`: 128000  
-* `price`: \[{"unit":"per M input tokens","price":0.351,"currency":"USD"},{"unit":"per M output tokens","price":0.555,"currency":"USD"}\]
+* `price`: [{"unit":"per M input tokens","price":0.351,"currency":"USD"},{"unit":"per M output tokens","price":0.555,"currency":"USD"}]
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -1958,7 +1958,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `id` | string | Unique identifier for the completion |
 | `object` | string | Object type identifier |
 | `created` | number | Unix timestamp of when the completion was created |
@@ -1970,7 +1970,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **48\. @cf/qwen/qwen3-30b-a3b-fp8**
+### 48. @cf/qwen/qwen3-30b-a3b-fp8
 
 **ID:** `4090e54c-eee4-4221-b410-10c1c0f92f17`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/qwen/qwen3-30b-a3b-fp8](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/qwen/qwen3-30b-a3b-fp8)  
@@ -1983,14 +1983,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 * `async_queue`: true  
 * `context_window`: 32768  
-* `price`: \[{"unit":"per M input tokens","price":0.0509,"currency":"USD"},{"unit":"per M output tokens","price":0.335,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.0509,"currency":"USD"},{"unit":"per M output tokens","price":0.335,"currency":"USD"}]  
 * `function_calling`: true  
 * `reasoning`: true
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -2012,7 +2012,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `id` | string | Unique identifier for the completion |
 | `object` | string | Object type identifier |
 | `created` | number | Unix timestamp of when the completion was created |
@@ -2024,7 +2024,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **49\. @cf/meta/llama-3.1-8b-instruct-awq**
+### 49. @cf/meta/llama-3.1-8b-instruct-awq
 
 **ID:** `3dcb4f2d-26a8-412b-b6e3-2a368beff66b`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-3.1-8b-instruct-awq](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-3.1-8b-instruct-awq)  
@@ -2035,15 +2035,15 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 **Configuration Properties:**
 
-* `price`: \[{"unit":"per M input tokens","price":0.123,"currency":"USD"},{"unit":"per M output tokens","price":0.266,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.123,"currency":"USD"},{"unit":"per M output tokens","price":0.266,"currency":"USD"}]  
 * `context_window`: 8192  
 * `planned_deprecation_date`: 2026-05-30  
-* `terms`: https://github.com/meta-llama/llama-models/blob/main/models/llama3\_1/LICENSE
+* `terms`: https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/LICENSE
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -2064,14 +2064,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **50\. @cf/unum/uform-gen2-qwen-500m**
+### 50. @cf/unum/uform-gen2-qwen-500m
 
 **ID:** `3dca5889-db3e-4973-aa0c-3a4a6bd22d29`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/unum/uform-gen2-qwen-500m](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/unum/uform-gen2-qwen-500m)  
@@ -2089,7 +2089,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | No |  | The input text prompt for the model to generate a response. |
 | `raw` | boolean | No | false | If true, a chat template is not applied and you must adhere to the specific model's expected formatt |
 | `top_p` | number | No |  | Controls the creativity of the AI's responses by adjusting how many possible words it considers. Low |
@@ -2104,17 +2104,17 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `description` | string |  |
 
 ---
 
-### **51\. @cf/black-forest-labs/flux-2-dev**
+### 51. @cf/black-forest-labs/flux-2-dev
 
 **ID:** `3ae8936e-593e-4fb2-85ee-95dd8a057588`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/black-forest-labs/flux-2-dev](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/black-forest-labs/flux-2-dev)  
 **Task:** Text-to-Image  
-**Description:** FLUX.2 \[dev\] is an image model from Black Forest Labs where you can generate highly realistic and detailed images, with multi-reference support.  
+**Description:** FLUX.2 [dev] is an image model from Black Forest Labs where you can generate highly realistic and detailed images, with multi-reference support.  
 **Created:** 2025-11-24  
 **Tags:** None
 
@@ -2126,18 +2126,18 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `multipart` | object | Yes |  |  |
 
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `image` | string | Generated image as Base64 string. |
 
 ---
 
-### **52\. @cf/google/gemma-7b-it-lora**
+### 52. @cf/google/gemma-7b-it-lora
 
 **ID:** `337170b7-bd2f-4631-9a57-688b579cf6d3`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/google/gemma-7b-it-lora](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/google/gemma-7b-it-lora)  
@@ -2155,7 +2155,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -2176,14 +2176,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **53\. @cf/google/gemma-4-26b-a4b-it**
+### 53. @cf/google/gemma-4-26b-a4b-it
 
 **ID:** `328adb49-4a7d-43e3-a2d5-802ae8100fe7`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/google/gemma-4-26b-a4b-it](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/google/gemma-4-26b-a4b-it)  
@@ -2195,16 +2195,16 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `context_window`: 256000  
-* `price`: \[{"unit":"per M input tokens","price":0.1,"currency":"USD"},{"unit":"per M output tokens","price":0.3,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.1,"currency":"USD"},{"unit":"per M output tokens","price":0.3,"currency":"USD"}]  
 * `function_calling`: true  
 * `reasoning`: true  
-* `terms`: https://ai.google.dev/gemma/docs/gemma\_4\_license  
+* `terms`: https://ai.google.dev/gemma/docs/gemma_4_license  
 * `vision`: true
 
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `id` | string | A unique identifier for the chat completion. |
 | `object` | string |  |
 | `created` | integer | Unix timestamp (seconds) of when the completion was created. |
@@ -2216,7 +2216,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **54\. @cf/mistralai/mistral-small-3.1-24b-instruct**
+### 54. @cf/mistralai/mistral-small-3.1-24b-instruct
 
 **ID:** `31690291-ebdc-4f98-bcfc-a44844e215b7`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/mistralai/mistral-small-3.1-24b-instruct](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/mistralai/mistral-small-3.1-24b-instruct)  
@@ -2228,13 +2228,13 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `context_window`: 128000  
-* `price`: \[{"unit":"per M input tokens","price":0.351,"currency":"USD"},{"unit":"per M output tokens","price":0.555,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.351,"currency":"USD"},{"unit":"per M output tokens","price":0.555,"currency":"USD"}]  
 * `function_calling`: true
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `guided_json` | object | No |  | JSON schema that should be fulfilled for the response. |
 | `raw` | boolean | No | false | If true, a chat template is not applied and you must adhere to the specific model's expected formatt |
@@ -2254,14 +2254,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **55\. @cf/meta/llama-3-8b-instruct-awq**
+### 55. @cf/meta/llama-3-8b-instruct-awq
 
 **ID:** `31097538-a3ff-4e6e-bb56-ad0e1f428b61`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-3-8b-instruct-awq](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-3-8b-instruct-awq)  
@@ -2272,7 +2272,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 **Configuration Properties:**
 
-* `price`: \[{"unit":"per M input tokens","price":0.123,"currency":"USD"},{"unit":"per M output tokens","price":0.266,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.123,"currency":"USD"},{"unit":"per M output tokens","price":0.266,"currency":"USD"}]  
 * `context_window`: 8192  
 * `info`: https://llama.meta.com  
 * `planned_deprecation_date`: 2026-05-30  
@@ -2281,7 +2281,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -2302,14 +2302,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **56\. @cf/meta/llama-3.2-11b-vision-instruct**
+### 56. @cf/meta/llama-3.2-11b-vision-instruct
 
 **ID:** `2cbc033b-ded8-4e02-bbb2-47cf05d5cfe5`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-3.2-11b-vision-instruct](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-3.2-11b-vision-instruct)  
@@ -2321,15 +2321,15 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `context_window`: 128000  
-* `price`: \[{"unit":"per M input tokens","price":0.0485,"currency":"USD"},{"unit":"per M output tokens","price":0.676,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.0485,"currency":"USD"},{"unit":"per M output tokens","price":0.676,"currency":"USD"}]  
 * `lora`: true  
-* `terms`: https://github.com/meta-llama/llama-models/blob/main/models/llama3\_2/LICENSE  
+* `terms`: https://github.com/meta-llama/llama-models/blob/main/models/llama3_2/LICENSE  
 * `vision`: true
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `image` | any | No |  |  |
 | `raw` | boolean | No | false | If true, a chat template is not applied and you must adhere to the specific model's expected formatt |
@@ -2350,13 +2350,13 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **57\. @cf/openai/whisper-tiny-en**
+### 57. @cf/openai/whisper-tiny-en
 
 **ID:** `2169496d-9c0e-4e49-8399-c44ee66bff7d`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/openai/whisper-tiny-en](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/openai/whisper-tiny-en)  
@@ -2372,13 +2372,13 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `audio` | array | Yes |  | An array of integers that represent the audio data constrained to 8-bit unsigned integer values |
 
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `text` | string | The transcription |
 | `word_count` | number |  |
 | `words` | array |  |
@@ -2386,7 +2386,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **58\. @cf/openai/whisper-large-v3-turbo**
+### 58. @cf/openai/whisper-large-v3-turbo
 
 **ID:** `200f0812-148c-48c1-915d-fb3277a94a08`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/openai/whisper-large-v3-turbo](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/openai/whisper-large-v3-turbo)  
@@ -2398,12 +2398,12 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `async_queue`: true  
-* `price`: \[{"unit":"per audio minute","price":0.000513,"currency":"USD"}\]
+* `price`: [{"unit":"per audio minute","price":0.000513,"currency":"USD"}]
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `audio` | any | Yes |  |  |
 | `task` | string | No | transcribe | Supported tasks are 'translate' or 'transcribe'. |
 | `language` | string | No |  | The language of the audio being transcribed or translated. |
@@ -2420,7 +2420,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `transcription_info` | object |  |
 | `text` | string | The complete transcription of the audio. |
 | `word_count` | number | The total number of words in the transcription. |
@@ -2429,7 +2429,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **59\. @cf/deepgram/aura-1**
+### 59. @cf/deepgram/aura-1
 
 **ID:** `1f55679f-009e-4456-aa4f-049a62b4b6a0`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/deepgram/aura-1](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/deepgram/aura-1)  
@@ -2441,7 +2441,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `async_queue`: true  
-* `price`: \[{"unit":"per 1k characters","price":0.015,"currency":"USD"}\]  
+* `price`: [{"unit":"per 1k characters","price":0.015,"currency":"USD"}]  
 * `partner`: true  
 * `terms`: https://deepgram.com/terms  
 * `realtime`: true
@@ -2449,7 +2449,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `speaker` | string | No | angus | Speaker used to produce the audio. |
 | `encoding` | string | No |  | Encoding of the output audio. |
 | `container` | string | No |  | Container specifies the file format wrapper for the output audio. The available options depend on th |
@@ -2459,7 +2459,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **60\. @cf/defog/sqlcoder-7b-2**
+### 60. @cf/defog/sqlcoder-7b-2
 
 **ID:** `1dc9e589-df6b-4e66-ac9f-ceff42d64983`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/defog/sqlcoder-7b-2](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/defog/sqlcoder-7b-2)  
@@ -2479,7 +2479,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -2500,14 +2500,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **61\. @cf/microsoft/phi-2**
+### 61. @cf/microsoft/phi-2
 
 **ID:** `1d933df3-680f-4280-940d-da87435edb07`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/microsoft/phi-2](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/microsoft/phi-2)  
@@ -2526,7 +2526,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -2547,14 +2547,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **62\. @cf/facebook/bart-large-cnn**
+### 62. @cf/facebook/bart-large-cnn
 
 **ID:** `19bd38eb-bcda-4e53-bec2-704b4689b43a`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/facebook/bart-large-cnn](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/facebook/bart-large-cnn)  
@@ -2566,25 +2566,25 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `beta`: true  
-* `price`: \[{"unit":"per M input tokens","price":0,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0,"currency":"USD"}]  
 * `planned_deprecation_date`: 2026-05-30
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `input_text` | string | Yes |  | The text that you want the model to summarize |
 | `max_length` | integer | No | 1024 | The maximum length of the generated summary in tokens |
 
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `summary` | string | The summarized version of the input text |
 
 ---
 
-### **63\. @cf/runwayml/stable-diffusion-v1-5-img2img**
+### 63. @cf/runwayml/stable-diffusion-v1-5-img2img
 
 **ID:** `19547f04-7a6a-4f87-bf2c-f5e32fb12dc5`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/runwayml/stable-diffusion-v1-5-img2img](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/runwayml/stable-diffusion-v1-5-img2img)  
@@ -2596,14 +2596,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `beta`: true  
-* `price`: \[{"unit":"per step","price":0,"currency":"USD"}\]  
+* `price`: [{"unit":"per step","price":0,"currency":"USD"}]  
 * `info`: https://huggingface.co/runwayml/stable-diffusion-v1-5  
 * `terms`: https://github.com/runwayml/stable-diffusion/blob/main/LICENSE
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | A text description of the image you want to generate |
 | `negative_prompt` | string | No |  | Text describing elements to avoid in the generated image |
 | `height` | integer | No |  | The height of the generated image in pixels |
@@ -2618,7 +2618,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **64\. @cf/openai/gpt-oss-20b**
+### 64. @cf/openai/gpt-oss-20b
 
 **ID:** `188a4e1e-253e-46d0-9616-0bf8c149763f`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/openai/gpt-oss-20b](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/openai/gpt-oss-20b)  
@@ -2630,14 +2630,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `context_window`: 128000  
-* `price`: \[{"unit":"per M input tokens","price":0.2,"currency":"USD"},{"unit":"per M output tokens","price":0.3,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.2,"currency":"USD"},{"unit":"per M output tokens","price":0.3,"currency":"USD"}]  
 * `function_calling`: true  
 * `reasoning`: true
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -2660,7 +2660,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **65\. @cf/google/embeddinggemma-300m**
+### 65. @cf/google/embeddinggemma-300m
 
 **ID:** `15631501-2742-4346-a469-22fe202188a2`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/google/embeddinggemma-300m](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/google/embeddinggemma-300m)  
@@ -2672,35 +2672,35 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `text` | any | Yes |  |  |
 
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `shape` | array |  |
 | `data` | array | Embeddings of the requested text values |
 
 ---
 
-### **66\. @cf/baai/bge-reranker-base**
+### 66. @cf/baai/bge-reranker-base
 
 **ID:** `145337e7-cec3-4ebb-8e78-16ddfc75e580`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/baai/bge-reranker-base](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/baai/bge-reranker-base)  
 **Task:** Text Classification  
-**Description:** Different from embedding model, reranker uses question and document as input and directly output similarity instead of embedding. You can get a relevance score by inputting query and passage to the reranker. And the score can be mapped to a float value in \[0,1\] by sigmoid function.  
+**Description:** Different from embedding model, reranker uses question and document as input and directly output similarity instead of embedding. You can get a relevance score by inputting query and passage to the reranker. And the score can be mapped to a float value in [0,1] by sigmoid function.  
  **Created:** 2025-02-14  
 **Tags:** None
 
 **Configuration Properties:**
 
-* `price`: \[{"unit":"per M input tokens","price":0.00311,"currency":"USD"}\]
+* `price`: [{"unit":"per M input tokens","price":0.00311,"currency":"USD"}]
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `query` | string | Yes |  | A query you wish to perform against the provided contexts. |
 | `top_k` | integer | No |  | Number of returned results starting with the best score. |
 | `contexts` | array | Yes |  | List of provided contexts. Note that the index in this array is important, as the response will refe |
@@ -2708,12 +2708,12 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | array |  |
 
 ---
 
-### **67\. @hf/google/gemma-7b-it**
+### 67. @hf/google/gemma-7b-it
 
 **ID:** `0f002249-7d86-4698-aabf-8529ed86cefb`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/google/gemma-7b-it](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/google/gemma-7b-it)  
@@ -2734,7 +2734,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `lora` | string | No |  | Name of the LoRA (Low-Rank Adaptation) model to fine-tune the base model. |
 | `response_format` | object | No |  |  |
@@ -2755,14 +2755,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **68\. @cf/leonardo/lucid-origin**
+### 68. @cf/leonardo/lucid-origin
 
 **ID:** `0e372c11-8720-46c9-a02d-666188a22dae`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/leonardo/lucid-origin](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/leonardo/lucid-origin)  
@@ -2773,14 +2773,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 **Configuration Properties:**
 
-* `price`: \[{"unit":"per 512 by 512 tile","price":0.007,"currency":"USD"},{"unit":"per step","price":0.000132,"currency":"USD"}\]  
+* `price`: [{"unit":"per 512 by 512 tile","price":0.007,"currency":"USD"},{"unit":"per step","price":0.000132,"currency":"USD"}]  
 * `partner`: true  
 * `terms`: https://leonardo.ai/terms-of-service/
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | A text description of the image you want to generate. |
 | `guidance` | number | No | 4.5 | Controls how closely the generated image should adhere to the prompt; higher values make the image m |
 | `seed` | integer | No |  | Random seed for reproducibility of the image generation |
@@ -2792,12 +2792,12 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `image` | string | The generated image in Base64 format. |
 
 ---
 
-### **69\. @cf/meta/llama-4-scout-17b-16e-instruct**
+### 69. @cf/meta/llama-4-scout-17b-16e-instruct
 
 **ID:** `06455e78-19f7-487b-93cd-c05a3dd07813`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-4-scout-17b-16e-instruct](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-4-scout-17b-16e-instruct)  
@@ -2810,7 +2810,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 * `async_queue`: true  
 * `context_window`: 131000  
-* `price`: \[{"unit":"per M input tokens","price":0.27,"currency":"USD"},{"unit":"per M output tokens","price":0.85,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.27,"currency":"USD"},{"unit":"per M output tokens","price":0.85,"currency":"USD"}]  
 * `function_calling`: true  
 * `terms`: https://github.com/meta-llama/llama-models/blob/main/models/llama4/LICENSE  
 * `vision`: true
@@ -2818,7 +2818,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `guided_json` | object | No |  | JSON schema that should be fulfilled for the response. |
 | `response_format` | object | No |  |  |
@@ -2840,14 +2840,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **70\. @cf/google/gemma-3-12b-it**
+### 70. @cf/google/gemma-3-12b-it
 
 **ID:** `053d5ac0-861b-4d3b-8501-e58d00417ef8`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/google/gemma-3-12b-it](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/google/gemma-3-12b-it)  
@@ -2859,14 +2859,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `context_window`: 80000  
-* `price`: \[{"unit":"per M input tokens","price":0.345,"currency":"USD"},{"unit":"per M output tokens","price":0.556,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.345,"currency":"USD"},{"unit":"per M output tokens","price":0.556,"currency":"USD"}]  
 * `lora`: true  
 * `planned_deprecation_date`: 2026-05-30
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `guided_json` | object | No |  | JSON schema that should be fufilled for the response. |
 | `raw` | boolean | No | false | If true, a chat template is not applied and you must adhere to the specific model's expected formatt |
@@ -2886,14 +2886,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **71\. @cf/qwen/qwq-32b**
+### 71. @cf/qwen/qwq-32b
 
 **ID:** `02c16efa-29f5-4304-8e6c-3d188889f875`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/qwen/qwq-32b](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/qwen/qwq-32b)  
@@ -2905,14 +2905,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `context_window`: 24000  
-* `price`: \[{"unit":"per M input tokens","price":0.66,"currency":"USD"},{"unit":"per M output tokens","price":1,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.66,"currency":"USD"},{"unit":"per M output tokens","price":1,"currency":"USD"}]  
 * `lora`: true  
 * `reasoning`: true
 
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `prompt` | string | Yes |  | The input text prompt for the model to generate a response. |
 | `guided_json` | object | No |  | JSON schema that should be fulfilled for the response. |
 | `raw` | boolean | No | false | If true, a chat template is not applied and you must adhere to the specific model's expected formatt |
@@ -2932,14 +2932,14 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `response` | string | The generated text response from the model |
 | `usage` | object | Usage statistics for the inference request |
 | `tool_calls` | array | An array of tool calls requests made during the response generation |
 
 ---
 
-### **72\. @cf/baai/bge-large-en-v1.5**
+### 72. @cf/baai/bge-large-en-v1.5
 
 **ID:** `01bc2fb0-4bca-4598-b985-d2584a3f46c0`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/baai/bge-large-en-v1.5](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/baai/bge-large-en-v1.5)  
@@ -2951,7 +2951,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `async_queue`: true  
-* `price`: \[{"unit":"per M input tokens","price":0.204,"currency":"USD"}\]  
+* `price`: [{"unit":"per M input tokens","price":0.204,"currency":"USD"}]  
 * `info`: https://huggingface.co/BAAI/bge-large-en-v1.5  
 * `max_input_tokens`: 512  
 * `output_dimensions`: 1024
@@ -2959,7 +2959,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `text` | any | Yes |  |  |
 | `pooling` | string | No | mean | The pooling method used in the embedding process. \`cls\` pooling will generate more accurate embeddin |
 | `requests` | array | Yes |  | Batch of the embeddings requests to run using async-queue |
@@ -2967,7 +2967,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Output:**
 
 | Field | Type | Description |
-| ----- | ----- | ----- |
+| --- | --- | --- |
 | `shape` | array |  |
 | `data` | array | Embeddings of the requested text values |
 | `pooling` | string | The pooling method used in the embedding process. |
@@ -2975,7 +2975,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### **73\. @cf/deepgram/aura-2-en**
+### 73. @cf/deepgram/aura-2-en
 
 **ID:** `01564c52-8717-47dc-8efd-907a2ca18301`  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/deepgram/aura-2-en](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/deepgram/aura-2-en)  
@@ -2987,7 +2987,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Configuration Properties:**
 
 * `async_queue`: true  
-* `price`: \[{"unit":"per 1k characters","price":0.03,"currency":"USD"}\]  
+* `price`: [{"unit":"per 1k characters","price":0.03,"currency":"USD"}]  
 * `partner`: true  
 * `terms`: https://deepgram.com/terms  
 * `realtime`: true
@@ -2995,7 +2995,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 **Input Parameters:**
 
 | Parameter | Type | Required | Default | Description |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | `speaker` | string | No | luna | Speaker used to produce the audio. |
 | `encoding` | string | No |  | Encoding of the output audio. |
 | `container` | string | No |  | Container specifies the file format wrapper for the output audio. The available options depend on th |
@@ -3005,7 +3005,7 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 ---
 
-### 74\. @cf/moonshotai/kimi-k2.7-code
+### 74. @cf/moonshotai/kimi-k2.7-code
 
 **ID:** N/A  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/moonshotai/kimi-k2.7-code](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/moonshotai/kimi-k2.7-code)  
@@ -3016,19 +3016,19 @@ Native Cloudflare-hosted models accessible via the Workers AI REST API.
 
 **Configuration Properties:**
 
-* **Context\_window: 262144**  
-* **Function\_calling: true**  
-* **Price: \[{“unit”:”per M input tokens”,”price”:0.95,”currency”:”USD”},{“unit”:”per M output tokens”,”price”:4.00,”currency”:”USD”},{“unit”:”per M cached input tokens”,”price”:0.19,”currency”:”USD”}\]**  
+* **Context_window: 262144**  
+* **Function_calling: true**  
+* **Price: [{“unit”:”per M input tokens”,”price”:0.95,”currency”:”USD”},{“unit”:”per M output tokens”,”price”:4.00,”currency”:”USD”},{“unit”:”per M cached input tokens”,”price”:0.19,”currency”:”USD”}]**  
 * **Reasoning: true**  
 * **Vision: true**
 
 Input Parameters:  
-**Standard text generation parameters (prompt, messages, stream, max\_tokens, temperature, top\_p, top\_k, seed, etc.) — see Cloudflare Workers AI documentation for full schema.**
+**Standard text generation parameters (prompt, messages, stream, max_tokens, temperature, top_p, top_k, seed, etc.) — see Cloudflare Workers AI documentation for full schema.**
 
 Output:  
 **Standard text generation output (response object with id, object, created, model, choices, usage fields).**
 
-### 75\. @cf/zai-org/glm-5.2
+### 75. @cf/zai-org/glm-5.2
 
 **ID:** N/A  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/zai-org/glm-5.2](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/zai-org/glm-5.2)  
@@ -3039,18 +3039,18 @@ Output:
 
 **Configuration Properties:**
 
-* Context\_window: 262144  
-* Function\_calling: true  
+* Context_window: 262144  
+* Function_calling: true  
 * Reasoning: true  
-* Price: \[{“unit”:”per M input tokens”,”price”:1.40,”currency”:”USD”},{“unit”:”per M output tokens”,”price”:4.40,”currency”:”USD”},{“unit”:”per M cached input tokens”,”price”:0.26,”currency”:”USD”}\]
+* Price: [{“unit”:”per M input tokens”,”price”:1.40,”currency”:”USD”},{“unit”:”per M output tokens”,”price”:4.40,”currency”:”USD”},{“unit”:”per M cached input tokens”,”price”:0.26,”currency”:”USD”}]
 
 **Input Parameters:**  
-Standard text generation parameters (prompt, messages, stream, max\_tokens, temperature, top\_p, top\_k, seed, etc.)
+Standard text generation parameters (prompt, messages, stream, max_tokens, temperature, top_p, top_k, seed, etc.)
 
 **Output:**  
 Standard text generation output (response object with id, object, created, model, choices, usage fields).
 
-### 76\. @cf/meta/llama-3.1-8b-instruct
+### 76. @cf/meta/llama-3.1-8b-instruct
 
 **ID:** N/A  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-3.1-8b-instruct](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-3.1-8b-instruct)  
@@ -3061,17 +3061,17 @@ Standard text generation output (response object with id, object, created, model
 
 **Configuration Properties:**
 
-* Context\_window: 7968  
-* Price: \[{“unit”:”per M input tokens”,”price”:0.28,”currency”:”USD”},{“unit”:”per M output tokens”,”price”:0.83,”currency”:”USD”}\]  
-* Planned\_deprecation\_date: 2026-05-30
+* Context_window: 7968  
+* Price: [{“unit”:”per M input tokens”,”price”:0.28,”currency”:”USD”},{“unit”:”per M output tokens”,”price”:0.83,”currency”:”USD”}]  
+* Planned_deprecation_date: 2026-05-30
 
 **Input Parameters:**  
-Standard text generation parameters (prompt, messages, stream, max\_tokens, temperature, top\_p, top\_k, seed, lora, etc.)
+Standard text generation parameters (prompt, messages, stream, max_tokens, temperature, top_p, top_k, seed, lora, etc.)
 
 **Output:**  
 Standard text generation output (response object with id, object, created, model, choices, usage fields).
 
-### 77\. @hf/meta-llama/meta-llama-3-8b-instruct
+### 77. @hf/meta-llama/meta-llama-3-8b-instruct
 
 **ID:** N/A  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta-llama/meta-llama-3-8b-instruct](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta-llama/meta-llama-3-8b-instruct)  
@@ -3082,16 +3082,16 @@ Standard text generation output (response object with id, object, created, model
 
 **Configuration Properties:**
 
-* Context\_window: 8192  
-* Planned\_deprecation\_date: 2026-05-30
+* Context_window: 8192  
+* Planned_deprecation_date: 2026-05-30
 
 **Input Parameters:**  
-Standard text generation parameters (prompt, messages, stream, max\_tokens, temperature, top\_p, top\_k, seed, lora, etc.)
+Standard text generation parameters (prompt, messages, stream, max_tokens, temperature, top_p, top_k, seed, lora, etc.)
 
 **Output:**  
 Standard text generation output.
 
-### 78\. @cf/facebook/detr-resnet-50
+### 78. @cf/facebook/detr-resnet-50
 
 **ID:** N/A  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/facebook/detr-resnet-50](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/facebook/detr-resnet-50)  
@@ -3102,7 +3102,7 @@ Standard text generation output.
 
 **Configuration Properties:**
 
-* Price: \[{“unit”:”per inference request”,”price”:0.0000075,”currency”:”USD”}\]
+* Price: [{“unit”:”per inference request”,”price”:0.0000075,”currency”:”USD”}]
 
 **Input Parameters:**  
 Image (binary or object) \- The image to use for detection.
@@ -3110,7 +3110,7 @@ Image (binary or object) \- The image to use for detection.
 **Output:**  
 Array of detected objects with labels, scores, and bounding boxes.
 
-### 79\. @cf/meta/llama-3.1-70b-instruct
+### 79. @cf/meta/llama-3.1-70b-instruct
 
 **ID:** N/A  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-3.1-70b-instruct](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-3.1-70b-instruct)  
@@ -3121,40 +3121,40 @@ Array of detected objects with labels, scores, and bounding boxes.
 
 **Configuration Properties:**
 
-* Context\_window: 24000  
-* Planned\_deprecation\_date: 2026-05-30
+* Context_window: 24000  
+* Planned_deprecation_date: 2026-05-30
 
 **Input Parameters:**  
-Standard text generation parameters (prompt, messages, stream, max\_tokens, temperature, top\_p, top\_k, seed, lora, etc.)
+Standard text generation parameters (prompt, messages, stream, max_tokens, temperature, top_p, top_k, seed, lora, etc.)
 
 **Output:**  
 Standard text generation output.
 
-### 80\. @cf/meta/llama-3.1-8b-instruct-fast
+### 80. @cf/meta/llama-3.1-8b-instruct-fast
 
 **ID:** N/A  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-3.1-8b-instruct-fast](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/meta/llama-3.1-8b-instruct-fast)  
 **Task:** Text Generation  
-**Description:** \[Fast version\] The Meta Llama 3.1 collection of multilingual large language models. Optimized for multilingual dialogue use cases with faster inference.  
+**Description:** [Fast version] The Meta Llama 3.1 collection of multilingual large language models. Optimized for multilingual dialogue use cases with faster inference.  
 **Created:** N/A  
 **Tags:** None
 
 **Configuration Properties:**
 
-* Context\_window: 128000
+* Context_window: 128000
 
 **Input Parameters:**  
-Standard text generation parameters (prompt, messages, stream, max\_tokens, temperature, top\_p, top\_k, seed, lora, etc.)
+Standard text generation parameters (prompt, messages, stream, max_tokens, temperature, top_p, top_k, seed, lora, etc.)
 
 **Output:**  
 Standard text generation output.
 
-## **Part 2: Catalog / Partner Models (64 models)**
+## Part 2: Catalog / Partner Models (64 models)
 
 External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible via Cloudflare AI Gateway.
 
 | \# | Model Name | Provider | Task | Model ID |
-| ----- | ----- | ----- | ----- | ----- |
+| --- | --- | --- | --- | --- |
 | 1 | [Claude Haiku 4.5](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/anthropic/claude-haiku-4.5) | anthropic | Text Generation | `anthropic/claude-haiku-4.5` |
 | 2 | [Claude Opus 4.6](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/anthropic/claude-opus-4.6) | anthropic | Text Generation | `anthropic/claude-opus-4.6` |
 | 3 | [Claude Opus 4.7](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/anthropic/claude-opus-4.7) | anthropic | Text Generation | `anthropic/claude-opus-4.7` |
@@ -3222,7 +3222,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **1\. Claude Haiku 4.5**
+### 1. Claude Haiku 4.5
 
 **Model ID:** `anthropic/claude-haiku-4.5`  
 **Provider:** anthropic  
@@ -3240,7 +3240,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $1 |
 | Output tokens (per 1M) | $5 |
 | Cached input tokens (per 1M) | $0.1 |
@@ -3248,7 +3248,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **2\. Claude Opus 4.6**
+### 2. Claude Opus 4.6
 
 **Model ID:** `anthropic/claude-opus-4.6`  
 **Provider:** anthropic  
@@ -3266,7 +3266,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $5 |
 | Output tokens (per 1M) | $25 |
 | Cached input tokens (per 1M) | $0.5 |
@@ -3274,7 +3274,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **3\. Claude Opus 4.7**
+### 3. Claude Opus 4.7
 
 **Model ID:** `anthropic/claude-opus-4.7`  
 **Provider:** anthropic  
@@ -3292,7 +3292,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $5 |
 | Output tokens (per 1M) | $25 |
 | Cached input tokens (per 1M) | $0.5 |
@@ -3300,7 +3300,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **4\. Claude Sonnet 4**
+### 4. Claude Sonnet 4
 
 **Model ID:** `anthropic/claude-sonnet-4`  
 **Provider:** anthropic  
@@ -3318,7 +3318,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $3 |
 | Output tokens (per 1M) | $15 |
 | Cached input tokens (per 1M) | $0.3 |
@@ -3326,7 +3326,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **5\. Claude Sonnet 4.5**
+### 5. Claude Sonnet 4.5
 
 **Model ID:** `anthropic/claude-sonnet-4.5`  
 **Provider:** anthropic  
@@ -3344,7 +3344,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $3 |
 | Output tokens (per 1M) | $15 |
 | Cached input tokens (per 1M) | $0.3 |
@@ -3352,7 +3352,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **6\. Claude Sonnet 4.6**
+### 6. Claude Sonnet 4.6
 
 **Model ID:** `anthropic/claude-sonnet-4.6`  
 **Provider:** anthropic  
@@ -3370,7 +3370,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $3 |
 | Output tokens (per 1M) | $15 |
 | Cached input tokens (per 1M) | $0.3 |
@@ -3378,7 +3378,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **7\. GPT Image 1.5**
+### 7. GPT Image 1.5
 
 **Model ID:** `openai/gpt-image-1.5`  
 **Provider:** openai  
@@ -3396,7 +3396,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $5 |
 | Input image tokens (per 1M) | $8 |
 | Cached input tokens (per 1M) | $1.25 |
@@ -3406,7 +3406,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **8\. GPT-4.1**
+### 8. GPT-4.1
 
 **Model ID:** `openai/gpt-4.1`  
 **Provider:** openai  
@@ -3424,14 +3424,14 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $2 |
 | Output tokens (per 1M) | $8 |
 | Cached input tokens (per 1M) | $0.5 |
 
 ---
 
-### **9\. GPT-4.1 Mini**
+### 9. GPT-4.1 Mini
 
 **Model ID:** `openai/gpt-4.1-mini`  
 **Provider:** openai  
@@ -3449,14 +3449,14 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $0.4 |
 | Output tokens (per 1M) | $1.6 |
 | Cached input tokens (per 1M) | $0.1 |
 
 ---
 
-### **10\. GPT-4o Transcribe**
+### 10. GPT-4o Transcribe
 
 **Model ID:** `openai/gpt-4o-transcribe`  
 **Provider:** openai  
@@ -3474,12 +3474,12 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Per audio minute | $0.006 |
 
 ---
 
-### **11\. GPT-5**
+### 11. GPT-5
 
 **Model ID:** `openai/gpt-5`  
 **Provider:** openai  
@@ -3497,14 +3497,14 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $1.25 |
 | Output tokens (per 1M) | $10 |
 | Cached input tokens (per 1M) | $0.125 |
 
 ---
 
-### **12\. GPT-5.4**
+### 12. GPT-5.4
 
 **Model ID:** `openai/gpt-5.4`  
 **Provider:** openai  
@@ -3522,14 +3522,14 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $2.5 |
 | Output tokens (per 1M) | $15 |
 | Cached input tokens (per 1M) | $0.25 |
 
 ---
 
-### **13\. GPT-5.4 Mini**
+### 13. GPT-5.4 Mini
 
 **Model ID:** `openai/gpt-5.4-mini`  
 **Provider:** openai  
@@ -3547,14 +3547,14 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $0.75 |
 | Output tokens (per 1M) | $4.5 |
 | Cached input tokens (per 1M) | $0.075 |
 
 ---
 
-### **14\. GPT-5.4 Nano**
+### 14. GPT-5.4 Nano
 
 **Model ID:** `openai/gpt-5.4-nano`  
 **Provider:** openai  
@@ -3572,14 +3572,14 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $0.2 |
 | Output tokens (per 1M) | $1.25 |
 | Cached input tokens (per 1M) | $0.02 |
 
 ---
 
-### **15\. GPT-5.4 Pro**
+### 15. GPT-5.4 Pro
 
 **Model ID:** `openai/gpt-5.4-pro`  
 **Provider:** openai  
@@ -3597,13 +3597,13 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $30 |
 | Output tokens (per 1M) | $180 |
 
 ---
 
-### **16\. GPT-5.5**
+### 16. GPT-5.5
 
 **Model ID:** `openai/gpt-5.5`  
 **Provider:** openai  
@@ -3621,13 +3621,13 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $5 |
 | Output tokens (per 1M) | $30 |
 
 ---
 
-### **17\. GPT-5.5 Pro**
+### 17. GPT-5.5 Pro
 
 **Model ID:** `openai/gpt-5.5-pro`  
 **Provider:** openai  
@@ -3645,13 +3645,13 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $30 |
 | Output tokens (per 1M) | $180 |
 
 ---
 
-### **18\. Gemini 3 Flash**
+### 18. Gemini 3 Flash
 
 **Model ID:** `google/gemini-3-flash`  
 **Provider:** google  
@@ -3669,7 +3669,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input \<=200k (per 1M) | $0.5 |
 | Output \<=200k (per 1M) | $3 |
 | Cached input \<=200k (per 1M) | $0.05 |
@@ -3679,7 +3679,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **19\. Gemini 3.1 Flash Lite**
+### 19. Gemini 3.1 Flash Lite
 
 **Model ID:** `google/gemini-3.1-flash-lite`  
 **Provider:** google  
@@ -3697,7 +3697,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input \<=200k (per 1M) | $0.25 |
 | Output \<=200k (per 1M) | $1.5 |
 | Cached input \<=200k (per 1M) | $0.03 |
@@ -3707,7 +3707,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **20\. Gemini 3.1 Pro**
+### 20. Gemini 3.1 Pro
 
 **Model ID:** `google/gemini-3.1-pro`  
 **Provider:** google  
@@ -3725,7 +3725,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input \<=200k (per 1M) | $2 |
 | Output \<=200k (per 1M) | $12 |
 | Cached input \<=200k (per 1M) | $0.2 |
@@ -3735,7 +3735,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **21\. Grok Imagine Image**
+### 21. Grok Imagine Image
 
 **Model ID:** `xai/grok-imagine-image`  
 **Provider:** xai  
@@ -3753,13 +3753,13 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Per input image | $0.002 |
 | Per image | $0.02 |
 
 ---
 
-### **22\. Grok Imagine Video**
+### 22. Grok Imagine Video
 
 **Model ID:** `xai/grok-imagine-video`  
 **Provider:** xai  
@@ -3777,12 +3777,12 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Default (per second) | $0.05 |
 
 ---
 
-### **23\. Hailuo 2.3**
+### 23. Hailuo 2.3
 
 **Model ID:** `minimax/hailuo-2.3`  
 **Provider:** minimax  
@@ -3800,7 +3800,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | 6s @768p | $0.28 |
 | 10s @768p | $0.56 |
 | 6s @1080p | $0.49 |
@@ -3808,7 +3808,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **24\. Hailuo 2.3 Fast**
+### 24. Hailuo 2.3 Fast
 
 **Model ID:** `minimax/hailuo-2.3-fast`  
 **Provider:** minimax  
@@ -3826,7 +3826,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | 6s @768p | $0.19 |
 | 10s @768p | $0.32 |
 | 6s @1080p | $0.33 |
@@ -3834,7 +3834,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **25\. HappyHorse 1.0 I2V**
+### 25. HappyHorse 1.0 I2V
 
 **Model ID:** `alibaba/hh1-i2v`  
 **Provider:** alibaba  
@@ -3852,14 +3852,14 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | @720p (per second) | $0.14 |
 | @1080p (per second) | $0.28 |
 | Default (per second) | $0.28 |
 
 ---
 
-### **26\. HappyHorse 1.0 T2V**
+### 26. HappyHorse 1.0 T2V
 
 **Model ID:** `alibaba/hh1-t2v`  
 **Provider:** alibaba  
@@ -3877,14 +3877,14 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | @720p (per second) | $0.14 |
 | @1080p (per second) | $0.28 |
 | Default (per second) | $0.28 |
 
 ---
 
-### **27\. Imagen 4**
+### 27. Imagen 4
 
 **Model ID:** `google/imagen-4`  
 **Provider:** google  
@@ -3902,18 +3902,18 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Per image | $0.04 |
 
 ---
 
-### **28\. Inworld TTS 2**
+### 28. Inworld TTS 2
 
 **Model ID:** `inworld/tts-2`  
 **Provider:** inworld  
 **Page:** [https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/inworld/tts-2](https://dash.cloudflare.com/bc6018c200086c59663c8ff798e689fa/ai/models/inworld/tts-2)  
 **Task:** Text-to-Speech  
-**Description:** Inworld's most powerful and expressive text-to-speech model. Builds on TTS 1.5 with rich expressive speech, real-time latency, natural language steering (e.g. \[whisper\], \[say excitedly\]), and stronger multilingual support across 15 production languages plus 90+ experimental languages.  
+**Description:** Inworld's most powerful and expressive text-to-speech model. Builds on TTS 1.5 with rich expressive speech, real-time latency, natural language steering (e.g. [whisper], [say excitedly]), and stronger multilingual support across 15 production languages plus 90+ experimental languages.  
 **Created:** 2026-05-05  
 **Tags:** TTS, Speech Synthesis, Low Latency, Multilingual, Natural Language Steering, Expressive  
 **Context Length:** N/A  
@@ -3925,12 +3925,12 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Per character | $0.000035 |
 
 ---
 
-### **29\. M2.7**
+### 29. M2.7
 
 **Model ID:** `minimax/m2.7`  
 **Provider:** minimax  
@@ -3948,7 +3948,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $0.3 |
 | Output tokens (per 1M) | $1.2 |
 | Cache write tokens (per 1M) | $0.375 |
@@ -3956,7 +3956,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **30\. MiniMax Music 2.6**
+### 30. MiniMax Music 2.6
 
 **Model ID:** `minimax/music-2.6`  
 **Provider:** minimax  
@@ -3974,13 +3974,13 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Per lyrics generation | $0.01 |
 | Per track | $0.15 |
 
 ---
 
-### **31\. Nano Banana**
+### 31. Nano Banana
 
 **Model ID:** `google/nano-banana`  
 **Provider:** google  
@@ -3998,7 +3998,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $0.3 |
 | Output tokens (per 1M) | $30 |
 | Cached input tokens (per 1M) | $0.03 |
@@ -4006,7 +4006,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **32\. Nano Banana 2**
+### 32. Nano Banana 2
 
 **Model ID:** `google/nano-banana-2`  
 **Provider:** google  
@@ -4024,13 +4024,13 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $0.5 |
 | Output tokens (per 1M) | $60 |
 
 ---
 
-### **33\. Nano Banana Pro**
+### 33. Nano Banana Pro
 
 **Model ID:** `google/nano-banana-pro`  
 **Provider:** google  
@@ -4048,13 +4048,13 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $2 |
 | Output tokens (per 1M) | $120 |
 
 ---
 
-### **34\. OpenAI GPT Image 2**
+### 34. OpenAI GPT Image 2
 
 **Model ID:** `openai/gpt-image-2`  
 **Provider:** openai  
@@ -4072,7 +4072,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $5 |
 | Input image tokens (per 1M) | $8 |
 | Cached input tokens (per 1M) | $1.25 |
@@ -4082,7 +4082,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **35\. Pixverse v5.6**
+### 35. Pixverse v5.6
 
 **Model ID:** `pixverse/v5.6`  
 **Provider:** pixverse  
@@ -4100,7 +4100,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | 5s @360p | $0.175 |
 | 5s @360p w/ audio | $0.4 |
 | 8s @360p | $0.35 |
@@ -4127,7 +4127,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **36\. Pixverse v6**
+### 36. Pixverse v6
 
 **Model ID:** `pixverse/v6`  
 **Provider:** pixverse  
@@ -4145,7 +4145,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | @720p w/ audio (per second) | $0.06 |
 | @540p w/ audio (per second) | $0.045 |
 | @360p w/ audio (per second) | $0.035 |
@@ -4158,7 +4158,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **37\. Qwen 3 Max**
+### 37. Qwen 3 Max
 
 **Model ID:** `alibaba/qwen3-max`  
 **Provider:** alibaba  
@@ -4176,13 +4176,13 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $1.2 |
 | Output tokens (per 1M) | $6 |
 
 ---
 
-### **38\. Qwen 3.5 397B A17B**
+### 38. Qwen 3.5 397B A17B
 
 **Model ID:** `alibaba/qwen3.5-397b-a17b`  
 **Provider:** alibaba  
@@ -4200,13 +4200,13 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $0.6 |
 | Output tokens (per 1M) | $3.6 |
 
 ---
 
-### **39\. Recraft V3**
+### 39. Recraft V3
 
 **Model ID:** `recraft/recraftv3`  
 **Provider:** recraft  
@@ -4224,12 +4224,12 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Per image | $0.04 |
 
 ---
 
-### **40\. Recraft V4**
+### 40. Recraft V4
 
 **Model ID:** `recraft/recraftv4`  
 **Provider:** recraft  
@@ -4247,12 +4247,12 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Per image | $0.04 |
 
 ---
 
-### **41\. Recraft V4 Pro**
+### 41. Recraft V4 Pro
 
 **Model ID:** `recraft/recraftv4-pro`  
 **Provider:** recraft  
@@ -4270,12 +4270,12 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Per image | $0.25 |
 
 ---
 
-### **42\. Recraft V4 Pro Vector**
+### 42. Recraft V4 Pro Vector
 
 **Model ID:** `recraft/recraftv4-pro-vector`  
 **Provider:** recraft  
@@ -4293,12 +4293,12 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Per image | $0.3 |
 
 ---
 
-### **43\. Recraft V4 Vector**
+### 43. Recraft V4 Vector
 
 **Model ID:** `recraft/recraftv4-vector`  
 **Provider:** recraft  
@@ -4316,12 +4316,12 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Per image | $0.08 |
 
 ---
 
-### **44\. RunwayML Gen-4.5**
+### 44. RunwayML Gen-4.5
 
 **Model ID:** `runwayml/gen-4.5`  
 **Provider:** runwayml  
@@ -4339,12 +4339,12 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Default (per second) | $0.12 |
 
 ---
 
-### **45\. Seedance 2.0**
+### 45. Seedance 2.0
 
 **Model ID:** `bytedance/seedance-2.0`  
 **Provider:** bytedance  
@@ -4356,19 +4356,19 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Context Length:** N/A  
 **Max Output Tokens:** N/A  
 **Supports Async:** false  
-**External Info:** [https://seed.bytedance.com/en/seedance2\_0](https://seed.bytedance.com/en/seedance2_0)
+**External Info:** [https://seed.bytedance.com/en/seedance2_0](https://seed.bytedance.com/en/seedance2_0)
 
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Default (per second) | $0.22 |
 | @720p (per second) | $0.22 |
 | @1080p (per second) | $0.55 |
 
 ---
 
-### **46\. Seedance 2.0 Fast**
+### 46. Seedance 2.0 Fast
 
 **Model ID:** `bytedance/seedance-2.0-fast`  
 **Provider:** bytedance  
@@ -4385,14 +4385,14 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | @1080p (per second) | $0.17 |
 | @720p (per second) | $0.08 |
 | Default (per second) | $0.08 |
 
 ---
 
-### **47\. Seedream 4.0**
+### 47. Seedream 4.0
 
 **Model ID:** `bytedance/seedream-4.0`  
 **Provider:** bytedance  
@@ -4404,17 +4404,17 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Context Length:** N/A  
 **Max Output Tokens:** N/A  
 **Supports Async:** false  
-**External Info:** [https://seed.bytedance.com/en/seedream4\_0](https://seed.bytedance.com/en/seedream4_0)
+**External Info:** [https://seed.bytedance.com/en/seedream4_0](https://seed.bytedance.com/en/seedream4_0)
 
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Per image | $0.03 |
 
 ---
 
-### **48\. Seedream 4.5**
+### 48. Seedream 4.5
 
 **Model ID:** `bytedance/seedream-4.5`  
 **Provider:** bytedance  
@@ -4426,17 +4426,17 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Context Length:** N/A  
 **Max Output Tokens:** N/A  
 **Supports Async:** false  
-**External Info:** [https://seed.bytedance.com/en/seedream4\_5](https://seed.bytedance.com/en/seedream4_5)
+**External Info:** [https://seed.bytedance.com/en/seedream4_5](https://seed.bytedance.com/en/seedream4_5)
 
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Per image | $0.04 |
 
 ---
 
-### **49\. Seedream 5 Lite**
+### 49. Seedream 5 Lite
 
 **Model ID:** `bytedance/seedream-5-lite`  
 **Provider:** bytedance  
@@ -4448,17 +4448,17 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Context Length:** N/A  
 **Max Output Tokens:** N/A  
 **Supports Async:** false  
-**External Info:** [https://seed.bytedance.com/en/seedream5\_0\_lite](https://seed.bytedance.com/en/seedream5_0_lite)
+**External Info:** [https://seed.bytedance.com/en/seedream5_0_lite](https://seed.bytedance.com/en/seedream5_0_lite)
 
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Per image | $0.035 |
 
 ---
 
-### **50\. Speech 2.8 HD**
+### 50. Speech 2.8 HD
 
 **Model ID:** `minimax/speech-2.8-hd`  
 **Provider:** minimax  
@@ -4476,12 +4476,12 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Per character | $0.0001 |
 
 ---
 
-### **51\. Speech 2.8 Turbo**
+### 51. Speech 2.8 Turbo
 
 **Model ID:** `minimax/speech-2.8-turbo`  
 **Provider:** minimax  
@@ -4499,12 +4499,12 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Per character | $0.00006 |
 
 ---
 
-### **52\. TTS 1.5 Max**
+### 52. TTS 1.5 Max
 
 **Model ID:** `inworld/tts-1.5-max`  
 **Provider:** inworld  
@@ -4522,12 +4522,12 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Per character | $0.00005 |
 
 ---
 
-### **53\. TTS 1.5 Mini**
+### 53. TTS 1.5 Mini
 
 **Model ID:** `inworld/tts-1.5-mini`  
 **Provider:** inworld  
@@ -4545,12 +4545,12 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Per character | $0.000025 |
 
 ---
 
-### **54\. TTS-1**
+### 54. TTS-1
 
 **Model ID:** `openai/tts-1`  
 **Provider:** openai  
@@ -4568,12 +4568,12 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Per character | $0.000015 |
 
 ---
 
-### **55\. TTS-1 HD**
+### 55. TTS-1 HD
 
 **Model ID:** `openai/tts-1-hd`  
 **Provider:** openai  
@@ -4591,12 +4591,12 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Per character | $0.00003 |
 
 ---
 
-### **56\. Universal 3 Pro**
+### 56. Universal 3 Pro
 
 **Model ID:** `assemblyai/universal-3-pro`  
 **Provider:** assemblyai  
@@ -4614,12 +4614,12 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Per audio minute | $0.0035 |
 
 ---
 
-### **57\. Veo 3**
+### 57. Veo 3
 
 **Model ID:** `google/veo-3`  
 **Provider:** google  
@@ -4637,7 +4637,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | @720p (per second) | $0.2 |
 | @1080p (per second) | $0.2 |
 | Default (per second) | $0.2 |
@@ -4646,7 +4646,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **58\. Veo 3 Fast**
+### 58. Veo 3 Fast
 
 **Model ID:** `google/veo-3-fast`  
 **Provider:** google  
@@ -4664,7 +4664,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | @720p w/ audio (per second) | $0.1 |
 | @1080p w/ audio (per second) | $0.12 |
 | @4k w/ audio (per second) | $0.3 |
@@ -4674,7 +4674,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **59\. Veo 3.1**
+### 59. Veo 3.1
 
 **Model ID:** `google/veo-3.1`  
 **Provider:** google  
@@ -4692,7 +4692,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | @720p w/ audio (per second) | $0.4 |
 | @1080p w/ audio (per second) | $0.4 |
 | @4k w/ audio (per second) | $0.6 |
@@ -4703,7 +4703,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **60\. Veo 3.1 Fast**
+### 60. Veo 3.1 Fast
 
 **Model ID:** `google/veo-3.1-fast`  
 **Provider:** google  
@@ -4721,7 +4721,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | @720p (per second) | $0.08 |
 | @1080p (per second) | $0.1 |
 | @4k (per second) | $0.25 |
@@ -4732,7 +4732,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **61\. Vidu Q3 Pro**
+### 61. Vidu Q3 Pro
 
 **Model ID:** `vidu/q3-pro`  
 **Provider:** vidu  
@@ -4750,7 +4750,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | @720p (per second) | $0.125 |
 | @1080p (per second) | $0.15 |
 | Default (per second) | $0.125 |
@@ -4758,7 +4758,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **62\. Vidu Q3 Turbo**
+### 62. Vidu Q3 Turbo
 
 **Model ID:** `vidu/q3-turbo`  
 **Provider:** vidu  
@@ -4776,7 +4776,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | @720p (per second) | $0.06 |
 | @1080p (per second) | $0.07 |
 | @540p (per second) | $0.04 |
@@ -4784,7 +4784,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 
 ---
 
-### **63\. Wan 2.6 Image**
+### 63. Wan 2.6 Image
 
 **Model ID:** `alibaba/wan-2.6-image`  
 **Provider:** alibaba  
@@ -4802,12 +4802,12 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Per image | $0.03 |
 
 ---
 
-### **64\. o4-mini**
+### 64. o4-mini
 
 **Model ID:** `openai/o4-mini`  
 **Provider:** openai  
@@ -4825,7 +4825,7 @@ External provider models (Anthropic, OpenAI, Google, Mistral, etc.) accessible v
 **Pricing:**
 
 | Metric | Price (USD) |
-| ----- | ----- |
+| --- | --- |
 | Input tokens (per 1M) | $1.1 |
 | Output tokens (per 1M) | $4.4 |
 | Cached input tokens (per 1M) | $0.275 |
