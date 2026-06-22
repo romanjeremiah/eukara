@@ -17,6 +17,7 @@ import { TIMEZONE_PRESETS, findPresetByTz, isValidTimezone } from '../config/tim
 import { clearHistory } from '../lib/history';
 import { escapeHtml, formatTime } from '../lib/formatting';
 import { log } from '../lib/logger';
+import { startMoodWizard } from './mood-wizard';
 
 export async function handleCommand(
 	msg: TelegramMessage,
@@ -47,18 +48,7 @@ export async function handleCommand(
 		case '/mood': {
 			const fromId = msg.from?.id;
 			if (!fromId) return true;
-			// Enqueue a mood_poll task — the queue consumer already knows
-			// how to send the 0-10 poll and wire the KV context for the
-			// poll_answer webhook to find. Using the queue keeps the
-			// webhook path fast and isolates the Telegram API call.
-			// 2026-06-02 Phase 1: pass source so the row gets tagged as
-			// manual_command (distinct from cron_poll evening triggers).
-			await env.TASK_QUEUE.send({
-				type: 'mood_poll',
-				userId: fromId,
-				chatId,
-				source: 'manual_command',
-			});
+			await startMoodWizard(chatId, threadId, fromId, env);
 			return true;
 		}
 

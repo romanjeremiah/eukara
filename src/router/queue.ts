@@ -16,7 +16,6 @@ import { log } from '../lib/logger';
 import { CF_MODELS } from '../config/models';
 import { CloudflareProvider } from '../ai/cloudflare';
 import { BASE_INSTRUCTION, MENTAL_HEALTH_DIRECTIVE, FORMATTING_RULES } from '../config/personas';
-import { MOOD_POLL_OPTIONS, MOOD_POLL_QUESTION } from '../config/moodScale';
 import * as telegram from '../lib/telegram';
 import * as mood from '../services/mood';
 import * as memory from '../services/memory';
@@ -24,13 +23,6 @@ import * as episode from '../services/episode';
 import { normaliseMarkdown, enforceTagNesting } from '../lib/formatting';
 import { loadHistory, saveHistory } from '../lib/history';
 import { handleMessage } from '../bot/message';
-// Phase 1 (2026-06-02): mood-flow queue routing. Heavy Gemini Pro
-// calls were running inline via ctx.waitUntil and hitting the 30s
-// ceiling. Moved into queue workers so the 15-min wall clock applies.
-// Work functions live in bot/ to keep AI logic colocated with the
-// persona / context plumbing; the queue worker only orchestrates.
-import { runMoodAnalysisWork, runClinicalConcernWork } from '../bot/poll';
-import { runEmotionsDoneWork } from '../bot/mood-callbacks';
 import { allTools } from '../tools';
 import type { AIMessage } from '../types/ai';
 import type { TelegramMessage } from '../types/telegram';
@@ -49,28 +41,14 @@ interface QueueTask {
 	message?: TelegramMessage;
 	/**
 	 * For `process_user_message` tasks. When true, the consumer passes
-	 * forceProLane:true into handleMessage so the router stays on Pro
+	 * forceHeavyLane:true into handleMessage so the router stays on Pro
 	 * regardless of the new message's keywords (sticky-Pro continuation).
 	 */
-	forceProLane?: boolean;
+	forceHeavyLane?: boolean;
 	/**
 	 * Pre-computed intent triage from Curator (Layer A1).
 	 */
 	curatorResult?: { intent: string; isCrisis: boolean };
-	// ---- Phase 1 mood-flow fields (2026-06-02) ----
-	/**
-	 * For `mood_poll` tasks: the source label the poll was triggered
-	 * by ('cron_poll' from scheduled evening, 'manual_command' from
-	 * /mood). Propagated into the KV poll context so the poll_answer
-	 * handler can write the right source onto the mood_journal row.
-	 */
-	source?: string;
-	/** For mood_score_received / mood_emotions_done: thread routing. */
-	threadId?: string;
-	/** For mood_score_received: the 0-10 score the user tapped. */
-	score?: number;
-	/** For mood_emotions_done: the emotions the user selected. */
-	selectedEmotions?: string[];
 }
 
 const CHECKIN_THREAD_ID = 'default';
@@ -205,114 +183,6 @@ async function processTask(task: QueueTask, env: Env, attempts: number): Promise
 			break;
 		}
 
-		case 'mood_poll': {
-			await env.CHAT_KV.put(`health_checkin_active_${userId}`, 'evening', { expirationTtl: 1800 });
-
-			// 2026-06-03: poll options restored from Xaridotis-style long
-			// descriptions (src/config/moodScale.ts). Previously the inline
-			// shortened strings here had drifted from the clinical bipolar
-			// scale in MENTAL_HEALTH_DIRECTIVE section 2. Both this path
-			// and the manual /mood command now share the canonical list.
-			const options = MOOD_POLL_OPTIONS.map(t => ({ text: t }));
-
-			// Phase 1 (2026-06-02): switched from raw fetch to telegram.sendPoll
-			// so the call goes through tgApi's 429 / 5xx retry + structured
-			// error logging. Previously a transient Telegram error silently
-			// dropped the poll and the user got nothing.
-			const pollRes = await telegram.sendPoll(
-				chatId,
-				CHECKIN_THREAD_ID,
-				MOOD_POLL_QUESTION,
-				options,
-				env,
-				{ isAnonymous: false, type: 'regular' },
-			);
-			// TelegramMessage covers the common message shape; poll messages
-			// additionally carry a `poll` field with the new poll's id. Cast
-			// inline so we don't widen the global TelegramMessage type for one
-			// call site.
-			const pollResult = pollRes.result as (TelegramMessage & { poll?: { id?: string } }) | undefined;
-			const pollId = pollResult?.poll?.id;
-			if (pollId) {
-				// Stash source so the poll_answer webhook handler knows which
-				// path triggered this poll. Distinguishes manual /mood from
-				// cron-fired evening poll for the source-tracking column.
-				// 2026-06-03: TTL bumped 1h -> 24h (pattern a). User can come
-				// back later in the day and the poll context survives.
-				await env.CHAT_KV.put(
-					`mood_poll_${pollId}`,
-					JSON.stringify({
-						userId,
-						chatId,
-						timestamp: Date.now(),
-						source: task.source ?? null,
-					}),
-					{ expirationTtl: 86400 },
-				);
-
-				// 2026-06-03 (pattern c, 24h resume): mark the flow as pending
-				// so the dispatcher can detect a stuck check-in and offer
-				// Continue / Skip. Cleared in:
-				//   - poll.ts on score received (advances stage)
-				//   - mood-callbacks.ts runEmotionsDoneWork on completion
-				//   - callback.ts mood_resume_skip
-				await env.CHAT_KV.put(
-					`mood_flow_pending_${userId}`,
-					JSON.stringify({ stage: 'awaiting_score', startedAt: Date.now() }),
-					{ expirationTtl: 86400 }
-				).catch(() => {});
-				// Clear any stale resume-offered flag from a previous abandoned
-				// flow so the resume prompt can fire again on THIS check-in.
-				await env.CHAT_KV.delete(`mood_flow_resume_offered_${userId}`).catch(() => {});
-			} else {
-				// Send genuinely failed (after tgApi's internal retries). The
-				// queue itself won't retry mood_poll because tgApi returns a
-				// resolved response on API-level errors; the throw branch only
-				// fires on network failure. Logging loud so we can spot this
-				// in wrangler tail.
-				log.warn('mood_poll_send_failed', {
-					userId,
-					chatId,
-					ok: pollRes.ok,
-					description: pollRes.description,
-					errorCode: pollRes.error_code,
-				});
-			}
-			break;
-		}
-
-		case 'mood_score_received': {
-			// Phase 1 (2026-06-02): the poll_answer handler upserted the
-			// score with source, then enqueued this task. We run the heavy
-			// Gemini Pro analysis here so the 15-min wall clock applies
-			// instead of the webhook's 30s waitUntil ceiling. The actual
-			// work lives in bot/poll.ts so AI logic stays colocated with
-			// the persona / mental-health prompt context.
-			if (typeof task.score !== 'number') {
-				log.warn('mood_score_received_no_score', { userId });
-				break;
-			}
-			const threadId = task.threadId ?? CHECKIN_THREAD_ID;
-			if (task.score <= 1 || task.score >= 9) {
-				await runClinicalConcernWork(env, userId, chatId, threadId, task.score);
-			} else {
-				await runMoodAnalysisWork(env, userId, chatId, threadId, task.score);
-			}
-			break;
-		}
-
-		case 'mood_emotions_done': {
-			// Phase 1 (2026-06-02): the Done-button callback saved the
-			// selected emotions, then enqueued this task. The therapeutic
-			// summary Gemini Pro call (~2000 tokens, thinking high) runs
-			// here so the 15-min wall clock applies. Work function lives
-			// in bot/mood-callbacks.ts.
-			const threadId = task.threadId ?? CHECKIN_THREAD_ID;
-			const selected = Array.isArray(task.selectedEmotions) ? task.selectedEmotions : [];
-			await runEmotionsDoneWork(env, userId, chatId, threadId, selected);
-			break;
-		}
-
 		case 'med_nudge': {
 			const pending = await env.CHAT_KV.get(`med_pending_${userId}`);
 			if (!pending) break;
@@ -407,7 +277,7 @@ async function processTask(task: QueueTask, env: Env, attempts: number): Promise
 				userId,
 				chatId: qChatId,
 				msgId: task.message.message_id,
-				forceProLane: !!task.forceProLane,
+				forceHeavyLane: !!task.forceHeavyLane,
 				attempts,
 			});
 
@@ -418,7 +288,7 @@ async function processTask(task: QueueTask, env: Env, attempts: number): Promise
 
 			try {
 				await handleMessage(task.message, env, allTools, {
-					forceProLane: task.forceProLane,
+					forceHeavyLane: task.forceHeavyLane,
 					curatorResult: task.curatorResult as any,
 				});
 				log.info('queue_user_message_done', { userId, chatId: qChatId });

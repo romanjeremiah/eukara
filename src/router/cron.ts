@@ -133,21 +133,6 @@ async function enqueueHealthTasks(
 		}
 	}
 
-	const eveningHour = (await getSchedule(env, `schedule_${userId}_evening`, { hour: 21, minute: 0 })).hour;
-	if (hour === eveningHour) {
-		const key = `checkin_${userId}_evening_${today}`;
-		if (!await env.CHAT_KV.get(key)) {
-			// 2026-06-02 Phase 1: pass source so the row gets tagged as
-			// cron_poll (highest precedence, distinct from manual /mood).
-			await env.TASK_QUEUE.send({
-				type: 'mood_poll',
-				userId,
-				chatId: userId,
-				source: 'cron_poll',
-			});
-			await env.CHAT_KV.put(key, '1', { expirationTtl: 86400 });
-		}
-	}
 }
 
 async function getSchedule(env: Env, key: string, defaults: ScheduleConfig): Promise<ScheduleConfig> {

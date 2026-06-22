@@ -23,7 +23,6 @@
 
 import { log } from './lib/logger';
 import { handleMessage, handleCallback, handleCommand } from './bot';
-import { handlePollAnswer } from './bot/poll';
 import { handleCron } from './router/cron';
 import { handleQueue } from './router/queue';
 import { willHitHeavyLane } from './ai/router';
@@ -167,17 +166,6 @@ async function dispatchMessage(
 	// Cheap KV read, no harm in duplication.
 	const healthCheckin = await env.CHAT_KV.get(`health_checkin_active_${userId}`);
 
-	// 2026-06-03 (pattern c, 24h resume): if there's a pending mood flow
-	// from earlier and it's been idle for a while, gently surface a
-	// Continue / Skip prompt before processing the user's actual message.
-	// Fires AT MOST ONCE per pending flow (mood_flow_resume_offered_*
-	// guards re-prompting). Set in queue.ts mood_poll and poll.ts
-	// handlePollAnswer; cleared on completion or skip.
-	//
-	// Non-blocking: we send the prompt and continue with normal routing
-	// so the user's actual message still gets a reply.
-	await maybeOfferMoodResume(msg, userId, env, ctx);
-
 	// Layer A1: Pre-gen Intent Triage
 	const curatorResult = await evaluateIntent(userText, env);
 
@@ -311,10 +299,6 @@ function routeUpdate(update: TelegramUpdate, env: Env): Promise<void> | null {
 		return handleCallback(update.callback_query, env);
 	}
 
-	if (update.poll_answer) {
-		return handlePollAnswer(update.poll_answer, env);
-	}
-
 	// Message updates take the dispatchMessage path above; this branch
 	// is for safety only.
 	if (update.message) {
@@ -384,84 +368,5 @@ async function handleRegisterCommands(env: Env): Promise<Response> {
 }
 
 // ============================================================
-// Mood resume helper (2026-06-03, pattern c)
+// End
 // ============================================================
-
-interface MoodFlowPending {
-	stage?: 'awaiting_score' | 'awaiting_emotions' | string;
-	startedAt?: number;
-}
-
-/**
- * If the user has an idle pending mood flow and we haven't already
- * offered a resume on this flow, send a soft Continue / Skip prompt.
- * Sets the offered flag to prevent re-prompting. Never blocks the
- * caller — errors are swallowed because failing to send the prompt
- * shouldn't break the user's actual message.
- *
- * Stage advancement is treated as user activity: the timestamp in
- * mood_flow_pending is updated at each stage transition (queue.ts
- * mood_poll, poll.ts handlePollAnswer). If startedAt is more than
- * MOOD_RESUME_IDLE_MS old, we assume the user walked away and offer
- * to resume.
- */
-async function maybeOfferMoodResume(
-	msg: TelegramMessage,
-	userId: number,
-	env: Env,
-	ctx: ExecutionContext,
-): Promise<void> {
-	try {
-		const [pendingRaw, alreadyOffered] = await Promise.all([
-			env.CHAT_KV.get(`mood_flow_pending_${userId}`),
-			env.CHAT_KV.get(`mood_flow_resume_offered_${userId}`),
-		]);
-		if (!pendingRaw || alreadyOffered) return;
-
-		let pending: MoodFlowPending | null = null;
-		try { pending = JSON.parse(pendingRaw) as MoodFlowPending; }
-		catch { return; } // malformed payload — ignore silently
-
-		if (!pending?.startedAt) return;
-		const idleMs = Date.now() - pending.startedAt;
-		if (idleMs < MOOD_RESUME_IDLE_MS) return;
-
-		const stageLabel = pending.stage === 'awaiting_emotions'
-			? 'You picked a score earlier but didn\'t finish selecting emotions.'
-			: 'You started a check-in earlier but didn\'t answer the poll.';
-		const body = `📌 <b>Your check-in is still open.</b>\n${stageLabel}`;
-		const markup = {
-			inline_keyboard: [[
-				{ text: '↻ Continue', callback_data: 'mood_resume_continue' },
-				{ text: '✖ Skip', callback_data: 'mood_resume_skip' },
-			]],
-		};
-
-		const threadId = msg.message_thread_id ? String(msg.message_thread_id) : 'default';
-
-		// Set offered flag BEFORE sending so a parallel webhook (unlikely
-		// but possible if Telegram retries) can't double-prompt.
-		await env.CHAT_KV.put(
-			`mood_flow_resume_offered_${userId}`,
-			String(Date.now()),
-			{ expirationTtl: 86400 },
-		);
-
-		// Send via ctx.waitUntil so the dispatcher continues to the user's
-		// actual message processing without waiting for the Telegram API
-		// round-trip. Fire-and-forget; the prompt arrives slightly before
-		// or after the reply, both orderings are acceptable.
-		ctx.waitUntil(
-			telegram.sendMessage(msg.chat.id, threadId, body, env, { markup })
-				.catch(() => {}),
-		);
-
-		log.info('mood_flow_resume_offered', {
-			userId,
-			stage: pending.stage,
-			idleMs,
-		});
-	} catch (e) {
-		log.warn('mood_resume_check_failed', { userId, msg: (e as Error).message });
-	}
-}

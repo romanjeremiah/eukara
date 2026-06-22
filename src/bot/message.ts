@@ -13,6 +13,7 @@ import type { CuratorResult } from '../ai/curator';
 import { CloudflareProvider } from '../ai/cloudflare';
 import { CF_MODELS } from '../config/models';
 import * as telegram from '../lib/telegram';
+import { handleWizardMessage } from './mood-wizard';
 import { stripLeakedThoughts, splitMessage, normaliseMarkdown, enforceTagNesting } from '../lib/formatting';
 import { log } from '../lib/logger';
 import { loadHistory, saveHistory } from '../lib/history';
@@ -191,7 +192,7 @@ export async function handleMessage(
 	msg: TelegramMessage,
 	env: Env,
 	tools: AITool[],
-	options?: { forceProLane?: boolean, curatorResult?: CuratorResult },
+	options?: { forceHeavyLane?: boolean, curatorResult?: CuratorResult },
 	ctx?: ExecutionContext
 ): Promise<void> {
 	const chatId = msg.chat.id;
@@ -205,6 +206,10 @@ export async function handleMessage(
 	// A message is processable if it has text OR a supported media attachment.
 	const media = extractMediaFromMessage(msg);
 	if (!userText.trim() && !media) return;
+
+	// B6.5: Mood Wizard interception
+	const isWizardHandled = await handleWizardMessage(msg, env);
+	if (isWizardHandled) return;
 
 	// Track last activity so proactive outreach doesn't double-text:
 	// the cron spontaneous-outreach guard reads last_seen_<userId> and
@@ -362,7 +367,7 @@ export async function handleMessage(
 
 	// Route to AI provider. Media presence forces Gemini routing
 	// because Workers AI chat models are text-only.
-	// `options.forceProLane` is set by the webhook dispatcher when the
+	// `options.forceHeavyLane` is set by the webhook dispatcher when the
 	// sticky-Pro topic classifier decided the conversation should stay
 	// on Pro despite no emotional keywords in this turn.
 	const { provider, route } = getProvider(
@@ -371,7 +376,7 @@ export async function handleMessage(
 			isOwner: !!isOwner,
 			healthCheckinActive: healthCheckin,
 			hasMedia: !!media,
-			forceProLane: options?.forceProLane,
+			forceHeavyLane: options?.forceHeavyLane,
 			curatorResult,
 		},
 		env
@@ -782,7 +787,7 @@ export async function handleMessage(
 		provider: route.provider,
 		model: route.model.split('/').pop(),
 		route_reason: route.reason,
-		force_pro_lane: !!options?.forceProLane,
+		force_pro_lane: !!options?.forceHeavyLane,
 		inputLen: userText.length,
 		outputLen: fullText.length,
 		hasMedia: !!media,

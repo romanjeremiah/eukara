@@ -9,16 +9,8 @@ import type { TelegramCallbackQuery } from '../types/telegram';
 import * as telegram from '../lib/telegram';
 import { generateSpeech } from '../lib/tts';
 import { log } from '../lib/logger';
-import {
-	NEXT_CATEGORY,
-	CATEGORY_LABEL,
-	emotionButtonRows,
-	emotionsByCategory,
-	type EmotionCategory,
-} from '../config/emotions';
-import { getPresetById } from '../config/persona-presets';
 import { findPresetByTz } from '../config/timezone-presets';
-import { handleEmotionToggle, handleEmotionsDone } from './mood-callbacks';
+import { handleWizardCallback } from './mood-wizard';
 import { buildChecklistText } from '../tools/checklist-tools';
 import * as user from '../services/user';
 import * as persona from '../services/persona';
@@ -38,6 +30,9 @@ export async function handleCallback(
 		? String(query.message.message_thread_id) : 'default';
 
 	log.info('callback', { chatId, data });
+
+	const wizardHandled = await handleWizardCallback(query, env);
+	if (wizardHandled) return;
 
 	// --- Voice ---
 	if (data === 'action_voice') {
@@ -70,103 +65,6 @@ export async function handleCallback(
 		await telegram.editMessage(chatId, msgId,
 			'⚙️ <b>Architecture review cancelled.</b> Run /architect to start fresh.', env);
 		await telegram.answerCallbackQuery(query.id, env, { text: 'Cancelled.' }).catch(() => {});
-
-	// --- Mood category selection (Positive / Negative / Dissociative) ---
-	// After the poll answer's clinical analysis, the user taps one of
-	// three category buttons. We show the corresponding emotion grid,
-	// reset the selection buffer, and offer "Next: <other>" plus "Done".
-	// Cycling order lives in NEXT_CATEGORY in src/config/emotions.ts.
-	//
-	// 2026-06-03: third category 🌫️ Dissociative added for borderline /
-	// dissociative episodes that don't fit cleanly into positive or
-	// negative valence.
-	} else if (data === 'mood_cat_positive' || data === 'mood_cat_negative' || data === 'mood_cat_dissociative') {
-		const userId = query.from.id;
-		const cat = data.replace('mood_cat_', '') as EmotionCategory;
-
-		await telegram.editMessageReplyMarkup(chatId, msgId, null, env).catch(() => {});
-		await env.CHAT_KV.put(
-			`mood_emo_selected_${userId}`,
-			'[]',
-			// 2026-06-03: TTL bumped 1h -> 24h so a user who walks away
-			// mid-flow can still come back and find their partial
-			// selection intact.
-			{ expirationTtl: 86400 }
-		);
-
-		const list = emotionsByCategory(cat);
-		const rows = emotionButtonRows(list, NEXT_CATEGORY[cat]);
-
-		await telegram.sendMessage(chatId, threadId,
-			`<b>Select all ${CATEGORY_LABEL[cat].toLowerCase()} emotions that resonate.</b>\nTap each one, then ➡️ Next or ✅ Done.`,
-			env, { markup: { inline_keyboard: rows } });
-		await telegram.answerCallbackQuery(query.id, env).catch(() => {});
-
-	// --- Mood: switch to the next category mid-flow ---
-	} else if (data.startsWith('mood_emo_next_')) {
-		const nextRaw = data.replace('mood_emo_next_', '');
-		const next: EmotionCategory =
-			nextRaw === 'positive' || nextRaw === 'negative' || nextRaw === 'dissociative'
-				? nextRaw
-				: 'positive';
-
-		await telegram.editMessageReplyMarkup(chatId, msgId, null, env).catch(() => {});
-
-		const list = emotionsByCategory(next);
-		// 2026-06-03: with three categories we always show the next one
-		// on cycling, even after the user has been around the loop. They
-		// can stop at any point with "Done".
-		const rows = emotionButtonRows(list, NEXT_CATEGORY[next]);
-
-		await telegram.sendMessage(chatId, threadId,
-			`<b>Now select any ${CATEGORY_LABEL[next].toLowerCase()} emotions.</b>\nTap each one, then ➡️ Next or ✅ Done.`,
-			env, { markup: { inline_keyboard: rows } });
-		await telegram.answerCallbackQuery(query.id, env).catch(() => {});
-
-	// --- Mood: user done, synthesise full therapeutic summary ---
-	} else if (data === 'mood_emo_done') {
-		await handleEmotionsDone(query, env);
-
-	// --- Mood: resume buttons (from dispatchMessage soft-resume prompt) ---
-	// Pattern (c) 2026-06-03: when the user comes back to chat with a
-	// pending mood flow, the dispatcher (src/index.ts dispatchMessage)
-	// sends a soft "check-in still open" prompt with Continue / Skip
-	// buttons. These callbacks handle those taps.
-	} else if (data === 'mood_resume_continue') {
-		const userId = query.from.id;
-		await telegram.editMessageReplyMarkup(chatId, msgId, null, env).catch(() => {});
-		await telegram.answerCallbackQuery(query.id, env, { text: 'Restarting the check-in...' }).catch(() => {});
-
-		// Send a fresh poll via the existing queue path. Same task type
-		// the cron uses, so downstream handlers work unchanged.
-		await env.CHAT_KV.delete(`mood_flow_resume_offered_${userId}`).catch(() => {});
-		if (env.TASK_QUEUE) {
-			await env.TASK_QUEUE.send({
-				type: 'mood_poll',
-				userId,
-				chatId,
-				source: 'manual_resume',
-			});
-			log.info('mood_flow_resumed', { userId });
-		} else {
-			log.warn('mood_flow_resume_no_queue_binding', { userId });
-		}
-
-	} else if (data === 'mood_resume_skip') {
-		const userId = query.from.id;
-		await telegram.editMessageReplyMarkup(chatId, msgId, null, env).catch(() => {});
-		await Promise.all([
-			env.CHAT_KV.delete(`mood_flow_pending_${userId}`),
-			env.CHAT_KV.delete(`mood_flow_resume_offered_${userId}`),
-			env.CHAT_KV.delete(`mood_emo_selected_${userId}`),
-			env.CHAT_KV.delete(`health_checkin_active_${userId}`),
-		]).catch(() => {});
-		await telegram.answerCallbackQuery(query.id, env, { text: 'Skipped. Catch you on the next one.' }).catch(() => {});
-		log.info('mood_flow_skipped', { userId });
-
-	// --- Mood: individual emotion toggle ---
-	} else if (data.startsWith('mood_emo_')) {
-		await handleEmotionToggle(query, env);
 
 	// --- Persona preset / mode selection ---
 	} else if (data.startsWith('persona_switch_')) {
