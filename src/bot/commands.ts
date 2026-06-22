@@ -152,18 +152,19 @@ export async function handleCommand(
 			const userId = msg.from?.id;
 			if (!userId) return true;
 			await user.ensureUser(env, userId, msg.from?.first_name, msg.from?.username, msg.from?.language_code);
-			const current = await persona.getPersonaConfig(env, userId);
-			// Infer which preset (if any) matches the user's current config.
-			// Matching is best-effort — evolved_traits and communication_notes
-			// can drift without breaking the match.
-			const currentPreset = inferCurrentPreset(current);
-			const header = currentPreset
-				? `<b>Your current mode: ${currentPreset.emoji} ${currentPreset.label}</b>\n\n<i>${currentPreset.description}</i>\n\nPick a new one:`
-				: `<b>Pick a conversational mode</b>\n\nYour current settings don't match any preset exactly — choose one below to reset.`;
-			const rows = PERSONA_PRESETS.map(p => [{
-				text: `${p.emoji} ${p.label}${currentPreset?.id === p.id ? ' ✓' : ''}`,
-				callback_data: `persona_preset_${p.id}`,
-			}]);
+			
+			const kvPersona = await env.CHAT_KV.get(`active_persona_${userId}`);
+			const current = kvPersona || 'base';
+
+			const header = `<b>Pick a conversational persona</b>\n\nChoose the personality you want to interact with. If you choose Base Eukara, the system will dynamically route you based on your input intent.`;
+
+			const rows = [
+				[{ text: `🟢 Base Eukara (Dynamic)${current === 'base' ? ' ✓' : ''}`, callback_data: `persona_switch_base` }],
+				[{ text: `🌙 Luna (Mindfulness)${current === 'luna' ? ' ✓' : ''}`, callback_data: `persona_switch_luna` }],
+				[{ text: `🏛 Socrates (Analytical)${current === 'socrates' ? ' ✓' : ''}`, callback_data: `persona_switch_socrates` }],
+				[{ text: `✨ Nova (Creative)${current === 'nova' ? ' ✓' : ''}`, callback_data: `persona_switch_nova` }]
+			];
+
 			await telegram.sendMessage(chatId, threadId, header, env, {
 				markup: { inline_keyboard: rows },
 			});

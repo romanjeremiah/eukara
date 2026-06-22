@@ -168,31 +168,31 @@ export async function handleCallback(
 	} else if (data.startsWith('mood_emo_')) {
 		await handleEmotionToggle(query, env);
 
-	// --- Persona preset selection ---
-	} else if (data.startsWith('persona_preset_')) {
-		const presetId = data.replace('persona_preset_', '');
-		const preset = getPresetById(presetId);
-		if (!preset) {
-			await telegram.answerCallbackQuery(query.id, env, {
-				text: 'Unknown preset.',
-			}).catch(() => {});
-			return;
-		}
+	// --- Persona preset / mode selection ---
+	} else if (data.startsWith('persona_switch_')) {
+		const newPersona = data.replace('persona_switch_', '');
 		const userId = query.from.id;
-		await persona.updatePersonaConfig(env, userId, {
-			tone: preset.tone,
-			formality: preset.formality,
-			humour_level: preset.humour_level,
-			emoji_style: preset.emoji_style,
-			therapeutic_approach: preset.therapeutic_approach,
-		});
+		
+		if (newPersona === 'base') {
+			await env.CHAT_KV.delete(`active_persona_${userId}`);
+		} else {
+			await env.CHAT_KV.put(`active_persona_${userId}`, newPersona);
+		}
+
+		const names: Record<string, string> = {
+			base: '🟢 Base Eukara (Dynamic)',
+			luna: '🌙 Luna (Mindfulness)',
+			socrates: '🏛 Socrates (Analytical)',
+			nova: '✨ Nova (Creative)'
+		};
+
 		await telegram.editMessage(chatId, msgId,
-			`<b>Mode set: ${preset.emoji} ${preset.label}</b>\n\n<i>${preset.description}</i>\n\n<i>You'll feel the shift in the next message.</i>`,
+			`<b>Persona set: ${names[newPersona] || newPersona}</b>\n\n<i>You'll feel the shift in the next message.</i>`,
 			env);
 		await telegram.answerCallbackQuery(query.id, env, {
-			text: `✓ ${preset.label}`,
+			text: `✓ ${newPersona}`,
 		}).catch(() => {});
-		log.info('persona_preset_applied', { userId, presetId });
+		log.info('persona_switched', { userId, newPersona });
 
 	// --- Forget: category-specific deletion ---
 	} else if (data.startsWith('forget_cat_')) {

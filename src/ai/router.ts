@@ -7,7 +7,7 @@
 //
 // 2026-06-04 changes:
 //   - Pro lane primary is now `gemini-3.5-flash` (was
-//     `gemini-pro-latest`). Pro-latest demoted to Tier 2 fallback
+//     `gemini-3.1-pro-preview`). Pro-latest demoted to Tier 2 fallback
 //     in the cascade. Reason: pro-latest's Google-side instability
 //     was costing every Pro turn 30-90s before falling through.
 //     Flash handles multimodal + tool combination at a fraction of
@@ -26,7 +26,8 @@
 // ============================================================
 
 import type { AIProvider, ModelRoute } from '../types/ai';
-import { CF_MODELS, GEMINI_MODELS, COMPLEXITY_PATTERNS } from '../config/models';
+import { CF_MODELS, GEMINI_MODELS } from '../config/models';
+import type { CuratorResult } from './curator';
 import { CloudflareProvider } from './cloudflare';
 import { GeminiProvider } from './gemini';
 import { log } from '../lib/logger';
@@ -45,6 +46,7 @@ export interface RouterContext {
 	 * is still on the same topic as the previous Pro exchange.
 	 */
 	forceProLane?: boolean;
+	curatorResult?: CuratorResult;
 }
 
 /**
@@ -52,7 +54,7 @@ export interface RouterContext {
  * Returns which provider + model + thinking level to use.
  */
 export function routeMessage(ctx: RouterContext): ModelRoute {
-	const { userText, healthCheckinActive, hasMedia, forceProLane } = ctx;
+	const { userText, healthCheckinActive, hasMedia, forceProLane, curatorResult } = ctx;
 
 	// Sticky Pro: previous turn was Pro and the topic classifier said
 	// the new message is still in the same topic. Force Pro lane so the
@@ -88,38 +90,36 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 		};
 	}
 
-	// Emotional / therapeutic messages: Gemini Pro
-	if (COMPLEXITY_PATTERNS.emotional.test(userText)) {
-		return {
-			provider: 'gemini',
-			model: GEMINI_MODELS.proPrimary,
-			reason: 'emotional_content',
-			enableGrounding: true,
-		};
-	}
+	// Triage via Curator (Layer A1)
+	if (curatorResult) {
+		if (curatorResult.intent === 'emotional_vent' || curatorResult.intent === 'crisis') {
+			return {
+				provider: 'gemini',
+				model: GEMINI_MODELS.proPrimary,
+				reason: 'emotional_content',
+				enableGrounding: true,
+			};
+		}
 
-	// Code / architecture: Qwen3 30B on CF AI (free, strong reasoning).
-	// Grounding NOT enabled — Qwen3 30B web_search_options support
-	// unverified against current CF schema.
-	if (COMPLEXITY_PATTERNS.code.test(userText) || /```/.test(userText)) {
-		return {
-			provider: 'cloudflare',
-			model: CF_MODELS.code,
-			reason: 'code_content',
-			thinkingLevel: 'HIGH',
-			enableGrounding: false,
-		};
-	}
+		if (curatorResult.intent === 'code') {
+			return {
+				provider: 'cloudflare',
+				model: CF_MODELS.code,
+				reason: 'code_content',
+				thinkingLevel: 'HIGH',
+				enableGrounding: false,
+			};
+		}
 
-	// Analytical requests: Qwen3 30B on CF AI
-	if (COMPLEXITY_PATTERNS.analytical.test(userText)) {
-		return {
-			provider: 'cloudflare',
-			model: CF_MODELS.code,
-			reason: 'analytical_content',
-			thinkingLevel: 'HIGH',
-			enableGrounding: false,
-		};
+		if (curatorResult.intent === 'functional') {
+			return {
+				provider: 'cloudflare',
+				model: CF_MODELS.code,
+				reason: 'analytical_content',
+				thinkingLevel: 'HIGH',
+				enableGrounding: false,
+			};
+		}
 	}
 
 	// Long messages (>300 chars): bump to reasoning model
@@ -140,7 +140,6 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 		provider: 'cloudflare',
 		model: CF_MODELS.chat,
 		reason: 'default_casual',
-		thinkingLevel: 'LOW',
 		enableGrounding: true,
 	};
 }
@@ -156,13 +155,13 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
  * by the dispatcher, not by this function.
  */
 export function willHitProLane(
-	userText: string,
 	hasMedia: boolean,
 	healthCheckinActive: string | null,
+	curatorResult?: CuratorResult,
 ): boolean {
 	if (hasMedia) return true;
 	if (healthCheckinActive) return true;
-	if (COMPLEXITY_PATTERNS.emotional.test(userText)) return true;
+	if (curatorResult && (curatorResult.intent === 'emotional_vent' || curatorResult.intent === 'crisis')) return true;
 	return false;
 }
 

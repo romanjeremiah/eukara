@@ -8,6 +8,8 @@
 import type { TelegramMessage } from '../types/telegram';
 import type { AIMessage, AIMessagePart, AIResponse, AITool, ModelRoute, ToolContext } from '../types/ai';
 import { getProvider } from '../ai/router';
+import { evaluateIntent } from '../ai/curator';
+import type { CuratorResult } from '../ai/curator';
 import { GeminiProvider } from '../ai/gemini';
 import { CloudflareProvider } from '../ai/cloudflare';
 import { GEMINI_MODELS, CF_MODELS } from '../config/models';
@@ -45,7 +47,7 @@ import { getWeather, formatWeatherForContext } from '../services/weather';
 //
 //   Tier 1 (30s):  gemini-3.5-flash         3.x family, multimodal,
 //                                            tool combination, fast.
-//   Tier 2 (60s):  gemini-pro-latest         Deeper reasoning when
+//   Tier 2 (60s):  gemini-3.1-pro-preview         Deeper reasoning when
 //                                            flash isn't enough.
 //   Tier 3 (30s):  @cf/google/gemma-4-26b    Cross-provider resilience,
 //                                            no Google dependency.
@@ -117,81 +119,84 @@ async function runProCascade(
 	args: ChatArgs,
 	env: Env,
 ): Promise<{ response: AIResponse; tierUsed: string }> {
-	// Tier 1: configured route (gemini-3.5-flash by default), 30s budget.
-	try {
-		const response = await withTimeout(
-			provider.chat(args.messages, args.tools, {
-				systemInstruction: args.systemInstruction,
-				thinkingLevel: args.thinkingLevel,
-				enableGrounding: args.enableGrounding,
-			}),
-			30_000,
-			'tier1_flash'
-		);
-		return { response, tierUsed: 'tier1_flash' };
-	} catch (err) {
-		log.warn('pro_lane_tier1_failed', { model: route.model, msg: (err as Error).message });
-	}
+	for (let cascadeAttempt = 1; cascadeAttempt <= 2; cascadeAttempt++) {
+		// Tier 1: configured route (gemini-3.5-flash by default), 30s budget.
+		try {
+			const response = await withTimeout(
+				provider.chat(args.messages, args.tools, {
+					systemInstruction: args.systemInstruction,
+					thinkingLevel: args.thinkingLevel,
+					enableGrounding: args.enableGrounding,
+				}),
+				30_000,
+				'tier1_flash'
+			);
+			return { response, tierUsed: `tier1_flash_attempt_${cascadeAttempt}` };
+		} catch (err) {
+			log.warn(`pro_lane_tier1_failed_attempt_${cascadeAttempt}`, { model: route.model, msg: (err as Error).message });
+		}
 
-	// Tier 2: gemini-pro-latest. Same family as Tier 1 (tool combination +
-	// thoughtSignature continuity preserved), 60s budget for slower turns.
-	try {
-		const proLatest = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.proLatest);
-		const response = await withTimeout(
-			proLatest.chat(args.messages, args.tools, {
-				systemInstruction: args.systemInstruction,
-				thinkingLevel: args.thinkingLevel,
-				enableGrounding: args.enableGrounding,
-			}),
-			60_000,
-			'tier2_pro_latest'
-		);
-		log.info('pro_lane_tier2_recovered', { model: GEMINI_MODELS.proLatest });
-		return { response, tierUsed: 'tier2_pro_latest' };
-	} catch (err) {
-		log.warn('pro_lane_tier2_failed', { model: GEMINI_MODELS.proLatest, msg: (err as Error).message });
-	}
+		// Tier 2: gemini-3.1-pro-preview. Same family as Tier 1 (tool combination +
+		// thoughtSignature continuity preserved), 60s budget for slower turns.
+		try {
+			const proLatest = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.proLatest);
+			const response = await withTimeout(
+				proLatest.chat(args.messages, args.tools, {
+					systemInstruction: args.systemInstruction,
+					thinkingLevel: args.thinkingLevel,
+					enableGrounding: args.enableGrounding,
+				}),
+				60_000,
+				'tier2_pro_latest'
+			);
+			log.info(`pro_lane_tier2_recovered_attempt_${cascadeAttempt}`, { model: GEMINI_MODELS.proLatest });
+			return { response, tierUsed: `tier2_pro_latest_attempt_${cascadeAttempt}` };
+		} catch (err) {
+			log.warn(`pro_lane_tier2_failed_attempt_${cascadeAttempt}`, { model: GEMINI_MODELS.proLatest, msg: (err as Error).message });
+		}
 
-	// Tier 3: Cloudflare Gemma 4. Cross-provider resilience, 30s budget.
-	try {
-		const cfFallback = new CloudflareProvider(env.AI, CF_MODELS.chat);
-		const response = await withTimeout(
-			cfFallback.chat(args.messages, args.tools, {
-				systemInstruction: args.systemInstruction,
-				thinkingLevel: args.thinkingLevel,
-				enableGrounding: args.enableGrounding,
-			}),
-			30_000,
-			'tier3_cf_gemma'
-		);
-		log.info('pro_lane_tier3_recovered', { model: CF_MODELS.chat });
-		return { response, tierUsed: 'tier3_cf_gemma' };
-	} catch (err) {
-		log.warn('pro_lane_tier3_failed', { model: CF_MODELS.chat, msg: (err as Error).message });
-	}
+		// Tier 3: Cloudflare Gemma 4. Cross-provider resilience, 30s budget.
+		try {
+			const cfFallback = new CloudflareProvider(env.AI, CF_MODELS.chat);
+			const response = await withTimeout(
+				cfFallback.chat(args.messages, args.tools, {
+					systemInstruction: args.systemInstruction,
+					thinkingLevel: args.thinkingLevel,
+					enableGrounding: args.enableGrounding,
+				}),
+				30_000,
+				'tier3_cf_gemma'
+			);
+			log.info(`pro_lane_tier3_recovered_attempt_${cascadeAttempt}`, { model: CF_MODELS.chat });
+			return { response, tierUsed: `tier3_cf_gemma_attempt_${cascadeAttempt}` };
+		} catch (err) {
+			log.warn(`pro_lane_tier3_failed_attempt_${cascadeAttempt}`, { model: CF_MODELS.chat, msg: (err as Error).message });
+		}
 
-	// Tier 4: gemini-3.1-flash-lite. Last-resort Gemini, 30s budget.
-	// Reached only when both Google Pro/Flash AND Cloudflare Gemma have
-	// failed in the same turn — rare but possible during multi-provider
-	// degradation. If this also fails, surface the error to the user.
-	try {
-		const flashLite = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.flashLite);
-		const response = await withTimeout(
-			flashLite.chat(args.messages, args.tools, {
-				systemInstruction: args.systemInstruction,
-				thinkingLevel: args.thinkingLevel,
-				enableGrounding: args.enableGrounding,
-			}),
-			30_000,
-			'tier4_flash_lite'
-		);
-		log.info('pro_lane_tier4_recovered', { model: GEMINI_MODELS.flashLite });
-		return { response, tierUsed: 'tier4_flash_lite' };
-	} catch (err) {
-		const error = err as Error;
-		log.error('pro_lane_tier4_failed', { model: GEMINI_MODELS.flashLite, msg: error.message });
-		throw error;
+		// Tier 4: gemini-3.1-flash-lite. Last-resort Gemini, 30s budget.
+		// Reached only when both Google Pro/Flash AND Cloudflare Gemma have
+		// failed in the same turn — rare but possible during multi-provider
+		// degradation. If this also fails, surface the error to the user.
+		try {
+			const flashLite = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.flashLite);
+			const response = await withTimeout(
+				flashLite.chat(args.messages, args.tools, {
+					systemInstruction: args.systemInstruction,
+					thinkingLevel: args.thinkingLevel,
+					enableGrounding: args.enableGrounding,
+				}),
+				30_000,
+				'tier4_flash_lite'
+			);
+			log.info(`pro_lane_tier4_recovered_attempt_${cascadeAttempt}`, { model: GEMINI_MODELS.flashLite });
+			return { response, tierUsed: `tier4_flash_lite_attempt_${cascadeAttempt}` };
+		} catch (err) {
+			const error = err as Error;
+			log.error(`pro_lane_tier4_failed_attempt_${cascadeAttempt}`, { model: GEMINI_MODELS.flashLite, msg: error.message });
+			if (cascadeAttempt === 2) throw error;
+		}
 	}
+	throw new Error("Pro cascade exhausted after 2 attempts");
 }
 
 /**
@@ -212,55 +217,58 @@ async function runCasualCall(
 	provider: { chat: ProviderChat },
 	args: ChatArgs,
 ): Promise<{ response: AIResponse; tierUsed: string }> {
-	// Attempt 1: as configured. 60s gives CF Gemma room for grounding
-	// latency without being unbounded.
-	try {
-		const response = await withTimeout(
-			provider.chat(args.messages, args.tools, {
-				systemInstruction: args.systemInstruction,
-				thinkingLevel: args.thinkingLevel,
-				enableGrounding: args.enableGrounding,
-			}),
-			60_000,
-			'casual_primary'
-		);
-		return { response, tierUsed: 'casual_primary' };
-	} catch (err) {
-		const error = err as Error;
-		const msg = error.message;
-		const isTimeout = msg.includes('timed out');
-		const is5006 = msg.includes('5006') || msg.toLowerCase().includes('anyof at');
+	for (let cascadeAttempt = 1; cascadeAttempt <= 2; cascadeAttempt++) {
+		// Attempt 1: as configured. 60s gives CF Gemma room for grounding
+		// latency without being unbounded.
+		try {
+			const response = await withTimeout(
+				provider.chat(args.messages, args.tools, {
+					systemInstruction: args.systemInstruction,
+					thinkingLevel: args.thinkingLevel,
+					enableGrounding: args.enableGrounding,
+				}),
+				60_000,
+				'casual_primary'
+			);
+			return { response, tierUsed: `casual_primary_attempt_${cascadeAttempt}` };
+		} catch (err) {
+			const error = err as Error;
+			const msg = error.message;
+			const isTimeout = msg.includes('timed out');
+			const is5006 = msg.includes('5006') || msg.toLowerCase().includes('anyof at');
 
-		if (!args.enableGrounding || (!isTimeout && !is5006)) {
-			throw error;
+			if (!args.enableGrounding || (!isTimeout && !is5006)) {
+				if (cascadeAttempt === 2) throw error;
+			} else {
+				log.warn(`casual_retry_without_grounding_attempt_${cascadeAttempt}`, {
+					model: route.model,
+					reason: isTimeout ? 'timeout' : 'schema_5006',
+					msg,
+				});
+			}
 		}
 
-		log.warn('casual_retry_without_grounding', {
-			model: route.model,
-			reason: isTimeout ? 'timeout' : 'schema_5006',
-			msg,
-		});
+		// Attempt 2: same model, grounding disabled. 30s budget. This path
+		// is fast because grounding was the reason Attempt 1 was slow.
+		try {
+			const response = await withTimeout(
+				provider.chat(args.messages, args.tools, {
+					systemInstruction: args.systemInstruction,
+					thinkingLevel: args.thinkingLevel,
+					enableGrounding: false,
+				}),
+				30_000,
+				'casual_no_grounding'
+			);
+			log.info(`casual_no_grounding_recovered_attempt_${cascadeAttempt}`, { model: route.model });
+			return { response, tierUsed: `casual_no_grounding_attempt_${cascadeAttempt}` };
+		} catch (err) {
+			const error = err as Error;
+			log.error(`casual_no_grounding_failed_attempt_${cascadeAttempt}`, { model: route.model, msg: error.message });
+			if (cascadeAttempt === 2) throw error;
+		}
 	}
-
-	// Attempt 2: same model, grounding disabled. 30s budget. This path
-	// is fast because grounding was the reason Attempt 1 was slow.
-	try {
-		const response = await withTimeout(
-			provider.chat(args.messages, args.tools, {
-				systemInstruction: args.systemInstruction,
-				thinkingLevel: args.thinkingLevel,
-				enableGrounding: false,
-			}),
-			30_000,
-			'casual_no_grounding'
-		);
-		log.info('casual_no_grounding_recovered', { model: route.model });
-		return { response, tierUsed: 'casual_no_grounding' };
-	} catch (err) {
-		const error = err as Error;
-		log.error('casual_no_grounding_failed', { model: route.model, msg: error.message });
-		throw error;
-	}
+	throw new Error("Casual cascade exhausted after 2 attempts");
 }
 
 /**
@@ -289,7 +297,8 @@ export async function handleMessage(
 	msg: TelegramMessage,
 	env: Env,
 	tools: AITool[],
-	options?: { forceProLane?: boolean }
+	options?: { forceProLane?: boolean, curatorResult?: CuratorResult },
+	ctx?: ExecutionContext
 ): Promise<void> {
 	const chatId = msg.chat.id;
 	const userId = msg.from?.id;
@@ -411,6 +420,36 @@ export async function handleMessage(
 		}
 	}
 
+	// Layer A1: Pre-gen Intent Triage
+	// If the dispatcher didn't run it (e.g., non-owner traffic), run it now.
+	const curatorResult = options?.curatorResult ?? await evaluateIntent(userText, env);
+
+	// Layer A1: Clinical Safety Firewall (Hard Cut)
+	if (curatorResult.isCrisis) {
+		log.warn('clinical_safety_firewall_triggered', { userId, textPreview: userText.slice(0, 50) });
+		const crisisResponse = 'I hear you, and I want you to know you are not alone right now. If things feel unmanageable, Samaritans are on 116 123 and SHOUT take texts on 85258. What has been the heaviest part today?';
+		
+		const crisisBtns = {
+			inline_keyboard: [[
+				{ text: '🔊 Voice', callback_data: 'action_voice' },
+				{ text: '🗑️ Delete', callback_data: 'action_delete_msg', style: 'danger' as const },
+			]],
+		};
+
+		const sendRes = await telegram.sendMessage(chatId, threadId, crisisResponse, env, { markup: crisisBtns });
+		if (sendRes.ok) {
+			const priorHistory = await loadHistory(env, chatId, threadId);
+			const historyTurnText = media ? mediaPlaceholder(media.kind, userText) : userText;
+			const historyMessages: AIMessage[] = [
+				...priorHistory,
+				{ role: 'user', content: historyTurnText },
+				{ role: 'model', content: crisisResponse },
+			];
+			await saveHistory(env, chatId, threadId, historyMessages);
+		}
+		return;
+	}
+
 	// Route to AI provider. Media presence forces Gemini routing
 	// because Workers AI chat models are text-only.
 	// `options.forceProLane` is set by the webhook dispatcher when the
@@ -423,6 +462,7 @@ export async function handleMessage(
 			healthCheckinActive: healthCheckin,
 			hasMedia: !!media,
 			forceProLane: options?.forceProLane,
+			curatorResult,
 		},
 		env
 	);
@@ -473,18 +513,32 @@ export async function handleMessage(
 	// optional ambient context; null when the user's timezone isn't
 	// in the coords lookup or the API fetch failed.
 	const localNow = new Date().toLocaleString('en-GB', { timeZone: userTz });
+	
+	// Layer A0: Ingress Context Injection (Telemetry)
+	const telemetryRaw = await env.CHAT_KV.get(`telemetry_${userId}`);
+	let telemetryCtx = '';
+	if (telemetryRaw) {
+		try {
+			const t = JSON.parse(telemetryRaw);
+			telemetryCtx = `Device Telemetry: Battery ${t.battery}%${t.charging ? ' (Charging)' : ''}, Network: ${t.connection}`;
+		} catch {
+			telemetryCtx = `Device Telemetry: ${telemetryRaw}`;
+		}
+	}
+
 	const dynamicContext = [
 		`Local Time (${userTz}): ${localNow} | Unix: ${Math.floor(Date.now() / 1000)}`,
+		telemetryCtx,
 		formatWeatherForContext(weather),
 		memCtx ? `\nMEMORY:\n${memCtx}` : '',
 		semanticCtx,
 		episodeCtx ? `\n${episodeCtx}` : '',
 		proceduralCtx ? `\n${proceduralCtx}` : '',
 		graphCtx ? `\n${graphCtx}` : '',
-	].filter(Boolean).join('');
+	].filter(Boolean).join('\n');
 
 	// Build per-user system instruction (persona evolves per user)
-	const systemInstruction = await persona.buildSystemInstruction(env, userId, dynamicContext);
+	const systemInstruction = await persona.buildSystemInstruction(env, userId, dynamicContext, route.reason);
 
 	// Load prior conversation history — sanitised on load, tool-loop
 	// entries stripped. History is always text-only; the current turn
@@ -770,7 +824,7 @@ export async function handleMessage(
 	// user doesn't share.
 	const observationInput = userText || (media ? mediaPlaceholder(media.kind) : '');
 	if (sent && observationInput.length > 20 && fullText.length > 20) {
-		import('../ai/background').then(async ({ extractObservation }) => {
+		const bgTask = import('../ai/background').then(async ({ extractObservation }) => {
 			const obs = await extractObservation(env.AI, observationInput, fullText);
 			if (!obs || obs.includes('NOTHING_NEW')) return;
 
@@ -785,7 +839,11 @@ export async function handleMessage(
 					await knowledgeGraph.saveTriple(env, userId, subject.trim(), predicate.trim(), object.trim(), null, 'observation');
 				}
 			}
-		}).catch(e => log.error('observation_error', { msg: (e as Error).message }));
+		});
+
+		if (ctx) {
+			ctx.waitUntil(bgTask.catch(e => log.error('bg_observation_failed', { msg: (e as Error).message })));
+		}
 	}
 
 	log.info('message_handled', {

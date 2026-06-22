@@ -187,15 +187,14 @@ export async function sendMessage(
 	const cleanText = sanitizeHtml(text);
 	const payload: Record<string, unknown> = {
 		chat_id: chatId,
-		text: cleanText || '...',
-		parse_mode: 'HTML',
-		disable_web_page_preview: true,
+		rich_message: { html: cleanText || '...' },
+		disable_notification: false,
 	};
 	if (threadId !== 'default') payload.message_thread_id = threadId;
 	if (opts.replyId) payload.reply_parameters = { message_id: opts.replyId };
 	if (opts.markup) payload.reply_markup = opts.markup;
 	if (opts.effectId) payload.message_effect_id = opts.effectId;
-	return tgApi<TelegramMessage>('sendMessage', env, payload);
+	return tgApi<TelegramMessage>('sendRichMessage', env, payload);
 }
 
 export async function editMessage(
@@ -209,9 +208,7 @@ export async function editMessage(
 	const payload: Record<string, unknown> = {
 		chat_id: chatId,
 		message_id: msgId,
-		text: cleanText || '...',
-		parse_mode: 'HTML',
-		disable_web_page_preview: true,
+		rich_message: { html: cleanText || '...' },
 	};
 	if (markup) payload.reply_markup = markup;
 	return tgApi<TelegramMessage>('editMessageText', env, payload);
@@ -225,18 +222,24 @@ export async function sendMessageDraft(
 	env: Env,
 	replyId?: number
 ): Promise<void> {
-	const key = `draft_${chatId}_${draftId}`;
-	const existingMsgId = await env.CHAT_KV.get(key);
-
 	const cleanText = sanitizeHtml(text);
-	if (existingMsgId) {
-		await editMessage(chatId, parseInt(existingMsgId), cleanText, env);
-	} else {
-		const res = await sendMessage(chatId, threadId, cleanText, env, { replyId });
-		if (res.result?.message_id) {
-			await env.CHAT_KV.put(key, String(res.result.message_id), { expirationTtl: 300 });
-		}
+	// Telegram draft_id must be a non-zero integer. Convert string draftId to a 32-bit int hash.
+	let draftIdInt = 0;
+	for (let i = 0; i < draftId.length; i++) {
+		draftIdInt = Math.imul(31, draftIdInt) + draftId.charCodeAt(i) | 0;
 	}
+	draftIdInt = Math.abs(draftIdInt) || 1; // Ensure non-zero positive
+
+	const payload: Record<string, unknown> = {
+		chat_id: chatId,
+		draft_id: draftIdInt,
+		rich_message: { html: cleanText || '...' },
+	};
+	if (threadId !== 'default') payload.message_thread_id = threadId;
+	
+	// reply_parameters is only valid on sendRichMessage, but draft API might not support it
+	// Docs for sendRichMessageDraft say it accepts: chat_id, message_thread_id, draft_id, rich_message.
+	await tgApi('sendRichMessageDraft', env, payload);
 }
 
 export async function deleteMessage(chatId: number, msgId: number, env: Env): Promise<void> {

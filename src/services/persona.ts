@@ -23,6 +23,9 @@ import {
 	MENTAL_HEALTH_DIRECTIVE,
 	FORMATTING_RULES,
 	SECOND_BRAIN_DIRECTIVE,
+	LUNA_PERSONA,
+	SOCRATES_PERSONA,
+	NOVA_PERSONA,
 } from '../config/personas';
 import { getProfile } from './user';
 
@@ -98,11 +101,12 @@ export async function updatePersonaConfig(
  * the daily evolution cron (Phase 4).
  */
 export async function buildSystemInstruction(
-	env: Env, userId: number, dynamicContext: string
+	env: Env, userId: number, dynamicContext: string, routeReason?: string
 ): Promise<string> {
-	const [profile, persona] = await Promise.all([
+	const [profile, personaConfig, kvPersona] = await Promise.all([
 		getProfile(env, userId),
 		getPersonaConfig(env, userId),
+		env.CHAT_KV.get(`active_persona_${userId}`),
 	]);
 
 	const userName = profile?.first_name ?? 'there';
@@ -116,15 +120,15 @@ export async function buildSystemInstruction(
 	// it as text would invite the model to interpret it as a verbal
 	// instruction ("act high-proactivity") which isn't what it means.
 	const personaOverlay = [
-		`Tone: ${persona.tone}`,
-		`Formality: ${persona.formality}`,
-		`Humour: ${persona.humour_level}`,
-		`Emoji usage: ${persona.emoji_style}`,
-		`Therapeutic approach: ${persona.therapeutic_approach}`,
-		`Verbosity: ${persona.verbosity}`,
-		persona.communication_notes ? `Communication notes: ${persona.communication_notes}` : '',
-		persona.evolved_traits ? `Evolved personality traits (learned from this user): ${persona.evolved_traits}` : '',
-		persona.topics_of_interest ? `User's stated interests: ${persona.topics_of_interest}` : '',
+		`Tone: ${personaConfig.tone}`,
+		`Formality: ${personaConfig.formality}`,
+		`Humour: ${personaConfig.humour_level}`,
+		`Emoji usage: ${personaConfig.emoji_style}`,
+		`Therapeutic approach: ${personaConfig.therapeutic_approach}`,
+		`Verbosity: ${personaConfig.verbosity}`,
+		personaConfig.communication_notes ? `Communication notes: ${personaConfig.communication_notes}` : '',
+		personaConfig.evolved_traits ? `Evolved personality traits (learned from this user): ${personaConfig.evolved_traits}` : '',
+		personaConfig.topics_of_interest ? `User's stated interests: ${personaConfig.topics_of_interest}` : '',
 	].filter(Boolean).join('\n');
 
 	// Stable profile facts worth knowing every turn.
@@ -135,19 +139,36 @@ export async function buildSystemInstruction(
 	].filter(Boolean).join('\n');
 
 	const userBlock = `
+<context>
 CURRENT USER: ${userName} (known for ${daysKnown} days)
 ${userContext}
 
 YOUR PERSONALITY CALIBRATION FOR THIS USER:
 ${personaOverlay}
+</context>
 `.trim();
+
+	let activePersonaBlock = '';
+	let includeMentalHealth = false;
+
+	const activePersona = kvPersona || 'base';
+
+	if (activePersona === 'luna' || (!kvPersona && (routeReason === 'emotional_content' || routeReason === 'active_health_checkin'))) {
+		activePersonaBlock = LUNA_PERSONA;
+		includeMentalHealth = true;
+	} else if (activePersona === 'socrates' || (!kvPersona && routeReason === 'code_content')) {
+		activePersonaBlock = SOCRATES_PERSONA;
+	} else if (activePersona === 'nova') {
+		activePersonaBlock = NOVA_PERSONA;
+	}
 
 	return [
 		BASE_INSTRUCTION,
 		userBlock,
-		MENTAL_HEALTH_DIRECTIVE,
+		activePersonaBlock,
+		includeMentalHealth ? MENTAL_HEALTH_DIRECTIVE : '',
 		FORMATTING_RULES,
 		SECOND_BRAIN_DIRECTIVE,
 		dynamicContext,
-	].join('\n\n');
+	].filter(Boolean).join('\n\n');
 }

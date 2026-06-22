@@ -53,6 +53,10 @@ interface QueueTask {
 	 * regardless of the new message's keywords (sticky-Pro continuation).
 	 */
 	forceProLane?: boolean;
+	/**
+	 * Pre-computed intent triage from Curator (Layer A1).
+	 */
+	curatorResult?: { intent: string; isCrisis: boolean };
 	// ---- Phase 1 mood-flow fields (2026-06-02) ----
 	/**
 	 * For `mood_poll` tasks: the source label the poll was triggered
@@ -415,6 +419,7 @@ async function processTask(task: QueueTask, env: Env, attempts: number): Promise
 			try {
 				await handleMessage(task.message, env, allTools, {
 					forceProLane: task.forceProLane,
+					curatorResult: task.curatorResult as any,
 				});
 				log.info('queue_user_message_done', { userId, chatId: qChatId });
 			} catch (hmErr) {

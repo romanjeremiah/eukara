@@ -41,11 +41,14 @@ export class CloudflareProvider implements AIProvider {
 		// Older models (Llama 3.x and earlier) use the legacy RoleScopedChatInput
 		// shape with string-only content and `max_tokens`.
 		this.useOpenAICompat = [
+			'@cf/meta/llama-3.3-70b-instruct-fp8-fast',
 			'@cf/google/gemma-4-26b-a4b-it',
 			'@cf/qwen/qwen3-30b-a3b-fp8',
 			'@cf/zai-org/glm-4.7-flash',
 			'@cf/moonshotai/kimi-k2.6',
 			'@cf/meta/llama-4-scout-17b-16e-instruct',
+			'@cf/meta/llama-3.2-3b-instruct',
+			'@cf/meta/llama-3.2-1b-instruct',
 		].includes(this.model);
 
 		// Vision-capable subset of the OpenAI-compat models. Adding a

@@ -27,6 +27,7 @@ import { handlePollAnswer } from './bot/poll';
 import { handleCron } from './router/cron';
 import { handleQueue } from './router/queue';
 import { willHitProLane } from './ai/router';
+import { evaluateIntent } from './ai/curator';
 import { readStickyProContext, clearStickyProContext, detectTopicShift } from './services/topicShift';
 import * as telegram from './lib/telegram';
 import { allTools } from './tools';
@@ -177,8 +178,11 @@ async function dispatchMessage(
 	// so the user's actual message still gets a reply.
 	await maybeOfferMoodResume(msg, userId, env, ctx);
 
-	// Base routing decision (regex-only, no env).
-	const baseProLane = willHitProLane(userText, media, healthCheckin);
+	// Layer A1: Pre-gen Intent Triage
+	const curatorResult = await evaluateIntent(userText, env);
+
+	// Base routing decision (no regex, relies on curatorResult).
+	const baseProLane = willHitProLane(media, healthCheckin, curatorResult);
 
 	// Sticky-Pro override. Only runs when:
 	//   (a) Base routing says casual (no point overriding an already-Pro
@@ -227,6 +231,7 @@ async function dispatchMessage(
 				chatId: msg.chat.id,
 				message: msg,
 				forceProLane,
+				curatorResult,
 			});
 			const threadId = msg.message_thread_id ? String(msg.message_thread_id) : 'default';
 			// Fire-and-forget; failing to set typing isn't user-visible.
@@ -245,15 +250,15 @@ async function dispatchMessage(
 			// Queue send failed \u2014 fall through to inline await. Better
 			// to hit the 30s ceiling than to drop the message entirely.
 			log.warn('queue_send_failed', { userId, msg: (queueErr as Error).message });
-			await runMessageHandler(msg, env, ctx, true, { forceProLane });
+			await runMessageHandler(msg, env, ctx, true, { forceProLane, curatorResult });
 			return;
 		}
 	}
 
-	// Casual lane \u2014 await inline so the Worker stays connected past
+	// Casual lane — await inline so the Worker stays connected past
 	// the 30s waitUntil ceiling. HTTP-triggered Workers have no wall-
 	// clock cap while the client is connected (verified in docs).
-	await runMessageHandler(msg, env, ctx, true);
+	await runMessageHandler(msg, env, ctx, true, { curatorResult });
 }
 
 /**
@@ -268,12 +273,12 @@ async function runMessageHandler(
 	env: Env,
 	ctx: ExecutionContext,
 	awaitFully: boolean,
-	options?: { forceProLane?: boolean },
+	options?: { forceProLane?: boolean, curatorResult?: any },
 ): Promise<void> {
 	const task = (async () => {
 		const handled = await handleCommand(msg, env);
 		if (!handled) {
-			await handleMessage(msg, env, tools, options);
+			await handleMessage(msg, env, tools, options, ctx);
 		}
 	})();
 
@@ -313,6 +318,11 @@ function routeUpdate(update: TelegramUpdate, env: Env): Promise<void> | null {
 	// Message updates take the dispatchMessage path above; this branch
 	// is for safety only.
 	if (update.message) {
+		// Non-owner fallback path doesn't have ctx here directly,
+		// but routeUpdate is called inside fetch() and its promise is passed to ctx.waitUntil().
+		// We'd have to thread ctx through routeUpdate if we wanted it here, but
+		// routeUpdate is legacy so leaving without ctx is fine, the promise itself
+		// is passed to ctx.waitUntil in fetch().
 		return (async () => {
 			const handled = await handleCommand(update.message!, env);
 			if (!handled) {
