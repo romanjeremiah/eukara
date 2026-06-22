@@ -42,9 +42,9 @@ User message:
 
 		let resultStr = '';
 		if ('response' in response) {
-			resultStr = response.response;
+			resultStr = String(response.response || '');
 		} else if ('choices' in response && response.choices?.length > 0) {
-			resultStr = response.choices[0]?.message?.content || '';
+			resultStr = String(response.choices[0]?.message?.content || '');
 		}
 
 		const jsonStart = resultStr.indexOf('{');

@@ -288,6 +288,28 @@ export class CloudflareProvider implements AIProvider {
 				continue;
 			}
 
+			if (this.useOpenAICompat && typeof msg.content === 'object' && msg.content !== null) {
+				const c = msg.content as any;
+				if (c.type === 'tool_use') {
+					result.push({
+						role: 'assistant',
+						content: '',
+						tool_calls: [{
+							name: c.name,
+							arguments: typeof c.args === 'string' ? JSON.parse(c.args) : c.args
+						}]
+					});
+					continue;
+				} else if (c.type === 'tool_result') {
+					result.push({
+						role: 'tool',
+						name: c.name,
+						content: typeof c.content === 'string' ? c.content : JSON.stringify(c.content)
+					});
+					continue;
+				}
+			}
+
 			// tool_use / tool_result fall-through — stringify as before.
 			result.push({ role, content: JSON.stringify(msg.content) });
 		}

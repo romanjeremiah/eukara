@@ -542,7 +542,7 @@ export async function handleMessage(
 								},
 							});
 						} else {
-							messages.push({ role: 'tool', content: { type: 'tool_result', toolCallId: tc.id, content: JSON.stringify(result) } });
+							messages.push({ role: 'tool', content: { type: 'tool_result', name: tc.name, toolCallId: tc.id, content: JSON.stringify(result) } });
 						}
 						log.info('tool_executed', { tool: tc.name, status: result.status });
 					} catch (e) {
