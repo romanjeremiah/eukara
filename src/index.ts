@@ -161,16 +161,11 @@ async function dispatchMessage(
 
 	// --- Owner path ---
 
-	// Active health check-in flag is read once here AND again inside
-	// handleMessage (which may clear it on topic-change detection).
-	// Cheap KV read, no harm in duplication.
-	const healthCheckin = await env.CHAT_KV.get(`health_checkin_active_${userId}`);
-
 	// Layer A1: Pre-gen Intent Triage
 	const curatorResult = await evaluateIntent(userText, env);
 
 	// Base routing decision (no regex, relies on curatorResult).
-	const baseHeavyLane = willHitHeavyLane(media, healthCheckin, curatorResult);
+	const baseHeavyLane = willHitHeavyLane(media, curatorResult);
 
 	// Sticky-Pro override. Only runs when:
 	//   (a) Base routing says casual (no point overriding an already-Pro

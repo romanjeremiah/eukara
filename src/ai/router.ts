@@ -21,7 +21,7 @@ import { log } from '../lib/logger';
 export interface RouterContext {
 	userText: string;
 	isOwner: boolean;
-	healthCheckinActive?: string | null;
+
 	hasMedia?: boolean;
 	/**
 	 * Set by the webhook dispatcher (src/index.ts) after a sticky-heavy
@@ -37,7 +37,7 @@ export interface RouterContext {
  * Returns which provider + model + thinking level to use.
  */
 export function routeMessage(ctx: RouterContext): ModelRoute {
-	const { userText, healthCheckinActive, hasMedia, forceHeavyLane, curatorResult } = ctx;
+	const { userText, hasMedia, forceHeavyLane, curatorResult } = ctx;
 
 	// Sticky Heavy: previous turn was Heavy and the topic classifier said
 	// the new message is still in the same topic.
@@ -60,15 +60,6 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 		};
 	}
 
-	// Active health check-in: needs 70b reasoning model for therapeutic depth
-	if (healthCheckinActive) {
-		return {
-			provider: 'cloudflare',
-			model: CF_MODELS.chat,
-			reason: 'active_health_checkin',
-			enableGrounding: true,
-		};
-	}
 
 	// Triage via Curator (Layer A1)
 	if (curatorResult) {
@@ -130,11 +121,10 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
  */
 export function willHitHeavyLane(
 	hasMedia: boolean,
-	healthCheckinActive: string | null,
 	curatorResult?: CuratorResult,
 ): boolean {
 	if (hasMedia) return true;
-	if (healthCheckinActive) return true;
+
 	if (curatorResult && (curatorResult.intent === 'emotional_vent' || curatorResult.intent === 'crisis' || curatorResult.intent === 'code' || curatorResult.intent === 'functional')) return true;
 	return false;
 }

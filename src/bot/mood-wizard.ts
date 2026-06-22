@@ -7,12 +7,11 @@ import { CF_MODELS } from '../config/models';
 import { arrayBufferToBase64 } from '../lib/media';
 
 export interface MoodWizardState {
-	step: 'sleep' | 'mood' | 'feelings' | 'activities' | 'photo';
+	step: 'sleep' | 'mood' | 'photo';
 	data: {
 		sleepHours?: string;
 		moodLevel?: string;
-		feelings?: string;
-		activities?: string;
+		photoRef?: string;
 	};
 }
 
@@ -25,7 +24,7 @@ export async function startMoodWizard(chatId: number, threadId: string, userId: 
 	await telegram.sendMessage(chatId, threadId, 'How many hours did you sleep?', env, {
 		markup: {
 			force_reply: true,
-			input_field_placeholder: 'e.g. 7'
+			input_field_placeholder: 'e.g. 7 or "hardly any"'
 		}
 	});
 }
@@ -53,23 +52,12 @@ export async function handleWizardCallback(query: TelegramCallbackQuery, env: En
 
 	if (state.step === 'mood' && action.startsWith('mood_')) {
 		state.data.moodLevel = action.replace('mood_', '');
-		state.step = 'feelings';
+		state.step = 'photo';
 		await env.CHAT_KV.put(`mood_wizard_${userId}`, JSON.stringify(state), { expirationTtl: WIZARD_TTL });
 		
-		await telegram.editMessage(chatId, msgId, 'How do you feel?', env, {
-			inline_keyboard: [[{ text: 'Custom Feeling', callback_data: 'wizard_custom_feeling' }]]
+		await telegram.editMessage(chatId, msgId, 'Do you want to attach a photo to this mood log?', env, {
+			inline_keyboard: [[{ text: 'Skip', callback_data: 'wizard_skip_photo' }]]
 		});
-		await promptFeelings(chatId, threadId, env);
-		return true;
-	}
-	
-	if (state.step === 'feelings' && action === 'custom_feeling') {
-		await promptFeelings(chatId, threadId, env);
-		return true;
-	}
-	
-	if (state.step === 'activities' && action === 'custom_activity') {
-		await promptActivities(chatId, threadId, env);
 		return true;
 	}
 
@@ -119,34 +107,17 @@ export async function handleWizardMessage(message: TelegramMessage, env: Env): P
 		});
 		return true;
 	}
-	
-	if (state.step === 'feelings') {
-		state.data.feelings = text;
-		state.step = 'activities';
-		await env.CHAT_KV.put(`mood_wizard_${userId}`, JSON.stringify(state), { expirationTtl: WIZARD_TTL });
-		
-		await promptActivities(chatId, threadId, env);
-		return true;
-	}
-	
-	if (state.step === 'activities') {
-		state.data.activities = text;
+
+	if (state.step === 'mood') {
+		state.data.moodLevel = text || 'Normal 😁';
 		state.step = 'photo';
 		await env.CHAT_KV.put(`mood_wizard_${userId}`, JSON.stringify(state), { expirationTtl: WIZARD_TTL });
 		
-		await telegram.sendMessage(chatId, threadId, 'Do you want to send a photo to attach to this mood log?', env, {
+		await telegram.sendMessage(chatId, threadId, 'Do you want to attach a photo to this mood log?', env, {
 			markup: {
 				inline_keyboard: [[{ text: 'Skip', callback_data: 'wizard_skip_photo' }]]
 			}
 		});
-		return true;
-	}
-
-	if (state.step === 'mood') {
-		state.data.moodLevel = text || 'Normal';
-		state.step = 'feelings';
-		await env.CHAT_KV.put(`mood_wizard_${userId}`, JSON.stringify(state), { expirationTtl: WIZARD_TTL });
-		await promptFeelings(chatId, threadId, env);
 		return true;
 	}
 
@@ -168,30 +139,23 @@ export async function handleWizardMessage(message: TelegramMessage, env: Env): P
 	return true;
 }
 
-async function promptFeelings(chatId: number, threadId: string, env: Env) {
-	await telegram.sendMessage(chatId, threadId, 'Which word can describe your feelings?', env, {
-		markup: {
-			force_reply: true,
-			input_field_placeholder: 'Type your feeling...'
-		}
-	});
-}
-
-async function promptActivities(chatId: number, threadId: string, env: Env) {
-	await telegram.sendMessage(chatId, threadId, 'What have you been up to?', env, {
-		markup: {
-			force_reply: true,
-			input_field_placeholder: 'Type your activities...'
-		}
-	});
-}
-
 async function finishWizard(chatId: number, threadId: string, userId: number, state: MoodWizardState, photo: ArrayBuffer | null, env: Env) {
 	await env.CHAT_KV.delete(`mood_wizard_${userId}`);
 	await telegram.sendChatAction(chatId, threadId, 'typing', env);
 
 	let visionContext = '';
 	if (photo) {
+		const photoKey = `mood_photo_${userId}_${Date.now()}.jpg`;
+		
+		// 1. Save photo to R2 for history
+		try {
+			await env.MEDIA_BUCKET.put(photoKey, photo);
+			state.data.photoRef = photoKey;
+		} catch (e) {
+			log.error('r2_upload_failed', { msg: (e as Error).message });
+		}
+
+		// 2. Perform Vision Analysis using Cloudflare
 		try {
 			visionContext = await analyzeImage(
 				"Describe what is in this photo briefly. This photo is attached to a mood log.",
@@ -202,9 +166,6 @@ async function finishWizard(chatId: number, threadId: string, userId: number, st
 			log.error('vision_analysis_failed', { msg: (e as Error).message });
 			visionContext = '(Photo analysis failed)';
 		}
-		
-		// Optional: Save to R2 history if needed
-		// await env.MEDIA_BUCKET.put(`mood_photo_${Date.now()}.jpg`, photo);
 	}
 
 	const now = new Date();
@@ -218,14 +179,16 @@ async function finishWizard(chatId: number, threadId: string, userId: number, st
 	if (moodStr.includes('Good') || moodStr.includes('☺️')) moodScore = 4;
 	if (moodStr.includes('Happy') || moodStr.includes('🙃')) moodScore = 5;
 
+	// Extract sleep hours numerically for DB
+	let numericSleep = parseFloat(state.data.sleepHours || '0') || null;
+
 	try {
 		await env.DB.prepare(
 			`INSERT INTO mood_journal (user_id, date, entry_type, mood_score, emotions, sleep_hours, activities, ai_observation, source) 
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 		).bind(
-			userId, date, 'evening', moodScore, JSON.stringify([state.data.feelings]), 
-			parseFloat(state.data.sleepHours || '0') || null, 
-			JSON.stringify([state.data.activities]), visionContext, 'manual_command'
+			userId, date, 'checkin', moodScore, '[]', 
+			numericSleep, '[]', visionContext, 'manual_command'
 		).run();
 	} catch (e) {
 		log.error('wizard_db_save_failed', { msg: (e as Error).message });
@@ -237,51 +200,62 @@ async function finishWizard(chatId: number, threadId: string, userId: number, st
 You are a highly perceptive, concise friend. Review the following mood check-in data and recent chat history to write an extremely concise, natural summary of how the user is doing.
 
 Rules:
-1. Be extremely concise (2-3 sentences max).
+1. Be extremely concise (1-2 sentences max).
 2. Sound like a friend's observation, not a clinical assessment. Do not use medical or psychological terminology.
-3. Automatically allocate suitable emojis to their feelings and activities if they aren't included.
+3. Automatically allocate suitable emojis based on their sleep and mood.
 4. Incorporate context from the recent chat history and the photo (if analyzed) to make the summary insightful.
 
 Mood Check Data:
 - Sleep: ${state.data.sleepHours} hours
 - Mood Level: ${state.data.moodLevel}
-- Feelings: ${state.data.feelings}
-- Activities: ${state.data.activities}
 - Photo Analysis: ${visionContext || 'None'}
 
 Recent Chat History:
 ${history}
 `;
 
+	const provider = new CloudflareProvider(env.AI, CF_MODELS.chat);
+	
 	try {
-		const summary = await generateText(prompt, env);
-		await telegram.sendMessage(chatId, threadId, summary, env);
+		const aiResponse = await provider.chat([
+			{ role: 'system', content: 'You are a concise, observant friend.' },
+			{ role: 'user', content: prompt }
+		]);
+		
+		await telegram.sendMessage(chatId, threadId, aiResponse.text || "Got it, your mood has been logged.", env);
+
+		// Inject the final summary into the conversation history so the AI remembers it
+		const entryStr = `[Mood Logged] Sleep: ${state.data.sleepHours}, Mood: ${state.data.moodLevel}. Summary: ${aiResponse.text}`;
+		import('../lib/history').then(async (historyLib) => {
+			const hist = await historyLib.loadHistory(env, chatId, threadId);
+			hist.push({ role: 'system', content: entryStr });
+			await historyLib.saveHistory(env, chatId, threadId, hist);
+		}).catch(e => log.error('append_history_failed', { msg: (e as Error).message }));
+
 	} catch (e) {
 		log.error('wizard_summary_failed', { msg: (e as Error).message });
-		await telegram.sendMessage(chatId, threadId, "Mood logged successfully, but I couldn't generate a summary right now.", env);
+		await telegram.sendMessage(chatId, threadId, `Mood logged. Sleep: ${state.data.sleepHours}, Mood: ${state.data.moodLevel}`, env);
 	}
-}
-
-async function analyzeImage(prompt: string, photoBuffer: ArrayBuffer, env: Env): Promise<string> {
-	const provider = new CloudflareProvider(env.AI, CF_MODELS.vision);
-	const base64 = arrayBufferToBase64(photoBuffer);
-	const response = await provider.chat([{
-		role: 'user',
-		content: [
-			{ type: 'text', text: prompt },
-			{ type: 'inline_data', mimeType: 'image/jpeg', data: base64 }
-		]
-	}]);
-	return response.text || '';
 }
 
 async function getFormattedHistory(env: Env, chatId: number, threadId: string, limit: number): Promise<string> {
 	const messages = await loadHistory(env, chatId, threadId);
-	return messages.slice(-limit).map(m => `${m.role}: ${Array.isArray(m.content) ? '[media]' : m.content}`).join('\n');
+	if (!messages || messages.length === 0) return 'No recent history.';
+	return messages.slice(-limit).map(m => `[${m.role}] ${typeof m.content === 'string' ? m.content : '[Complex Content]'}`).join('\n');
 }
 
-async function generateText(prompt: string, env: Env): Promise<string> {
-	const provider = new CloudflareProvider(env.AI, CF_MODELS.chat);
-	const response = await provider.chat([{ role: 'user', content: prompt }]);
-	return response.text || '';
+async function analyzeImage(prompt: string, imageBuffer: ArrayBuffer, env: Env): Promise<string> {
+	const base64Image = arrayBufferToBase64(imageBuffer);
+	const response = await env.AI.run(CF_MODELS.vision, {
+		prompt,
+		image: [...new Uint8Array(imageBuffer)]
+	}) as any;
+
+	if (response && 'description' in response) {
+		return response.description as string;
+	} else if (response && 'response' in response) {
+		return response.response as string;
+	}
+
+	return 'No description generated.';
 }

@@ -284,57 +284,13 @@ export async function handleMessage(
 		: 'typing';
 	await telegram.sendChatAction(chatId, threadId, chatAction, env);
 
-	// Check health check-in state (keyed by userId)
-	let healthCheckin = isOwner
-		? await env.CHAT_KV.get(`health_checkin_active_${userId}`)
-		: null;
 
-	// B6: Context gating. If a check-in is pending but the user is
-	// clearly changing topic (longer, non-health-related message),
-	// drop the check-in flag so the bot doesn't nag them about mood
-	// mid-conversation. Short acknowledgements still count as
-	// engagement.
-	if (healthCheckin && userText.trim()) {
-		const isHealthRelated = /\b(sleep|mood|medication|med|meds|anxious|anxiety|depressed|depress|feel|feeling|emotion|check.?in|tired|exhaust|rest)\b/i.test(userText);
-		if (!isHealthRelated && userText.length > 10) {
-			await env.CHAT_KV.delete(`health_checkin_active_${userId}`);
-			healthCheckin = null;
-			log.info('checkin_dropped_topic_change', { userId, userTextPreview: userText.slice(0, 50) });
-		}
-	}
 
 	// Layer A1: Pre-gen Intent Triage
 	// If the dispatcher didn't run it (e.g., non-owner traffic), run it now.
 	const curatorResult = options?.curatorResult ?? await evaluateIntent(userText, env);
 
-	// B5: Conversational medication detection. If a `med_pending_*`
-	// flag is set and the user's message matches confirmation phrases,
-	// clear the flag and log the medication to today's mood entry.
-	// Fires alongside the AI response, not instead of it.
-	if (isOwner && userText.trim()) {
-		// D5: Check-in completion detection
-		// Clear flag if intent is not casual or vent, or user sends command-like text
-		if (healthCheckin) {
-			if (userText.length > 50 || /\b(anyway|so|enough|about you|what about|other|work|code|cancel|stop|clear|ignore)\b/i.test(userText) || (curatorResult.intent !== 'casual' && curatorResult.intent !== 'emotional_vent')) {
-				await env.CHAT_KV.delete(`health_checkin_active_${userId}`);
-				log.info('health_checkin_cleared_aggressively', { userId, reason: 'intent_or_keywords' });
-			}
-		}
-		const medPending = await env.CHAT_KV.get(`med_pending_${userId}`);
-		if (medPending && /\b(took|taken|yes|yep|yeah|done|had them|swallowed|popped|sorted)\b/i.test(userText)) {
-			await env.CHAT_KV.delete(`med_pending_${userId}`);
-			await env.CHAT_KV.delete(`nudge_pending_${medPending}_${userId}`);
-			// Log to mood journal — best effort, don't block the AI call.
-			// Uses the user's timezone so the entry lands on the right day.
-			import('../services/mood').then(async (mood) => {
-				await mood.upsertEntry(env, userId, mood.todayLocal(userTz), medPending as 'morning' | 'midday' | 'evening', {
-					medication_taken: 1,
-					medication_notes: `Confirmed conversationally: "${userText.slice(0, 100)}"`,
-				});
-				log.info('med_confirmed_conversational', { userId, period: medPending });
-			}).catch(e => log.error('med_log_error', { msg: (e as Error).message }));
-		}
-	}
+
 
 	// Layer A1: Pre-gen Intent Triage
 	// Already ran above at line 307.
@@ -374,7 +330,7 @@ export async function handleMessage(
 		{
 			userText,
 			isOwner: !!isOwner,
-			healthCheckinActive: healthCheckin,
+
 			hasMedia: !!media,
 			forceHeavyLane: options?.forceHeavyLane,
 			curatorResult,
@@ -542,11 +498,24 @@ export async function handleMessage(
 								},
 							});
 						} else {
-							messages.push({ role: 'tool', content: { type: 'tool_result', name: tc.name, toolCallId: tc.id, content: JSON.stringify(result) } });
+							messages.push({ role: 'tool', content: { type: 'tool_result', toolCallId: tc.id, content: JSON.stringify(result) } });
 						}
 						log.info('tool_executed', { tool: tc.name, status: result.status });
 					} catch (e) {
-						log.error('tool_error', { tool: tc.name, msg: (e as Error).message });
+						const errorMsg = (e as Error).message;
+						log.error('tool_error', { tool: tc.name, msg: errorMsg });
+						const errorResult = { status: 'error', error: errorMsg };
+						if (usePreservedParts) {
+							userParts.push({
+								functionResponse: {
+									name: tc.name,
+									id: tc.id,
+									response: { content: JSON.stringify(errorResult) },
+								},
+							});
+						} else {
+							messages.push({ role: 'tool', content: { type: 'tool_result', toolCallId: tc.id, content: JSON.stringify(errorResult) } });
+						}
 					}
 				}
 

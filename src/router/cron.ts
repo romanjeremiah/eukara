@@ -50,10 +50,7 @@ export async function handleCron(env: Env): Promise<void> {
 		const minute = localTime.getMinutes();
 		const today = localTime.toISOString().split('T')[0]!;
 
-		// Health check-ins
-		try {
-			await enqueueHealthTasks(env, userId, hour, minute, today);
-		} catch (e) { log.error('cron_health_error', { userId, msg: (e as Error).message }); }
+		// Scheduled mood checks (health check-ins) have been removed per user request.
 
 		// Memory consolidation
 		try {
@@ -119,26 +116,7 @@ export async function handleCron(env: Env): Promise<void> {
 	}
 }
 
-async function enqueueHealthTasks(
-	env: Env, userId: number, hour: number, minute: number, today: string
-): Promise<void> {
-	if (minute !== 0) return;
 
-	const morningHour = (await getSchedule(env, `schedule_${userId}_morning`, { hour: 8, minute: 0 })).hour;
-	if (hour === morningHour) {
-		const key = `checkin_${userId}_morning_${today}`;
-		if (!await env.CHAT_KV.get(key)) {
-			await env.TASK_QUEUE.send({ type: 'health_checkin', period: 'morning', userId, chatId: userId });
-			await env.CHAT_KV.put(key, '1', { expirationTtl: 86400 });
-		}
-	}
-
-}
-
-async function getSchedule(env: Env, key: string, defaults: ScheduleConfig): Promise<ScheduleConfig> {
-	const stored = await env.CHAT_KV.get(key, { type: 'json' }) as ScheduleConfig | null;
-	return stored ?? defaults;
-}
 
 async function checkConsolidation(env: Env, userId: number, now: Date): Promise<void> {
 	if (now.getDate() !== 1 || now.getHours() !== 3) return;

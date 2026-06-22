@@ -162,39 +162,6 @@ async function processTask(task: QueueTask, env: Env, attempts: number): Promise
 	const token = env.TELEGRAM_TOKEN;
 
 	switch (task.type) {
-		case 'health_checkin': {
-			await env.CHAT_KV.put(`health_checkin_active_${userId}`, task.period ?? 'morning', { expirationTtl: 1800 });
-
-			const userPrompt = task.period === 'morning'
-				? '[automatic morning check-in trigger]'
-				: '[automatic midday check-in trigger]';
-			const generationPrompt = task.period === 'morning'
-				? 'Generate a 1-2 sentence morning greeting. Ask how they slept and casually ask if they took their morning medication.'
-				: 'Generate a 1-2 sentence midday check-in. Casually ask if they took their meds.';
-
-			const greeting = await generateCheckinMessage(env, chatId, userId, userPrompt, generationPrompt,
-				task.period === 'morning'
-					? 'Morning! How did you sleep? Have you taken your meds?'
-					: 'Quick check — have you taken your meds?'
-			);
-
-			await sendTelegram(token, chatId, greeting);
-			await env.CHAT_KV.put(`med_pending_${userId}`, task.period ?? 'morning', { expirationTtl: 7200 });
-			break;
-		}
-
-		case 'med_nudge': {
-			const pending = await env.CHAT_KV.get(`med_pending_${userId}`);
-			if (!pending) break;
-
-			const greeting = await generateCheckinMessage(env, chatId, userId,
-				'[automatic medication follow-up trigger]',
-				'Send a brief, gentle 1-sentence medication follow-up.',
-				'Just checking — did you manage to take your meds?'
-			);
-			await sendTelegram(token, chatId, greeting);
-			break;
-		}
 
 		case 'spontaneous_outreach': {
 			// Interest-driven casual share. Pull recent memories, keep
