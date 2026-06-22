@@ -4,10 +4,10 @@ import { defineTool, ok, empty } from './factory';
 
 export const logMoodEntry = defineTool(
 	'log_mood_entry',
-	'Log a mood journal entry. Bipolar scale: 0-1 severe depression, 2-3 mild depression, 4-6 balanced, 7-8 hypomania, 9-10 mania. Partial updates supported.',
+	'Log a mood journal entry. Scale is 1-5 where: 1=Sad, 2=Unhappy, 3=Normal, 4=Good, 5=Happy. Use this when the user mentions their mood naturally. Partial updates supported.',
 	{
 		entry_type: { type: 'string', enum: ['morning', 'midday', 'evening'] },
-		mood_score: { type: 'integer', description: 'Bipolar mood scale 0-10' },
+		mood_score: { type: 'integer', description: 'Mood scale 1-5' },
 		emotions: { type: 'array', items: { type: 'string' } },
 		sleep_hours: { type: 'number' },
 		sleep_quality: { type: 'string', enum: ['poor', 'fair', 'good', 'excellent'] },

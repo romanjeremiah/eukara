@@ -142,6 +142,14 @@ export async function handleWizardMessage(message: TelegramMessage, env: Env): P
 		return true;
 	}
 
+	if (state.step === 'mood') {
+		state.data.moodLevel = text || 'Normal';
+		state.step = 'feelings';
+		await env.CHAT_KV.put(`mood_wizard_${userId}`, JSON.stringify(state), { expirationTtl: WIZARD_TTL });
+		await promptFeelings(chatId, threadId, env);
+		return true;
+	}
+
 	if (state.step === 'photo') {
 		let photoBuffer: ArrayBuffer | null = null;
 		
@@ -196,7 +204,31 @@ async function finishWizard(chatId: number, threadId: string, userId: number, st
 		}
 		
 		// Optional: Save to R2 history if needed
-		// await env.MEDIA_BUCKET.put(\`mood_photo_\${Date.now()}.jpg\`, photo);
+		// await env.MEDIA_BUCKET.put(`mood_photo_${Date.now()}.jpg`, photo);
+	}
+
+	const now = new Date();
+	const date = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/London' })).toISOString().split('T')[0]!;
+	
+	const moodStr = state.data.moodLevel || '';
+	let moodScore: number | null = 3; // Default neutral
+	if (moodStr.includes('Sad') || moodStr.includes('😔')) moodScore = 1;
+	if (moodStr.includes('Unhappy') || moodStr.includes('🙁')) moodScore = 2;
+	if (moodStr.includes('Normal') || moodStr.includes('😁')) moodScore = 3;
+	if (moodStr.includes('Good') || moodStr.includes('☺️')) moodScore = 4;
+	if (moodStr.includes('Happy') || moodStr.includes('🙃')) moodScore = 5;
+
+	try {
+		await env.DB.prepare(
+			`INSERT INTO mood_journal (user_id, date, entry_type, mood_score, emotions, sleep_hours, activities, ai_observation, source) 
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		).bind(
+			userId, date, 'evening', moodScore, JSON.stringify([state.data.feelings]), 
+			parseFloat(state.data.sleepHours || '0') || null, 
+			JSON.stringify([state.data.activities]), visionContext, 'manual_command'
+		).run();
+	} catch (e) {
+		log.error('wizard_db_save_failed', { msg: (e as Error).message });
 	}
 
 	const history = await getFormattedHistory(env, chatId, threadId, 10);
