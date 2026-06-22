@@ -50,7 +50,7 @@ export async function handleCallback(
 		await telegram.sendChatAction(chatId, threadId, 'upload_voice', env);
 		try {
 			const audio = await generateSpeech(botText, env);
-			await telegram.sendVoice(chatId, threadId, audio, env, msgId);
+			await telegram.sendAudio(chatId, threadId, audio, 'voice.wav', 'audio/wav', env, msgId);
 		} catch (e) {
 			log.error('voice_error', { msg: (e as Error).message });
 			await telegram.sendMessage(chatId, threadId, '⚠️ Voice generation failed.', env);

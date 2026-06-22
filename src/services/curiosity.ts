@@ -27,8 +27,8 @@
 // ============================================================
 
 import { log } from '../lib/logger';
-import { GeminiProvider } from '../ai/gemini';
-import { GEMINI_MODELS } from '../config/models';
+import { CloudflareProvider } from '../ai/cloudflare';
+import { CF_MODELS } from '../config/models';
 import * as memory from './memory';
 
 // Days (0=Sun) and local hour the research producer runs.
@@ -69,7 +69,7 @@ export async function maybeRunResearch(env: Env, userId: number, localTime: Date
 
 	try {
 		const interests = await deriveInterests(env, userId);
-		const provider = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.proPrimary);
+		const provider = new CloudflareProvider(env.AI, CF_MODELS.chat);
 
 		const prompt = `Find ONE concrete, genuinely interesting development from the last 7 days that someone with these interests would care about:
 

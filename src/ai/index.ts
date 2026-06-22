@@ -8,7 +8,6 @@
 // ============================================================
 
 export { CloudflareProvider } from './cloudflare';
-export { GeminiProvider } from './gemini';
 export { routeMessage, createProvider, getProvider } from './router';
 export type { RouterContext } from './router';
 export * as background from './background';

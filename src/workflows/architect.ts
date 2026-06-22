@@ -9,14 +9,14 @@
 //   F3: chatId param kept for Telegram delivery, but userId is now
 //       passed alongside for D1 inserts (memories use user_id).
 //   Hardcoded model gemini-3.1-pro-preview replaced with
-//   GEMINI_MODELS.flashLite (= gemini-3.5-flash post-migration).
+//   CF_MODELS.chat (= gemini-3.5-flash post-migration).
 //   The googleSearch tool already used here is now a Gemini 3 family
 //   pattern; combines with custom tools cleanly on 3.5-flash.
 // ============================================================
 
 import { WorkflowEntrypoint, WorkflowStep } from 'cloudflare:workers';
 import type { WorkflowEvent } from 'cloudflare:workers';
-import { GEMINI_MODELS } from '../config/models';
+import { CF_MODELS } from '../config/models';
 
 interface ArchitectParams {
 	chatId: number;
@@ -92,7 +92,7 @@ export class ArchitectWorkflow extends WorkflowEntrypoint<Env, ArchitectParams> 
 				? `\n\nRESEARCH FINDINGS:\n${researchContext}` : '';
 
 			const response = await ai.models.generateContent({
-				model: GEMINI_MODELS.flashLite,
+				model: CF_MODELS.chat,
 				contents: `You are an AI product strategist reviewing a Telegram AI companion chatbot. Find 3 unique innovations.
 
 PROJECT: TypeScript on Cloudflare Workers. Uses Gemma 4 (CF AI), Gemini 3.5 Flash (Pro lane), D1, Vectorize, Queues, Workflows.

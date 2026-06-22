@@ -11,13 +11,13 @@
 //   F3: chatId param renamed to userId; D1 queries now use user_id
 //       column for per-user isolation (matches rest of codebase).
 //   Hardcoded model gemini-3.1-pro-preview replaced with
-//   GEMINI_MODELS.flashLite (= gemini-3.5-flash post-migration).
+//   CF_MODELS.chat (= gemini-3.5-flash post-migration).
 //   Workflow now in sync with central registry.
 // ============================================================
 
 import { WorkflowEntrypoint, WorkflowStep } from 'cloudflare:workers';
 import type { WorkflowEvent } from 'cloudflare:workers';
-import { GEMINI_MODELS } from '../config/models';
+import { CF_MODELS } from '../config/models';
 
 interface ConsolidationParams {
 	userId: number;
@@ -82,7 +82,7 @@ export class MemoryConsolidationWorkflow extends WorkflowEntrypoint<Env, Consoli
 				.join('\n');
 
 			const response = await ai.models.generateContent({
-				model: GEMINI_MODELS.flashLite,
+				model: CF_MODELS.chat,
 				contents: `You are performing memory consolidation for a therapeutic Second Brain.
 Here are the user's saved memories:
 ${rawText}

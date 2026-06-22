@@ -22,8 +22,8 @@
 
 import type { TelegramCallbackQuery } from '../types/telegram';
 import type { AIMessage } from '../types/ai';
-import { GeminiProvider } from '../ai/gemini';
-import { GEMINI_MODELS } from '../config/models';
+import { CloudflareProvider } from '../ai/cloudflare';
+import { CF_MODELS } from '../config/models';
 import {
 	BASE_INSTRUCTION,
 	MENTAL_HEALTH_DIRECTIVE,
@@ -282,7 +282,7 @@ export async function runEmotionsDoneWork(
 
 	let summary: string;
 	try {
-		const provider = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.proPrimary);
+		const provider = new CloudflareProvider(env.AI, CF_MODELS.chat);
 		const response = await provider.chat(
 			[{ role: 'user', content: prompt }],
 			[],

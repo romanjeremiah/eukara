@@ -13,8 +13,8 @@
 // ============================================================
 
 import { log } from '../lib/logger';
-import { GEMINI_MODELS } from '../config/models';
-import { GeminiProvider } from '../ai/gemini';
+import { CF_MODELS } from '../config/models';
+import { CloudflareProvider } from '../ai/cloudflare';
 import { BASE_INSTRUCTION, MENTAL_HEALTH_DIRECTIVE, FORMATTING_RULES } from '../config/personas';
 import { MOOD_POLL_OPTIONS, MOOD_POLL_QUESTION } from '../config/moodScale';
 import * as telegram from '../lib/telegram';
@@ -479,7 +479,7 @@ async function generateCheckinMessage(
 		// the generic "caring AI companion" stub on the edge model.
 		// Infrequent (a few per week) so model cost is negligible and the
 		// voice consistency is worth it.
-		const provider = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.proPrimary);
+		const provider = new CloudflareProvider(env.AI, CF_MODELS.chat);
 		const response = await provider.chat(
 			[{ role: 'user', content: generationPrompt }],
 			undefined,
@@ -575,7 +575,7 @@ Tone: warm, observant, personal. You know this person. Use their mood data as ev
 
 	let text: string;
 	try {
-		const provider = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.proPrimary);
+		const provider = new CloudflareProvider(env.AI, CF_MODELS.chat);
 		const response = await provider.chat(
 			[{ role: 'user', content: prompt }],
 			[],

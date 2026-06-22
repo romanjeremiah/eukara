@@ -264,10 +264,6 @@ export async function handleMessage(
 	// medication log) uses this. Reading once and passing in avoids
 	// repeated DB hits for the same value.
 	const userTz = await user.getUserTimezone(env, userId);
-
-	const proceduralCtx = await memory.getMemoriesByCategory(env, userId, 'procedural_preference', 5)
-		.then(mems => mems.map(m => `- ${m.fact}`).join('\n'))
-		.catch(() => '');
 		
 	// Personality traits from subconscious processing
 	const traitsCtx = await memory.getMemoriesByCategory(env, userId, 'personality_trait', 10)
@@ -336,8 +332,7 @@ export async function handleMessage(
 	}
 
 	// Layer A1: Pre-gen Intent Triage
-	// If the dispatcher didn't run it (e.g., non-owner traffic), run it now.
-	const curatorResult = options?.curatorResult ?? await evaluateIntent(userText, env);
+	// Already ran above at line 307.
 
 	// Layer A1: Clinical Safety Firewall (Hard Cut)
 	if (curatorResult.isCrisis) {

@@ -48,8 +48,8 @@ export const MOOD_RESPONSE_REINFORCEMENT = `PERSONA EMPHASIS FOR THIS TURN:
 // ============================================================
 
 import type { TelegramPollAnswer } from '../types/telegram';
-import { GeminiProvider } from '../ai/gemini';
-import { GEMINI_MODELS } from '../config/models';
+import { CloudflareProvider } from '../ai/cloudflare';
+import { CF_MODELS } from '../config/models';
 import { BASE_INSTRUCTION, MENTAL_HEALTH_DIRECTIVE, FORMATTING_RULES } from '../config/personas';
 import * as telegram from '../lib/telegram';
 import { normaliseMarkdown, stripLeakedThoughts } from '../lib/formatting';
@@ -215,7 +215,7 @@ After your message, emotion buttons appear — do NOT ask about emotions; the bu
 
 	let response: string;
 	try {
-		const provider = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.proPrimary);
+		const provider = new CloudflareProvider(env.AI, CF_MODELS.chat);
 		const result = await provider.chat(
 			[{ role: 'user', content: prompt }],
 			[],
@@ -314,7 +314,7 @@ export async function runMoodAnalysisWork(
 	// top of the clinical prompt.
 	let analysis: string;
 	try {
-		const provider = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.proPrimary);
+		const provider = new CloudflareProvider(env.AI, CF_MODELS.chat);
 		const response = await provider.chat(
 			[{ role: 'user', content: analysisPrompt }],
 			[],
