@@ -10,9 +10,8 @@ import type { AIMessage, AIMessagePart, AIResponse, AITool, ModelRoute, ToolCont
 import { getProvider } from '../ai/router';
 import { evaluateIntent } from '../ai/curator';
 import type { CuratorResult } from '../ai/curator';
-import { GeminiProvider } from '../ai/gemini';
 import { CloudflareProvider } from '../ai/cloudflare';
-import { GEMINI_MODELS, CF_MODELS } from '../config/models';
+import { CF_MODELS } from '../config/models';
 import * as telegram from '../lib/telegram';
 import { stripLeakedThoughts, splitMessage, normaliseMarkdown, enforceTagNesting } from '../lib/formatting';
 import { log } from '../lib/logger';
@@ -110,97 +109,8 @@ type ProviderChat = (
 ) => Promise<AIResponse>;
 
 /**
- * Pro lane: 4-tier cascade across Google + Cloudflare for high-stakes turns.
- * Tier-by-tier rationale in the header comment block above.
- */
-async function runProCascade(
-	route: ModelRoute,
-	provider: { chat: ProviderChat },
-	args: ChatArgs,
-	env: Env,
-): Promise<{ response: AIResponse; tierUsed: string }> {
-	for (let cascadeAttempt = 1; cascadeAttempt <= 2; cascadeAttempt++) {
-		// Tier 1: configured route (gemini-3.5-flash by default), 30s budget.
-		try {
-			const response = await withTimeout(
-				provider.chat(args.messages, args.tools, {
-					systemInstruction: args.systemInstruction,
-					thinkingLevel: args.thinkingLevel,
-					enableGrounding: args.enableGrounding,
-				}),
-				30_000,
-				'tier1_flash'
-			);
-			return { response, tierUsed: `tier1_flash_attempt_${cascadeAttempt}` };
-		} catch (err) {
-			log.warn(`pro_lane_tier1_failed_attempt_${cascadeAttempt}`, { model: route.model, msg: (err as Error).message });
-		}
-
-		// Tier 2: gemini-3.1-pro-preview. Same family as Tier 1 (tool combination +
-		// thoughtSignature continuity preserved), 60s budget for slower turns.
-		try {
-			const proLatest = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.proLatest);
-			const response = await withTimeout(
-				proLatest.chat(args.messages, args.tools, {
-					systemInstruction: args.systemInstruction,
-					thinkingLevel: args.thinkingLevel,
-					enableGrounding: args.enableGrounding,
-				}),
-				60_000,
-				'tier2_pro_latest'
-			);
-			log.info(`pro_lane_tier2_recovered_attempt_${cascadeAttempt}`, { model: GEMINI_MODELS.proLatest });
-			return { response, tierUsed: `tier2_pro_latest_attempt_${cascadeAttempt}` };
-		} catch (err) {
-			log.warn(`pro_lane_tier2_failed_attempt_${cascadeAttempt}`, { model: GEMINI_MODELS.proLatest, msg: (err as Error).message });
-		}
-
-		// Tier 3: Cloudflare Gemma 4. Cross-provider resilience, 30s budget.
-		try {
-			const cfFallback = new CloudflareProvider(env.AI, CF_MODELS.chat);
-			const response = await withTimeout(
-				cfFallback.chat(args.messages, args.tools, {
-					systemInstruction: args.systemInstruction,
-					thinkingLevel: args.thinkingLevel,
-					enableGrounding: args.enableGrounding,
-				}),
-				30_000,
-				'tier3_cf_gemma'
-			);
-			log.info(`pro_lane_tier3_recovered_attempt_${cascadeAttempt}`, { model: CF_MODELS.chat });
-			return { response, tierUsed: `tier3_cf_gemma_attempt_${cascadeAttempt}` };
-		} catch (err) {
-			log.warn(`pro_lane_tier3_failed_attempt_${cascadeAttempt}`, { model: CF_MODELS.chat, msg: (err as Error).message });
-		}
-
-		// Tier 4: gemini-3.1-flash-lite. Last-resort Gemini, 30s budget.
-		// Reached only when both Google Pro/Flash AND Cloudflare Gemma have
-		// failed in the same turn — rare but possible during multi-provider
-		// degradation. If this also fails, surface the error to the user.
-		try {
-			const flashLite = new GeminiProvider(env.GEMINI_API_KEY, GEMINI_MODELS.flashLite);
-			const response = await withTimeout(
-				flashLite.chat(args.messages, args.tools, {
-					systemInstruction: args.systemInstruction,
-					thinkingLevel: args.thinkingLevel,
-					enableGrounding: args.enableGrounding,
-				}),
-				30_000,
-				'tier4_flash_lite'
-			);
-			log.info(`pro_lane_tier4_recovered_attempt_${cascadeAttempt}`, { model: GEMINI_MODELS.flashLite });
-			return { response, tierUsed: `tier4_flash_lite_attempt_${cascadeAttempt}` };
-		} catch (err) {
-			const error = err as Error;
-			log.error(`pro_lane_tier4_failed_attempt_${cascadeAttempt}`, { model: GEMINI_MODELS.flashLite, msg: error.message });
-			if (cascadeAttempt === 2) throw error;
-		}
-	}
-	throw new Error("Pro cascade exhausted after 2 attempts");
-}
-
-/**
- * Casual lane: single call with one conditional retry.
+ * Single-provider call with one conditional retry (formerly Casual Lane).
+ * Since we now only use Cloudflare AI, all calls go through this path.
  *
  * Retry triggers ONLY when both:
  *   - The first attempt failed with a timeout OR a CF 5006 schema
@@ -212,13 +122,14 @@ async function runProCascade(
  * because a grounding-off retry wouldn't help and would just double
  * the user's wait time.
  */
-async function runCasualCall(
+async function chatWithFallback(
 	route: ModelRoute,
 	provider: { chat: ProviderChat },
 	args: ChatArgs,
+	env: Env,
 ): Promise<{ response: AIResponse; tierUsed: string }> {
 	for (let cascadeAttempt = 1; cascadeAttempt <= 2; cascadeAttempt++) {
-		// Attempt 1: as configured. 60s gives CF Gemma room for grounding
+		// Attempt 1: as configured. 60s gives CF models room for grounding
 		// latency without being unbounded.
 		try {
 			const response = await withTimeout(
@@ -228,9 +139,9 @@ async function runCasualCall(
 					enableGrounding: args.enableGrounding,
 				}),
 				60_000,
-				'casual_primary'
+				'cf_primary'
 			);
-			return { response, tierUsed: `casual_primary_attempt_${cascadeAttempt}` };
+			return { response, tierUsed: `cf_primary_attempt_${cascadeAttempt}` };
 		} catch (err) {
 			const error = err as Error;
 			const msg = error.message;
@@ -240,7 +151,7 @@ async function runCasualCall(
 			if (!args.enableGrounding || (!isTimeout && !is5006)) {
 				if (cascadeAttempt === 2) throw error;
 			} else {
-				log.warn(`casual_retry_without_grounding_attempt_${cascadeAttempt}`, {
+				log.warn(`cf_retry_without_grounding_attempt_${cascadeAttempt}`, {
 					model: route.model,
 					reason: isTimeout ? 'timeout' : 'schema_5006',
 					msg,
@@ -258,34 +169,17 @@ async function runCasualCall(
 					enableGrounding: false,
 				}),
 				30_000,
-				'casual_no_grounding'
+				'cf_no_grounding'
 			);
-			log.info(`casual_no_grounding_recovered_attempt_${cascadeAttempt}`, { model: route.model });
-			return { response, tierUsed: `casual_no_grounding_attempt_${cascadeAttempt}` };
+			log.info(`cf_no_grounding_recovered_attempt_${cascadeAttempt}`, { model: route.model });
+			return { response, tierUsed: `cf_no_grounding_attempt_${cascadeAttempt}` };
 		} catch (err) {
 			const error = err as Error;
-			log.error(`casual_no_grounding_failed_attempt_${cascadeAttempt}`, { model: route.model, msg: error.message });
+			log.error(`cf_no_grounding_failed_attempt_${cascadeAttempt}`, { model: route.model, msg: error.message });
 			if (cascadeAttempt === 2) throw error;
 		}
 	}
-	throw new Error("Casual cascade exhausted after 2 attempts");
-}
-
-/**
- * Dispatch chat to the appropriate strategy based on route lane.
- * Pro lane gets the 4-tier cascade; casual lane gets single-call
- * with grounding-disabled retry.
- */
-async function chatWithFallback(
-	route: ModelRoute,
-	provider: { chat: ProviderChat },
-	args: ChatArgs,
-	env: Env,
-): Promise<{ response: AIResponse; tierUsed: string }> {
-	if (route.provider === 'gemini') {
-		return runProCascade(route, provider, args, env);
-	}
-	return runCasualCall(route, provider, args);
+	throw new Error("CF cascade exhausted after 2 attempts");
 }
 
 // Telegram's Bot API caps file downloads at 20MB. Anything larger would
@@ -371,6 +265,15 @@ export async function handleMessage(
 	// repeated DB hits for the same value.
 	const userTz = await user.getUserTimezone(env, userId);
 
+	const proceduralCtx = await memory.getMemoriesByCategory(env, userId, 'procedural_preference', 5)
+		.then(mems => mems.map(m => `- ${m.fact}`).join('\n'))
+		.catch(() => '');
+		
+	// Personality traits from subconscious processing
+	const traitsCtx = await memory.getMemoriesByCategory(env, userId, 'personality_trait', 10)
+		.then(mems => mems.map(m => `- ${m.fact}`).join('\n'))
+		.catch(() => '');
+
 	const isOwner = env.OWNER_ID && String(userId) === String(env.OWNER_ID);
 
 	// Pick a chat action that reflects what we're actually doing — media
@@ -399,11 +302,23 @@ export async function handleMessage(
 		}
 	}
 
+	// Layer A1: Pre-gen Intent Triage
+	// If the dispatcher didn't run it (e.g., non-owner traffic), run it now.
+	const curatorResult = options?.curatorResult ?? await evaluateIntent(userText, env);
+
 	// B5: Conversational medication detection. If a `med_pending_*`
 	// flag is set and the user's message matches confirmation phrases,
 	// clear the flag and log the medication to today's mood entry.
 	// Fires alongside the AI response, not instead of it.
 	if (isOwner && userText.trim()) {
+		// D5: Check-in completion detection
+		// Clear flag if intent is not casual or vent, or user sends command-like text
+		if (healthCheckin) {
+			if (userText.length > 50 || /\b(anyway|so|enough|about you|what about|other|work|code|cancel|stop|clear|ignore)\b/i.test(userText) || (curatorResult.intent !== 'casual' && curatorResult.intent !== 'emotional_vent')) {
+				await env.CHAT_KV.delete(`health_checkin_active_${userId}`);
+				log.info('health_checkin_cleared_aggressively', { userId, reason: 'intent_or_keywords' });
+			}
+		}
 		const medPending = await env.CHAT_KV.get(`med_pending_${userId}`);
 		if (medPending && /\b(took|taken|yes|yep|yeah|done|had them|swallowed|popped|sorted)\b/i.test(userText)) {
 			await env.CHAT_KV.delete(`med_pending_${userId}`);
@@ -534,6 +449,7 @@ export async function handleMessage(
 		semanticCtx,
 		episodeCtx ? `\n${episodeCtx}` : '',
 		proceduralCtx ? `\n${proceduralCtx}` : '',
+		traitsCtx ? `\nEVOLVING PERSONALITY TRAITS:\n${traitsCtx}` : '',
 		graphCtx ? `\n${graphCtx}` : '',
 	].filter(Boolean).join('\n');
 
@@ -816,7 +732,7 @@ export async function handleMessage(
 		await saveHistory(env, chatId, threadId, historyMessages);
 	}
 
-	// --- Background: silent observation (uses userId) ---
+	// --- Background: Subconscious Processing (Domain 3 Layer G & F3) ---
 	// Only runs when the user sent real text content — media-only turns
 	// don't yield useful observation text for the CF AI extractor.
 	// Also skip if delivery failed: extracting observations from an
@@ -824,25 +740,44 @@ export async function handleMessage(
 	// user doesn't share.
 	const observationInput = userText || (media ? mediaPlaceholder(media.kind) : '');
 	if (sent && observationInput.length > 20 && fullText.length > 20) {
-		const bgTask = import('../ai/background').then(async ({ extractObservation }) => {
-			const obs = await extractObservation(env.AI, observationInput, fullText);
-			if (!obs || obs.includes('NOTHING_NEW')) return;
+		const bgTask = import('../ai/background').then(async ({ runSubconsciousProcessing }) => {
+			const obs = await runSubconsciousProcessing(env.AI, observationInput, fullText);
+			if (!obs) return;
 
-			const obsMatch = obs.match(/OBSERVATION:\s*(.+)/);
-			if (obsMatch?.[1]) {
-				await memory.saveMemory(env, userId, 'observation', obsMatch[1].trim());
+			// 1. Knowledge Graph Triples
+			if (obs.triples && Array.isArray(obs.triples)) {
+				for (const t of obs.triples) {
+					const parts = t.split('|').map(s => s.trim());
+					if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
+						await knowledgeGraph.saveTriple(env, userId, parts[0], parts[1], parts[2], null, 'observation');
+					}
+				}
 			}
 
-			for (const match of obs.matchAll(/TRIPLE:\s*([^|]+)\|([^|]+)\|(.+)/g)) {
-				const [, subject, predicate, object] = match;
-				if (subject && predicate && object) {
-					await knowledgeGraph.saveTriple(env, userId, subject.trim(), predicate.trim(), object.trim(), null, 'observation');
+			// 2. Personality Traits
+			if (obs.personality_traits && Array.isArray(obs.personality_traits)) {
+				for (const trait of obs.personality_traits) {
+					if (typeof trait === 'string' && trait.length > 0) {
+						await memory.saveMemory(env, userId, 'personality_trait', trait);
+					}
 				}
+			}
+
+			// 3. Mood/Emotion extraction (silent logging if appropriate)
+			if (obs.mood_score !== undefined && obs.emotions && Array.isArray(obs.emotions)) {
+				// We don't want to log mood automatically without user consent, 
+				// but we could store it as an implicit mood entry in memory.
+				await memory.saveMemory(env, userId, 'implicit_mood', `Mood: ${obs.mood_score}, Emotions: ${obs.emotions.join(', ')}`);
+			}
+
+			// 4. Episode Topic Tracking
+			if (obs.episode_topic && typeof obs.episode_topic === 'string') {
+				await memory.saveMemory(env, userId, 'episode_topic', obs.episode_topic);
 			}
 		});
 
 		if (ctx) {
-			ctx.waitUntil(bgTask.catch(e => log.error('bg_observation_failed', { msg: (e as Error).message })));
+			ctx.waitUntil(bgTask.catch(e => log.error('bg_subconscious_failed', { msg: (e as Error).message })));
 		}
 	}
 

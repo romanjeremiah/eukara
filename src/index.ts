@@ -26,7 +26,7 @@ import { handleMessage, handleCallback, handleCommand } from './bot';
 import { handlePollAnswer } from './bot/poll';
 import { handleCron } from './router/cron';
 import { handleQueue } from './router/queue';
-import { willHitProLane } from './ai/router';
+import { willHitHeavyLane } from './ai/router';
 import { evaluateIntent } from './ai/curator';
 import { readStickyProContext, clearStickyProContext, detectTopicShift } from './services/topicShift';
 import * as telegram from './lib/telegram';
@@ -182,25 +182,25 @@ async function dispatchMessage(
 	const curatorResult = await evaluateIntent(userText, env);
 
 	// Base routing decision (no regex, relies on curatorResult).
-	const baseProLane = willHitProLane(media, healthCheckin, curatorResult);
+	const baseHeavyLane = willHitHeavyLane(media, healthCheckin, curatorResult);
 
 	// Sticky-Pro override. Only runs when:
 	//   (a) Base routing says casual (no point overriding an already-Pro
 	//       route), AND
 	//   (b) A sticky context exists in KV from the previous Pro turn.
-	let forceProLane = false;
-	if (!baseProLane) {
+	let forceHeavyLane = false;
+	if (!baseHeavyLane) {
 		const sticky = await readStickyProContext(env, userId);
 		if (sticky) {
 			// Trivial-message bypass: very short messages (yes/ok/yeah) are
 			// almost always continuation, skip the classifier round-trip.
 			if (userText.trim().length < 10) {
-				forceProLane = true;
+				forceHeavyLane = true;
 				log.info('sticky_pro_kept_short', { userId });
 			} else {
 				const result = await detectTopicShift(env, sticky, userText);
 				if (result.sameTopic) {
-					forceProLane = true;
+					forceHeavyLane = true;
 					log.info('sticky_pro_kept', {
 						userId,
 						source: result.source,
@@ -218,9 +218,9 @@ async function dispatchMessage(
 		}
 	}
 
-	const finalProLane = baseProLane || forceProLane;
+	const finalHeavyLane = baseHeavyLane || forceHeavyLane;
 
-	if (finalProLane && env.TASK_QUEUE) {
+	if (finalHeavyLane && env.TASK_QUEUE) {
 		// Enqueue + ack 200 OK to Telegram immediately. Consumer has 15-min
 		// wall-clock budget, plenty for the 90s/45s/30s cascade. Typing
 		// indicator buys ~5s of UX feedback before the queue picks up.
@@ -230,7 +230,7 @@ async function dispatchMessage(
 				userId,
 				chatId: msg.chat.id,
 				message: msg,
-				forceProLane,
+				forceHeavyLane,
 				curatorResult,
 			});
 			const threadId = msg.message_thread_id ? String(msg.message_thread_id) : 'default';
@@ -241,16 +241,16 @@ async function dispatchMessage(
 			log.info('message_queued', {
 				userId,
 				chatId: msg.chat.id,
-				reason: forceProLane && !baseProLane ? 'sticky_pro' : 'pro_lane',
+				reason: forceHeavyLane && !baseHeavyLane ? 'sticky_heavy' : 'heavy_lane',
 				textLen: userText.length,
 				hasMedia: media,
 			});
 			return;
 		} catch (queueErr) {
-			// Queue send failed \u2014 fall through to inline await. Better
+			// Queue send failed — fall through to inline await. Better
 			// to hit the 30s ceiling than to drop the message entirely.
 			log.warn('queue_send_failed', { userId, msg: (queueErr as Error).message });
-			await runMessageHandler(msg, env, ctx, true, { forceProLane, curatorResult });
+			await runMessageHandler(msg, env, ctx, true, { forceHeavyLane, curatorResult });
 			return;
 		}
 	}
@@ -273,7 +273,7 @@ async function runMessageHandler(
 	env: Env,
 	ctx: ExecutionContext,
 	awaitFully: boolean,
-	options?: { forceProLane?: boolean, curatorResult?: any },
+	options?: { forceHeavyLane?: boolean, curatorResult?: any },
 ): Promise<void> {
 	const task = (async () => {
 		const handled = await handleCommand(msg, env);

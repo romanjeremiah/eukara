@@ -2,34 +2,20 @@
 // AI Model Router
 //
 // Decides which provider + model to use for each message.
-// Routes ~80% of traffic to free CF AI, reserves Gemini
-// for irreplaceable capabilities.
+// Routes all traffic to Cloudflare Workers AI.
 //
-// 2026-06-04 changes:
-//   - Pro lane primary is now `gemini-3.5-flash` (was
-//     `gemini-3.1-pro-preview`). Pro-latest demoted to Tier 2 fallback
-//     in the cascade. Reason: pro-latest's Google-side instability
-//     was costing every Pro turn 30-90s before falling through.
-//     Flash handles multimodal + tool combination at a fraction of
-//     the latency.
-//   - All four Pro-lane decisions (sticky_pro_context,
-//     multimodal_input, active_health_checkin, emotional_content)
-//     now point to GEMINI_MODELS.proPrimary. The cascade in
-//     bot/message.ts handles falling through to pro-latest, then
-//     CF Gemma, then gemini-3.1-flash-lite.
-//
-// 2026-06-02 changes (still in effect):
-//   - enableGrounding=true on Gemma default_casual and all Gemini
-//     Pro routes.
-//   - default_casual no longer sets thinkingEffort='low'.
-//   - TaskComplexity widened to include 'minimal'.
+// 2026-06-22 changes:
+//   - Migrated completely to Cloudflare Workers AI.
+//   - Removed all Gemini fallbacks and models.
+//   - Used @cf/meta/llama-3.3-70b-instruct-fp8-fast for deep reasoning.
+//   - Used @cf/moonshotai/kimi-k2.7-code for code/analytical.
+//   - Used @cf/llava-hf/llava-1.5-7b-hf for vision/multimodal.
 // ============================================================
 
 import type { AIProvider, ModelRoute } from '../types/ai';
-import { CF_MODELS, GEMINI_MODELS } from '../config/models';
+import { CF_MODELS } from '../config/models';
 import type { CuratorResult } from './curator';
 import { CloudflareProvider } from './cloudflare';
-import { GeminiProvider } from './gemini';
 import { log } from '../lib/logger';
 
 export interface RouterContext {
@@ -38,14 +24,11 @@ export interface RouterContext {
 	healthCheckinActive?: string | null;
 	hasMedia?: boolean;
 	/**
-	 * Set by the webhook dispatcher (src/index.ts) after a sticky-Pro
+	 * Set by the webhook dispatcher (src/index.ts) after a sticky-heavy
 	 * check fires. When true, routeMessage skips its regex/keyword
-	 * branches and returns the Pro lane directly. This is how the
-	 * conversation "stays on Pro until context changes" — the topic
-	 * classifier in src/services/topicShift.ts decided the new message
-	 * is still on the same topic as the previous Pro exchange.
+	 * branches and returns the heavy lane directly.
 	 */
-	forceProLane?: boolean;
+	forceHeavyLane?: boolean;
 	curatorResult?: CuratorResult;
 }
 
@@ -54,37 +37,34 @@ export interface RouterContext {
  * Returns which provider + model + thinking level to use.
  */
 export function routeMessage(ctx: RouterContext): ModelRoute {
-	const { userText, healthCheckinActive, hasMedia, forceProLane, curatorResult } = ctx;
+	const { userText, healthCheckinActive, hasMedia, forceHeavyLane, curatorResult } = ctx;
 
-	// Sticky Pro: previous turn was Pro and the topic classifier said
-	// the new message is still in the same topic. Force Pro lane so the
-	// conversation feels continuous. The dispatcher already paid the
-	// classifier cost; routeMessage just respects the decision.
-	if (forceProLane) {
+	// Sticky Heavy: previous turn was Heavy and the topic classifier said
+	// the new message is still in the same topic.
+	if (forceHeavyLane) {
 		return {
-			provider: 'gemini',
-			model: GEMINI_MODELS.proPrimary,
-			reason: 'sticky_pro_context',
+			provider: 'cloudflare',
+			model: CF_MODELS.chat,
+			reason: 'sticky_heavy_context',
 			enableGrounding: true,
 		};
 	}
 
-	// Media present: must route to Gemini. Workers AI chat models are
-	// text-only and would silently drop the media content.
+	// Media present: route to Cloudflare Vision model.
 	if (hasMedia) {
 		return {
-			provider: 'gemini',
-			model: GEMINI_MODELS.proPrimary,
+			provider: 'cloudflare',
+			model: CF_MODELS.vision,
 			reason: 'multimodal_input',
-			enableGrounding: true,
+			enableGrounding: false, // Vision models usually don't support grounding
 		};
 	}
 
-	// Active health check-in: needs Gemini Pro for therapeutic depth
+	// Active health check-in: needs 70b reasoning model for therapeutic depth
 	if (healthCheckinActive) {
 		return {
-			provider: 'gemini',
-			model: GEMINI_MODELS.proPrimary,
+			provider: 'cloudflare',
+			model: CF_MODELS.chat,
 			reason: 'active_health_checkin',
 			enableGrounding: true,
 		};
@@ -94,8 +74,8 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 	if (curatorResult) {
 		if (curatorResult.intent === 'emotional_vent' || curatorResult.intent === 'crisis') {
 			return {
-				provider: 'gemini',
-				model: GEMINI_MODELS.proPrimary,
+				provider: 'cloudflare',
+				model: CF_MODELS.chat,
 				reason: 'emotional_content',
 				enableGrounding: true,
 			};
@@ -133,9 +113,7 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 		};
 	}
 
-	// Default: Gemma 4 on CF AI. thinkingEffort intentionally omitted
-	// (was 'low' pre-F7, now 'dynamic' so we don't suppress reasoning).
-	// Grounding ALWAYS ON — Gemma 4 supports web_search_options.
+	// Default: 70b Chat on CF AI.
 	return {
 		provider: 'cloudflare',
 		model: CF_MODELS.chat,
@@ -148,20 +126,16 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
  * Cheap pre-routing predicate used by the webhook dispatcher
  * (src/index.ts) to decide whether to enqueue a message vs await
  * it inline. Mirrors routeMessage's branching but returns only
- * the provider kind — no provider instantiation, no env access.
- *
- * Returns true when the message will hit the Pro lane (Gemini)
- * under normal routing. Sticky-Pro decisions are layered on top
- * by the dispatcher, not by this function.
+ * a boolean to indicate if it hits the "Heavy" (slower) lane.
  */
-export function willHitProLane(
+export function willHitHeavyLane(
 	hasMedia: boolean,
 	healthCheckinActive: string | null,
 	curatorResult?: CuratorResult,
 ): boolean {
 	if (hasMedia) return true;
 	if (healthCheckinActive) return true;
-	if (curatorResult && (curatorResult.intent === 'emotional_vent' || curatorResult.intent === 'crisis')) return true;
+	if (curatorResult && (curatorResult.intent === 'emotional_vent' || curatorResult.intent === 'crisis' || curatorResult.intent === 'code' || curatorResult.intent === 'functional')) return true;
 	return false;
 }
 
@@ -169,9 +143,6 @@ export function willHitProLane(
  * Create the appropriate AI provider based on the route.
  */
 export function createProvider(route: ModelRoute, env: Env): AIProvider {
-	if (route.provider === 'gemini') {
-		return new GeminiProvider(env.GEMINI_API_KEY, route.model);
-	}
 	return new CloudflareProvider(env.AI, route.model);
 }
 

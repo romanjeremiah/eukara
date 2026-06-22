@@ -68,35 +68,48 @@ async function generate(
 }
 
 /**
- * Extract observations + triples from a conversation exchange.
- * Replaces Gemini Flash for silent observation.
- * ~13 neurons per call.
+ * Subconscious Processing (Domain 3 Layer G & F3).
+ * Single JSON pass to extract memory, mood, personality evolution, and episode tracking.
+ * We use the faster, cheaper 3b reasoning model for this background task.
  */
-export async function extractObservation(
+export async function runSubconsciousProcessing(
 	ai: Ai,
 	userText: string,
 	botResponse: string
-): Promise<string | null> {
-	return generate(ai, CF_MODELS.observation,
-		`You observed this exchange:
+): Promise<{
+	triples?: string[],
+	mood_score?: number,
+	emotions?: string[],
+	personality_traits?: string[],
+	episode_topic?: string
+} | null> {
+	const result = await generate(ai, CF_MODELS.observation,
+		`You observed this exchange between USER and BOT:
 USER: ${userText.slice(0, 400)}
 BOT: ${botResponse.slice(0, 300)}
 
-Did you learn anything NEW about this person? Look for:
-- Implicit preferences not stated directly
-- Behavioural patterns
-- New interests, goals, or life events
-- Emotional patterns
+Perform subconscious analysis and return ONLY a valid JSON object matching this schema:
+{
+  "triples": ["Subject | Predicate | Object"], // Any NEW factual relational knowledge learned about the user
+  "mood_score": 5, // Estimated 1-10 mood of the user based on text (1=crisis, 10=ecstatic)
+  "emotions": ["anxious", "tired"], // 1-3 emotions detected in user
+  "personality_traits": ["User prefers direct answers", "User uses dark humor"], // How the BOT should evolve its personality to match user preferences (ONLY if a shift is detected)
+  "episode_topic": "Debugging code" // The current micro-topic
+}
 
-If yes, respond with ONLY: OBSERVATION: [your observation]
-
-Also extract relational connections as triples.
-Format: TRIPLE: Subject | Predicate | Object
-Examples: TRIPLE: Roman | enjoys | Coffee, TRIPLE: Gym | reduces | Anxiety
-
-If nothing new, respond: NOTHING_NEW`,
-		'You are a silent observer. Be concise. Only note genuinely new information.'
+Return ONLY raw JSON. No markdown fences.`,
+		'You are the subconscious processor. You output strictly JSON.'
 	);
+
+	if (!result) return null;
+	try {
+		// Clean any markdown fences the model might have ignored instructions to exclude
+		const cleanJson = result.replace(/^```json/i, '').replace(/```$/i, '').trim();
+		return JSON.parse(cleanJson);
+	} catch (e) {
+		log.warn('subconscious_json_parse_error', { msg: (e as Error).message, result: result.slice(0, 100) });
+		return null;
+	}
 }
 
 /**
