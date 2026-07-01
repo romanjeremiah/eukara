@@ -12,7 +12,7 @@
 // ============================================================
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { CloudflareProvider } from '../src/ai/cloudflare';
+import { CloudflareProvider, parseStreamEvent } from '../src/ai/cloudflare';
 
 /**
  * Build a fake Workers AI binding whose run() returns a fixed payload.
@@ -87,5 +87,45 @@ describe('CloudflareProvider gpt-oss output parsing', () => {
 		);
 		const res = await provider.chat([{ role: 'user', content: 'hi' }]);
 		expect(res.text).toBe('compat reply');
+	});
+});
+
+describe('parseStreamEvent (streaming SSE)', () => {
+	it('yields text from a Responses output_text delta', () => {
+		expect(parseStreamEvent({ type: 'response.output_text.delta', delta: 'Hel' })).toEqual({ text: 'Hel' });
+	});
+
+	it('ignores reasoning deltas (never leak private reasoning)', () => {
+		expect(parseStreamEvent({ type: 'response.reasoning_text.delta', delta: 'thinking' })).toEqual({});
+	});
+
+	it('ignores cumulative *.done events (no duplicate text)', () => {
+		expect(parseStreamEvent({ type: 'response.output_text.done', text: 'Hello' })).toEqual({});
+	});
+
+	it('flags a Responses function_call item as a tool call', () => {
+		expect(parseStreamEvent({ type: 'response.output_item.added', item: { type: 'function_call', name: 'x' } })).toEqual({ toolCall: true });
+	});
+
+	it('flags function_call argument deltas as a tool call', () => {
+		expect(parseStreamEvent({ type: 'response.function_call_arguments.delta', delta: '{' })).toEqual({ toolCall: true });
+	});
+
+	it('parses Chat Completions delta content', () => {
+		expect(parseStreamEvent({ choices: [{ delta: { content: 'Hi' } }] })).toEqual({ text: 'Hi' });
+	});
+
+	it('flags Chat Completions delta tool_calls', () => {
+		expect(parseStreamEvent({ choices: [{ delta: { tool_calls: [{ index: 0 }] } }] })).toEqual({ toolCall: true });
+	});
+
+	it('parses the legacy {response} token shape', () => {
+		expect(parseStreamEvent({ response: 'tok' })).toEqual({ text: 'tok' });
+	});
+
+	it('returns {} for lifecycle / empty / null events', () => {
+		expect(parseStreamEvent({ type: 'response.created' })).toEqual({});
+		expect(parseStreamEvent({})).toEqual({});
+		expect(parseStreamEvent(null)).toEqual({});
 	});
 });

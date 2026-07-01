@@ -1,4 +1,139 @@
 ================================================================
+2026-07-01  Telegram 10.1 alignment: streaming, polls, checklist polish
+================================================================
+
+Requested: align Eukara with the latest Telegram Bot API (formatting,
+polls, to-do lists) and add streaming for gpt-oss-120b.
+
+REVIEW FINDINGS (docs/telegram-api-docs + web; Protocol 2)
+
+  - Latest is Bot API 10.1 (2026-06-11): Rich Messages + streaming AI
+    replies (sendRichMessage / sendRichMessageDraft / rich_message on
+    editMessageText). Eukara's lib/telegram.ts ALREADY uses all three,
+    so the send layer is current, NOT old.
+  - CORRECTION to a gap-analysis suggestion: sendRichMessage and
+    InputRichMessage have NO link_preview_options field (that belongs to
+    classic sendMessage). InputRichMessage offers html/markdown, is_rtl,
+    skip_entity_detection. So no link_preview_options work was done — it
+    would be rejected/ignored on the Rich Messages path.
+  - Native to-do lists: sendChecklist / editMessageChecklist REQUIRE a
+    business_connection_id ("on behalf of a connected business account"),
+    so they are unavailable to a normal bot chat. Decision (Roma): keep
+    and polish the existing inline-keyboard checklist.
+  - Polls: sendPoll exists in lib/telegram.ts but is UNUSED (no poll tool
+    or command). Modernised the helper; no live feature consumes it yet.
+
+IMPLEMENTED
+
+  Phase 1 - STREAMING (native, Bot API 10.1):
+    - ai/cloudflare.ts: new streamChat() async generator running
+      env.AI.run(..., {stream:true}); yields visible output-text deltas,
+      flags tool-call intent, and NEVER yields reasoning tokens. First
+      event keys logged (cf_stream_first_event) to confirm the live SSE
+      shape post-deploy. New exported pure helper parseStreamEvent()
+      handles Responses (output_text.delta / function_call), Chat
+      Completions (choices[].delta), and legacy ({response}) shapes.
+    - bot/message.ts: attemptStreamingReply() drives a live animated
+      draft via telegram.sendMessageDraft (sendRichMessageDraft) while
+      gpt-oss generates. Gated to the casual inline lane, text-only,
+      gpt-oss model, private chat. OPTIMISTIC SINGLE-ROUND: if the model
+      wants a tool or the stream yields no text, it returns delivered
+      false and the normal non-streaming tool loop runs unchanged (the
+      loop is skipped only when streaming produced text). The final
+      message is PERSISTED through the existing send path (sendRichMessage
+      + buttons + history), exactly as the ephemeral-draft API requires.
+      Streaming is therefore purely additive and can never break a reply.
+
+  Phase 2 - POLLS:
+    - lib/telegram.ts sendPoll(): modernised to the full current surface
+      (question_parse_mode, allows_revoting, shuffle_options,
+      hide_results_until_closes, quiz correct_option_ids / explanation /
+      explanation_parse_mode, open_period|close_date, is_closed,
+      description(+parse_mode), message_effect_id, reply/ markup). All
+      optional, backward-compatible. NOTE: still unused until a poll
+      tool is added (flagged to Roma).
+
+  Phase 3 - CHECKLIST POLISH (native is business-only, so keyboard kept):
+    - tools/checklist-tools.ts buildChecklistText(): now renders the items
+      as a list in the body with completed items struck through (<s>), and
+      escapes title/item HTML. The toggle handler (bot/callback.ts) already
+      rebuilds via this function, so toggles update the struck-through list
+      live with no callback.ts change. Toggle semantics (checkbox / check)
+      unchanged.
+
+    Formatting: send layer already on Rich Messages; no inapplicable
+    params added. Earlier same-day fix already gave outreach the same
+    formatting + buttons as replies.
+
+FILES CHANGED
+
+  src/ai/cloudflare.ts            (streamChat + parseStreamEvent)
+  src/bot/message.ts             (attemptStreamingReply + streaming gate;
+                                   stale Pro-lane comment already retidied)
+  src/lib/telegram.ts            (sendPoll modernisation)
+  src/tools/checklist-tools.ts   (buildChecklistText body list + escaping)
+  test/gptoss-adapter.spec.js    (added parseStreamEvent tests)
+
+VERIFICATION
+
+  - npx tsc --noEmit: clean.
+  - Unit tests (tsx harness in sandbox; committed spec runs under npm test
+    on macOS): gpt-oss output parsing 7/7; streaming SSE parser 11/11.
+  - Live SSE event shape for gpt-oss to be confirmed from
+    cf_stream_first_event logs after deploy; parseStreamEvent already
+    covers the documented Responses/Chat-Completions/legacy shapes, and
+    any mismatch degrades safely to the non-streaming path.
+
+DEPLOY STATUS: NOT DEPLOYED. Roma runs `npx wrangler deploy`.
+
+FOLLOW-UPS / OPEN
+
+  - Confirm gpt-oss streaming SSE shape from logs; adjust parseStreamEvent
+    if the live event names differ.
+  - Optionally extend streaming to the queue-dispatched heavy/emotional
+    lane (Phase 1 was casual inline only, per decision).
+  - Add a poll tool if a /poll feature is wanted (sendPoll is ready).
+  - workflows/architect.ts + consolidation.ts still on the Google SDK with
+    a @cf/... id (broken since 2026-06-22) — separate migration.
+
+
+================================================================
+2026-07-01  Outreach formatting parity + stale-comment tidy
+================================================================
+
+Follow-up to the same-day gpt-oss migration entry below.
+
+  - FORMATTING PARITY: spontaneous outreach now delivers through the same
+    path as normal replies. router/queue.ts previously sent outreach via a
+    raw fetch helper (sendTelegram) with parse_mode HTML but NO
+    markdown->HTML normalisation and NO inline keyboard, so proactive
+    messages rendered differently (no Voice/Delete buttons; raw markdown if
+    the model emitted any). Now it runs normaliseMarkdown + enforceTagNesting
+    and sends via telegram.sendMessage with the Voice/Delete markup, matching
+    replies exactly. Removed the now-unused sendTelegram helper and its
+    `token` local. (Weekly report already used the proper pipeline.)
+  - COMMENT TIDY: rewrote the stale "PRO LANE / CASUAL LANE" four-tier
+    cascade header in bot/message.ts. It described a Gemini Tier1..4 cascade
+    that no longer exists (retired in the 2026-06-22 CF migration). Replaced
+    with an accurate description: single CloudflareProvider, gpt-oss for
+    conversation/code, Gemma for grounded/fallback, plus the 2026-07-01
+    no-silence salvage. Logic unchanged.
+
+FILES CHANGED
+
+  src/bot/message.ts      (header comment only)
+  src/router/queue.ts     (outreach send parity; removed sendTelegram + token)
+
+VERIFICATION: npx tsc --noEmit clean.
+
+OPEN / NEXT: streaming for gpt-oss-120b requested. gpt-oss supports
+  stream:true (SSE). Telegram has no push streaming, so it is simulated via
+  a placeholder message + throttled editMessageText. Interacts with the tool
+  loop, HTML-safety, chunking and rate limits — design options presented to
+  Roma for a decision before implementation (Protocol 1). Not yet built.
+
+
+================================================================
 2026-07-01  gpt-oss-120b migration + reply-outage & outreach-repeat fixes
 ================================================================
 

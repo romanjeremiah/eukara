@@ -244,6 +244,88 @@ export class CloudflareProvider implements AIProvider {
 		}
 	}
 
+	/**
+	 * Stream visible reply text for gpt-oss (and any CF chat model that
+	 * supports `stream: true`). Yields `{ delta }` for each visible
+	 * output-text fragment, and `{ sawToolCall: true }` if the model emits a
+	 * tool/function call (the caller then abandons streaming and runs the
+	 * non-streaming tool loop). Reasoning tokens are never yielded.
+	 *
+	 * Best-effort by design: on any error, non-stream body, or unrecognised
+	 * event shape it simply stops yielding, so the caller falls back to
+	 * chat(). Used by the casual inline lane to drive live Telegram drafts via
+	 * sendRichMessageDraft (Bot API 10.1). The first event's keys are logged
+	 * once (`cf_stream_first_event`) so the exact wire shape can be confirmed
+	 * from production logs.
+	 *
+	 * @param {AIMessage[]} messages - conversation turns
+	 * @param {AITool[]} [tools] - tool declarations (only to detect tool intent)
+	 * @param {AIProviderConfig} [config] - systemInstruction + maxTokens
+	 * @returns {AsyncGenerator<{ delta?: string; sawToolCall?: boolean }>}
+	 */
+	async *streamChat(
+		messages: AIMessage[],
+		tools?: AITool[],
+		config?: AIProviderConfig,
+	): AsyncGenerator<{ delta?: string; sawToolCall?: boolean }> {
+		const cfMessages = this.convertMessages(messages, config?.systemInstruction);
+		const cfTools = tools?.length ? this.convertTools(tools) : undefined;
+		const payload: Record<string, unknown> = {
+			messages: cfMessages,
+			tools: cfTools,
+			max_tokens: config?.maxTokens ?? 2048,
+			stream: true,
+		};
+
+		let stream: unknown;
+		try {
+			stream = await runAI<ReadableStream | unknown>(
+				this.ai,
+				this.model as unknown as keyof AiModels,
+				payload,
+			);
+		} catch (err) {
+			log.warn('cf_ai_stream_start_error', { model: this.model, msg: (err as Error).message });
+			return;
+		}
+		if (!(stream instanceof ReadableStream)) return;
+
+		const reader = stream.getReader();
+		const decoder = new TextDecoder();
+		let buffer = '';
+		let loggedFirst = false;
+
+		try {
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+				buffer += decoder.decode(value, { stream: true });
+				const lines = buffer.split('\n');
+				buffer = lines.pop() ?? '';
+				for (const line of lines) {
+					const trimmed = line.trim();
+					if (!trimmed.startsWith('data:')) continue;
+					const data = trimmed.slice(5).trim();
+					if (!data || data === '[DONE]') continue;
+					let evt: unknown;
+					try { evt = JSON.parse(data); } catch { continue; }
+					if (!loggedFirst) {
+						log.info('cf_stream_first_event', {
+							model: this.model,
+							keys: evt && typeof evt === 'object' ? Object.keys(evt as object) : [],
+						});
+						loggedFirst = true;
+					}
+					const parsed = parseStreamEvent(evt);
+					if (parsed.text) yield { delta: parsed.text };
+					if (parsed.toolCall) yield { sawToolCall: true };
+				}
+			}
+		} catch (err) {
+			log.warn('cf_ai_stream_read_error', { model: this.model, msg: (err as Error).message });
+		}
+	}
+
 	async embed(text: string): Promise<number[]> {
 		try {
 			const result = await runAI<EmbeddingResponse>(
@@ -487,3 +569,59 @@ type RoleScopedChatInput = {
 	role: 'system' | 'user' | 'assistant' | 'tool';
 	content: string;
 };
+
+/**
+ * Extract the visible output-text delta (and detect tool-call intent) from a
+ * single streamed SSE event, across the shapes Cloudflare may emit for a
+ * `stream: true` chat call:
+ *   - OpenAI Responses events (gpt-oss): `{ type: 'response.output_text.delta',
+ *     delta }` for text; `{ type: 'response.output_item.added', item.type:
+ *     'function_call' }` or any '…function_call…' type for tools. Reasoning
+ *     events ('response.reasoning*') and cumulative '*.done' events are
+ *     deliberately ignored so private reasoning is never shown and text is not
+ *     duplicated.
+ *   - Chat Completions SSE: `{ choices: [{ delta: { content, tool_calls } }] }`.
+ *   - Legacy Workers AI SSE: `{ response: '<token>' }`.
+ * Anything unrecognised returns `{}` so the streamer yields nothing and the
+ * caller falls back to the non-streaming path. Exported for unit testing.
+ *
+ * @param {unknown} evt - parsed JSON of one SSE `data:` line
+ * @returns {{ text?: string; toolCall?: boolean }}
+ */
+export function parseStreamEvent(evt: unknown): { text?: string; toolCall?: boolean } {
+	if (!evt || typeof evt !== 'object') return {};
+	const e = evt as any;
+
+	// OpenAI Responses streaming (gpt-oss).
+	if (typeof e.type === 'string') {
+		if (e.type === 'response.output_text.delta' && typeof e.delta === 'string') {
+			return { text: e.delta };
+		}
+		if (e.type === 'response.output_item.added' && e.item?.type === 'function_call') {
+			return { toolCall: true };
+		}
+		if (e.type.includes('function_call')) {
+			return { toolCall: true };
+		}
+		// Reasoning, lifecycle, and cumulative '*.done' events carry no
+		// visible delta we should surface.
+		if (e.type.startsWith('response.')) return {};
+	}
+
+	// Chat Completions SSE.
+	const choice = Array.isArray(e.choices) ? e.choices[0] : undefined;
+	if (choice?.delta) {
+		if (Array.isArray(choice.delta.tool_calls) && choice.delta.tool_calls.length) {
+			return { toolCall: true };
+		}
+		if (typeof choice.delta.content === 'string' && choice.delta.content) {
+			return { text: choice.delta.content };
+		}
+		return {};
+	}
+
+	// Legacy Workers AI SSE.
+	if (typeof e.response === 'string' && e.response) return { text: e.response };
+
+	return {};
+}

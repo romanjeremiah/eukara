@@ -159,7 +159,6 @@ export async function handleQueue(batch: MessageBatch, env: Env): Promise<void> 
 
 async function processTask(task: QueueTask, env: Env, attempts: number): Promise<void> {
 	const { userId, chatId } = task;
-	const token = env.TELEGRAM_TOKEN;
 
 	switch (task.type) {
 
@@ -195,7 +194,21 @@ async function processTask(task: QueueTask, env: Env, attempts: number): Promise
 				''
 			);
 			if (greeting) {
-				await sendTelegram(token, chatId, greeting);
+				// 2026-07-01: deliver through the SAME pipeline as normal
+				// replies so proactive messages render identically. Previously
+				// this used a raw fetch (sendTelegram) with no markdown->HTML
+				// normalisation and no inline keyboard, which is why outreach
+				// looked different from replies (no Voice/Delete buttons, and
+				// any markdown the model emitted showed raw).
+				let outText = normaliseMarkdown(greeting);
+				outText = enforceTagNesting(outText);
+				const outreachMarkup = {
+					inline_keyboard: [[
+						{ text: '🔊 Voice', callback_data: 'action_voice' },
+						{ text: '🗑️ Delete', callback_data: 'action_delete_msg', style: 'danger' as const },
+					]],
+				};
+				await telegram.sendMessage(chatId, CHECKIN_THREAD_ID, outText, env, { markup: outreachMarkup });
 				// Record what we just surfaced so the next run's dedup guard
 				// (above) can avoid repeating it. 14-day TTL. Best-effort.
 				await env.CHAT_KV.put(`last_outreach_${userId}`, chosen.fact, { expirationTtl: 14 * 86400 })
@@ -479,13 +492,4 @@ function safeJsonArray(raw: string | null): string[] {
 	} catch {
 		return [];
 	}
-}
-
-async function sendTelegram(token: string, chatId: number, text: string): Promise<void> {
-	if (!text) return;
-	await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
-	}).catch(() => {});
 }

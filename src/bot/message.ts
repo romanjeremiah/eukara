@@ -32,44 +32,33 @@ import * as persona from '../services/persona';
 import { getWeather, formatWeatherForContext } from '../services/weather';
 
 // ============================================================
-// AI chat with lane-appropriate fallback
+// AI chat with conditional-retry fallback
 //
-// Two distinct strategies depending on which lane the router picked.
-// 2026-06-04: split from a single function because the previous
-// shared Tier-1 wrapper silently halved the casual-lane budget
-// (90s to 30s) during the morning cascade reorder, hard-failing CF
-// Gemma turns under load with no fallback.
+// Architecture note (updated 2026-07-01): Eukara runs entirely on
+// Cloudflare Workers AI — there is no Gemini/Pro lane any more (the
+// old four-tier Google+CF cascade was retired in the 2026-06-22 CF
+// migration). Every turn goes through a single CloudflareProvider; the
+// router only varies WHICH Cloudflare model is used:
+//   - conversation (casual / emotional / sticky) + code -> gpt-oss-120b
+//   - media turns                                        -> vision model
+//   - grounded fallback / curiosity / weekly             -> Gemma
 //
-// PRO LANE (route.provider === 'gemini')
-// Four-tier cascade across Google + Cloudflare for emotional,
-// multimodal, active-checkin, and sticky-context turns where
-// resilience matters more than minimising spend.
+// chatWithFallback below is the primary call with ONE conditional
+// retry:
+//   Attempt 1 (60s, 'cf_primary'): as configured (grounding only has
+//     effect on Gemma; gpt-oss ignores it).
+//   Attempt 2 (30s, 'cf_no_grounding'): same model without
+//     web_search_options. Triggers ONLY on a timeout or a CF 5006
+//     schema-validation error AND only when grounding was enabled on
+//     Attempt 1. Other failures (network, auth, content filter)
+//     re-throw immediately — a grounding-off retry wouldn't help.
 //
-//   Tier 1 (30s):  gemini-3.5-flash         3.x family, multimodal,
-//                                            tool combination, fast.
-//   Tier 2 (60s):  gemini-3.1-pro-preview         Deeper reasoning when
-//                                            flash isn't enough.
-//   Tier 3 (30s):  @cf/google/gemma-4-26b    Cross-provider resilience,
-//                                            no Google dependency.
-//   Tier 4 (30s):  gemini-3.1-flash-lite     Last-resort Gemini.
+// Cross-model resilience and the guarantee that a turn never ends
+// silently live in handleMessage's post-loop salvage (2026-07-01): if
+// the tool loop yields no text, or the primary throws, it forces one
+// plain tool-free reply and falls back to Gemma (CF_MODELS.fallbackPro).
 //
-// CASUAL LANE (route.provider !== 'gemini', typically CF Gemma)
-// Single call with one conditional retry. Routine non-emotional
-// chat where the priority is fast happy-path response and graceful
-// degradation when grounding misbehaves.
-//
-//   Attempt 1 (60s, 'casual_primary'):
-//     as configured (with grounding if route allows).
-//   Attempt 2 (30s, 'casual_no_grounding'):
-//     retries the same model without web_search_options. Triggers
-//     ONLY on timeout or CF 5006 schema validation error AND only
-//     when grounding was enabled on Attempt 1. Other failures
-//     (network, auth, content filter) re-throw immediately.
-//
-// Total worst-case wall clock: Pro lane 150s, casual lane 90s.
-// Both sit well within the queue consumer's 15-min budget.
-//
-// Per-tier timeouts via Promise.race (wall-clock), not AbortSignal:
+// Timeouts use Promise.race (wall-clock), not AbortSignal:
 // provider-agnostic, no SDK-specific plumbing.
 // ============================================================
 
@@ -181,6 +170,69 @@ async function chatWithFallback(
 		}
 	}
 	throw new Error("CF cascade exhausted after 2 attempts");
+}
+
+/**
+ * Optimistic streaming for the casual inline lane (Bot API 10.1 Rich
+ * Messages). Streams gpt-oss output as a live, animated Telegram draft via
+ * sendRichMessageDraft while the reply is being generated. The draft is
+ * ephemeral (a ~30s preview); the caller persists the final message through
+ * the normal send path afterwards, exactly as the API requires.
+ *
+ * "Optimistic single-round": we stream the first model call. If the model
+ * instead wants a tool, or the stream yields no visible text, we return
+ * `delivered: false` and the caller runs the normal non-streaming tool loop
+ * with zero user-visible difference. Streaming can therefore never break a
+ * reply — worst case it is inert and we fall back.
+ *
+ * Only visible output-text is drawn; reasoning tokens are filtered out by
+ * the provider's streamChat. Draft updates are throttled (~1 / 1.2s) because
+ * Telegram animates same-draft_id updates and more frequent calls only risk
+ * rate limits.
+ *
+ * @returns `{ delivered, text }` — when delivered, `text` is the raw
+ *   accumulated model output for the caller to format, persist and store.
+ */
+async function attemptStreamingReply(
+	provider: CloudflareProvider,
+	messages: AIMessage[],
+	tools: AITool[],
+	config: { systemInstruction?: string; enableGrounding?: boolean; maxTokens?: number },
+	env: Env,
+	chatId: number,
+	threadId: string,
+	userId: number,
+	replyToMsgId: number,
+): Promise<{ delivered: boolean; text?: string }> {
+	const draftId = `stream_${userId}_${replyToMsgId}`;
+	let acc = '';
+	let sawTool = false;
+	let lastDraftAt = 0;
+
+	try {
+		for await (const chunk of provider.streamChat(messages, tools, config)) {
+			if (chunk.sawToolCall) { sawTool = true; break; }
+			if (chunk.delta) {
+				acc += chunk.delta;
+				const now = Date.now();
+				if (acc.trim() && now - lastDraftAt >= 1200) {
+					lastDraftAt = now;
+					// Best-effort preview; a failed draft update must not abort
+					// generation. The real message is persisted by the caller.
+					await telegram.sendMessageDraft(chatId, threadId, draftId, acc, env).catch(() => {});
+				}
+			}
+		}
+	} catch (e) {
+		log.warn('stream_attempt_failed', { userId, msg: (e as Error).message });
+	}
+
+	// Abandon streaming if the model wanted a tool, or produced no text — the
+	// ephemeral draft (if any) auto-expires and the caller runs the normal
+	// non-streaming tool loop, which handles tools and persists the reply.
+	if (sawTool || !acc.trim()) return { delivered: false };
+
+	return { delivered: true, text: acc };
 }
 
 // Telegram's Bot API caps file downloads at 20MB. Anything larger would
@@ -446,8 +498,37 @@ export async function handleMessage(
 	const toolContext: ToolContext = { userId, chatId, threadId, messageId };
 	const maxToolRounds = 5;
 
+	// --- Optimistic streaming (casual inline lane, gpt-oss) ---
+	// Stream the reply as a live Telegram draft while gpt-oss generates. Gated
+	// to: inline dispatch (ctx present — the queue consumer passes none),
+	// text-only turns, the casual default lane, the gpt-oss chat model, and a
+	// private chat (sendRichMessageDraft requires one). If the model wants a
+	// tool or the stream yields nothing, `streamed` stays false and the normal
+	// tool loop below runs unchanged. On success we already have the text, so
+	// the loop is skipped and the standard send path persists it.
+	let streamed = false;
+	const canStream = !!ctx
+		&& !media
+		&& route.reason === 'default_casual'
+		&& route.model === CF_MODELS.chat
+		&& chatId === userId;
+	if (canStream) {
+		const s = await attemptStreamingReply(
+			provider as unknown as CloudflareProvider,
+			initialMessages,
+			tools,
+			{ systemInstruction, enableGrounding: false },
+			env, chatId, threadId, userId, messageId,
+		);
+		if (s.delivered && s.text) {
+			fullText = s.text;
+			streamed = true;
+			log.info('reply_streamed', { userId, len: fullText.length });
+		}
+	}
+
 	try {
-		for (let round = 0; round < maxToolRounds; round++) {
+		for (let round = 0; !streamed && round < maxToolRounds; round++) {
 			const { response, tierUsed } = await chatWithFallback(route, provider, {
 				messages,
 				tools,

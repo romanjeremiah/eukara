@@ -35,12 +35,33 @@ export function buildChecklistText(
 	title: string,
 	buttons: Array<Array<{ text: string }>>
 ): string {
+	// Escape user/model text so titles or items containing &, <, > can't
+	// break Telegram's HTML parser (the whole message is HTML parse_mode).
+	const esc = (s: string): string =>
+		s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+	// Derive each item's done-state and label from its button text
+	// (prefix "✅ " = done, "☐ " = pending). The toggle handler rebuilds
+	// via this function, so the body list stays in sync with the buttons.
 	const total = buttons.length;
-	const done = buttons.filter((row) => row[0]?.text?.startsWith('✅')).length;
+	const rows = buttons.map((row) => {
+		const t = row[0]?.text ?? '';
+		const done = t.startsWith('✅');
+		const label = esc(t.replace(/^(✅|☐)\s+/, '').trim());
+		return { done, label };
+	});
+	const done = rows.filter((r) => r.done).length;
 	const remaining = total - done;
 
-	let text = `📝 <b>${title}</b>\n`;
-	text += `<i>Checklist</i>\n\n`;
+	// 2026-07-01 polish: render the items in the body as a proper list with
+	// completed items struck through. This reads better than a bare progress
+	// bar and leaves a persistent record even when the inline keyboard is
+	// scrolled off screen.
+	let text = `📝 <b>${esc(title)}</b>\n\n`;
+	text += rows
+		.map((r) => (r.done ? `✅ <s>${r.label}</s>` : `▫️ ${r.label}`))
+		.join('\n');
+	text += `\n\n`;
 
 	const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 	const filled = Math.round(pct / 10);

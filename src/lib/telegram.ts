@@ -460,13 +460,50 @@ export async function sendDocument(
 	return res.json() as Promise<TelegramApiResponse<TelegramMessage>>;
 }
 
+/**
+ * Send a native Telegram poll or quiz.
+ *
+ * Modernised 2026-07-01 to the current Bot API sendPoll surface. All new
+ * fields are optional and default to the previous behaviour, so existing
+ * callers are unaffected. NOTE: as of this change nothing in Eukara calls
+ * sendPoll yet (no poll tool/command) — this keeps the primitive correct and
+ * ready for a future /poll feature.
+ *
+ * Reference: docs/telegram-api-docs/telegram-bot-api-reference.md → `sendPoll`.
+ *
+ * @param {Array<{text: string; text_parse_mode?: string; text_entities?: unknown[]}>} options
+ *   1-12 InputPollOption objects. Option text supports custom-emoji formatting
+ *   via text_parse_mode / text_entities.
+ * @param {object} config - poll options; quiz fields (correctOptionIds,
+ *   explanation) only apply when type === 'quiz'. openPeriod and closeDate are
+ *   mutually exclusive (openPeriod wins if both are set).
+ */
 export async function sendPoll(
 	chatId: number,
 	threadId: string,
 	question: string,
-	options: Array<{ text: string }>,
+	options: Array<{ text: string; text_parse_mode?: string; text_entities?: unknown[] }>,
 	env: Env,
-	config: { isAnonymous?: boolean; type?: string; allowsMultipleAnswers?: boolean } = {}
+	config: {
+		isAnonymous?: boolean;
+		type?: 'regular' | 'quiz';
+		allowsMultipleAnswers?: boolean;
+		questionParseMode?: string;
+		allowsRevoting?: boolean;
+		shuffleOptions?: boolean;
+		hideResultsUntilCloses?: boolean;
+		correctOptionIds?: number[];
+		explanation?: string;
+		explanationParseMode?: string;
+		openPeriod?: number;
+		closeDate?: number;
+		isClosed?: boolean;
+		description?: string;
+		descriptionParseMode?: string;
+		effectId?: string;
+		replyId?: number;
+		markup?: Record<string, unknown>;
+	} = {}
 ): Promise<TelegramApiResponse<TelegramMessage>> {
 	const payload: Record<string, unknown> = {
 		chat_id: chatId,
@@ -477,6 +514,27 @@ export async function sendPoll(
 		allows_multiple_answers: config.allowsMultipleAnswers ?? false,
 	};
 	if (threadId !== 'default') payload.message_thread_id = threadId;
+	// Question formatting (currently custom-emoji only, per the API).
+	if (config.questionParseMode) payload.question_parse_mode = config.questionParseMode;
+	// Voting behaviour.
+	if (config.allowsRevoting != null) payload.allows_revoting = config.allowsRevoting;
+	if (config.shuffleOptions) payload.shuffle_options = true;
+	if (config.hideResultsUntilCloses) payload.hide_results_until_closes = true;
+	// Quiz mode.
+	if (config.correctOptionIds) payload.correct_option_ids = config.correctOptionIds;
+	if (config.explanation) payload.explanation = config.explanation;
+	if (config.explanationParseMode) payload.explanation_parse_mode = config.explanationParseMode;
+	// Auto-close timing (mutually exclusive; open_period takes precedence).
+	if (config.openPeriod != null) payload.open_period = config.openPeriod;
+	else if (config.closeDate != null) payload.close_date = config.closeDate;
+	if (config.isClosed) payload.is_closed = true;
+	// Poll description (Bot API 9.x+).
+	if (config.description) payload.description = config.description;
+	if (config.descriptionParseMode) payload.description_parse_mode = config.descriptionParseMode;
+	// Delivery extras.
+	if (config.effectId) payload.message_effect_id = config.effectId;
+	if (config.replyId) payload.reply_parameters = { message_id: config.replyId };
+	if (config.markup) payload.reply_markup = config.markup;
 	return tgApi<TelegramMessage>('sendPoll', env, payload);
 }
 
