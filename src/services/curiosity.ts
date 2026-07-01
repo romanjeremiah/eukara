@@ -69,7 +69,12 @@ export async function maybeRunResearch(env: Env, userId: number, localTime: Date
 
 	try {
 		const interests = await deriveInterests(env, userId);
-		const provider = new CloudflareProvider(env.AI, CF_MODELS.chat);
+		// 2026-07-01: run on the grounded model (Gemma). The previous
+		// CF_MODELS.chat is now gpt-oss-120b, which has no web search, so
+		// "research" would be ungrounded model recall — stale and repetitive,
+		// which is what made spontaneous outreach send near-identical items.
+		// Gemma accepts web_search_options, so enableGrounding below is real.
+		const provider = new CloudflareProvider(env.AI, CF_MODELS.grounded);
 
 		const prompt = `Find ONE concrete, genuinely interesting development from the last 7 days that someone with these interests would care about:
 
@@ -94,8 +99,12 @@ Pick the single most interesting item. Write 2 to 3 sentences explaining what it
 		}
 
 		// Retain the first grounding source URL so the discovery can be
-		// surfaced with a verifiable link.
-		const source = extractFirstSource(response._groundingMetadata);
+		// surfaced with a verifiable link. 2026-07-01 fix: the CF provider
+		// returns web_search_options citations on `_annotations`
+		// ([{type:'url_citation', url_citation:{url,...}}]); the old
+		// `_groundingMetadata` was a Gemini-era field the CF path never
+		// populated, so every discovery was saved sourceless.
+		const source = extractFirstSource(response._annotations);
 		const fact = source ? `Research: ${text} [source: ${source}]` : `Research: ${text}`;
 
 		await memory.saveMemory(env, userId, 'discovery', fact, 1);
@@ -123,12 +132,26 @@ async function deriveInterests(env: Env, userId: number): Promise<string> {
 }
 
 /**
- * Extract the first web source URL from Gemini grounding metadata.
- * Returns null when no grounded source is present. Defensive against
- * the loose shape of the metadata (groundingChunks: Array<{web:{uri}}>).
+ * Extract the first web source URL from Cloudflare web_search_options
+ * citations. The CF provider surfaces these on AIResponse._annotations as
+ * [{ type: 'url_citation', url_citation: { url, title, ... } }] (see
+ * ai/cloudflare.ts parseResponse and message.ts formatCitations).
+ *
+ * Returns null when no grounded source is present. Kept defensive: also
+ * accepts the legacy Gemini groundingChunks shape so any old caller
+ * passing that structure still resolves a URL rather than throwing.
  */
-function extractFirstSource(metadata: unknown): string | null {
-	const chunks = (metadata as { groundingChunks?: Array<{ web?: { uri?: string } }> } | undefined)?.groundingChunks;
+function extractFirstSource(annotations: unknown): string | null {
+	// Preferred: CF url_citation annotations.
+	if (Array.isArray(annotations)) {
+		for (const ann of annotations) {
+			const url = (ann as { url_citation?: { url?: string } })?.url_citation?.url;
+			if (typeof url === 'string' && url.startsWith('http')) return url;
+		}
+		return null;
+	}
+	// Legacy fallback: Gemini groundingChunks (Array<{web:{uri}}>).
+	const chunks = (annotations as { groundingChunks?: Array<{ web?: { uri?: string } }> } | undefined)?.groundingChunks;
 	if (!chunks?.length) return null;
 	for (const chunk of chunks) {
 		const uri = chunk?.web?.uri;

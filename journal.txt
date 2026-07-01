@@ -1,4 +1,88 @@
 ================================================================
+2026-07-01  gpt-oss-120b migration + reply-outage & outreach-repeat fixes
+================================================================
+
+DECISIONS (full rationale: decisions/2026-07-01-gptoss-migration-and-outage-fix.md)
+
+  Combined change (Roma's call): restore replies, stop the repeating
+  spontaneous outreach, and move conversations to OpenAI gpt-oss-120b.
+
+  - Conversations (main chat casual/emotional/sticky, code/long, and the
+    spontaneous-outreach voice) moved to @cf/openai/gpt-oss-120b. NOTE:
+    post the (undocumented) 2026-06-22 "full CF migration" the chat lane was
+    already @cf/meta/llama-3.3-70b-instruct-fp8-fast, NOT Gemma. Gemma had
+    become a capability-only entry. This corrects that record.
+  - Hot-path/background helpers kept on small fast models (triage curator,
+    observation, tagging, dedup). Embeddings/reranker/STT/vision unchanged
+    (text-only model can't replace them).
+  - Grounding: gpt-oss has NO native web search, so grounded paths
+    (curiosity research, weekly report, conversation fallback) run on Gemma
+    = new CF_MODELS.grounded (the only grounding-capable model here).
+
+FIXES
+
+  R1 (silence): bot/message.ts gains a no-silence salvage. If a turn ends
+     with empty text (tool-loop exhaustion, empty content, or a thrown
+     primary error) it forces one plain tool-free reply, falling back to
+     Gemma. A turn can no longer end silently. Errors are recorded and only
+     surfaced if all recovery also fails.
+  R2 (latent): added @cf/moonshotai/kimi-k2.7-code to the OpenAI-compat
+     list in ai/cloudflare.ts. It was absent, so its `choices` output was
+     read with the legacy `.response` reader and came back empty on the
+     code/long lane and the fallbackPro path.
+  R3 (outreach repeat): curiosity.ts now runs grounded on Gemma and reads
+     the real `_annotations` citation field (not the dead
+     `_groundingMetadata`), so discoveries regain live sources and stop
+     being repetitive model recall. router/queue.ts records the last
+     surfaced memory (last_outreach_<userId>, 14d TTL) and excludes it next
+     run when other candidates exist.
+
+ADAPTER (per Cloudflare docs)
+
+  - @cf/openai/gpt-oss-120b uses the Responses API family. Via env.AI.run
+    it accepts a Chat-Completions `messages`+`tools` payload but uses
+    `max_tokens` (schema default only 256 -> we cap at 2048), no
+    reasoning_effort, no web_search_options. Output is Responses-style
+    (output_text / output[]); parseResponse now reads that plus the legacy
+    {response} and OpenAI-compat {choices} shapes.
+    Refs: developers.cloudflare.com/workers-ai/models/gpt-oss-120b/ ;
+          changelog/post/2025-08-05-openai-open-models/
+
+FILES CHANGED
+
+  src/config/models.ts
+  src/ai/cloudflare.ts
+  src/services/curiosity.ts
+  src/router/queue.ts
+  src/bot/message.ts
+  test/gptoss-adapter.spec.js   (new)
+
+VERIFICATION
+
+  - npx tsc --noEmit: clean.
+  - Adapter output parsing: 7/7 (Responses output_text; Responses output[]
+    message + function_call; legacy {response}; compat {choices}). Run via a
+    Linux tsx harness in the sandbox (repo node_modules bins are macOS-native
+    and vitest's worker pool hit OneDrive on-demand read errors); committed
+    test/gptoss-adapter.spec.js runs under `npm test` on macOS.
+
+DEPLOY STATUS: NOT DEPLOYED. Roma runs `npx wrangler deploy`, then confirms
+  via live logs: a non-empty gpt-oss reply (cf_ai_raw), a Tue/Fri 04:00
+  discovery memory carrying [source: ...], and two differing consecutive
+  outreach messages.
+
+DISCOVERED / FOLLOW-UP
+
+  - workflows/architect.ts and workflows/consolidation.ts still call the
+    Google GenAI SDK with a @cf/... model id (half-migrated on 2026-06-22),
+    so /architect and monthly consolidation are ALREADY broken independent
+    of the reported symptoms. Left untouched here (out of scope, preserve
+    prior work); migrate them to CloudflareProvider in a separate change.
+  - Stale Pro-lane comment block in bot/message.ts references Gemini tiers
+    that no longer exist. Cosmetic; deferred.
+
+
+================================================================
 2026-06-06  Phase 1: Persona port from Xaridotis + interactive checklist tool
 ================================================================
 

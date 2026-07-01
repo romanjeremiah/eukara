@@ -433,6 +433,16 @@ export async function handleMessage(
 	let fullText = '';
 	let lastAnnotations: unknown[] | undefined;
 	let lastGroundingMetadata: any;
+	// 2026-07-01: records a thrown AI error so the post-loop salvage can
+	// decide whether to retry the primary model or only the fallback, and
+	// so we only surface an error to the user if every recovery attempt
+	// also fails.
+	let aiError: string | null = null;
+	// Snapshot the current turn (prior history + this user message) BEFORE
+	// the tool loop mutates `messages` with tool_use/tool_result entries.
+	// The salvage/fallback calls below reuse this clean turn to force a
+	// plain reply without replaying a half-finished tool exchange.
+	const initialMessages: AIMessage[] = messages.slice();
 	const toolContext: ToolContext = { userId, chatId, threadId, messageId };
 	const maxToolRounds = 5;
 
@@ -546,12 +556,52 @@ export async function handleMessage(
 			lastContentType: typeof messages[messages.length - 1]?.content,
 			hasMedia: !!media,
 		});
-		// Surface the actual error in Telegram during debugging — much
-		// more useful than the generic "snag" message. Prefix with ⚠️ so
-		// it's obviously a failure mode, and truncate the stack so we
-		// don't flood the chat.
-		fullText = `⚠️ <b>AI call failed</b>\n<code>${(error.message || 'unknown').slice(0, 300)}</code>\n\n<i>provider: ${route.provider} · model: ${route.model}</i>`;
+		// 2026-07-01: record the error instead of surfacing it immediately.
+		// The no-silence salvage below tries the grounded fallback first; we
+		// only show the warning if every recovery attempt also fails.
+		aiError = error.message || 'unknown';
 	}
+
+		// --- No-silence safeguard (2026-07-01) ---
+		// A turn must never end silently. Two failure modes reach here with an
+		// empty fullText: (a) the tool loop hit maxToolRounds without a final
+		// text answer, or the model returned empty content (no throw); (b) the
+		// primary call threw (aiError set). Force one plain, tool-free reply.
+		// If the primary threw we skip re-calling it and go straight to the
+		// grounded fallback (Gemma); otherwise we retry the primary tool-free
+		// first, then fall back. Grounding is enabled only on the Gemma model.
+		if (!fullText.trim()) {
+			const salvageModels = aiError
+				? [CF_MODELS.fallbackPro]
+				: [route.model, CF_MODELS.fallbackPro];
+			for (const salvageModel of salvageModels) {
+				try {
+					const salvageProvider = new CloudflareProvider(env.AI, salvageModel);
+					const salvage = await withTimeout(
+						salvageProvider.chat(initialMessages, [], {
+							systemInstruction,
+							enableGrounding: salvageModel === CF_MODELS.fallbackPro,
+						}),
+						40_000,
+						'cf_salvage',
+					);
+					if (salvage.text?.trim()) {
+						fullText = salvage.text;
+						if (salvage._annotations) lastAnnotations = salvage._annotations;
+						log.warn('ai_salvage_recovered', { model: salvageModel, afterError: !!aiError });
+						break;
+					}
+				} catch (salvageErr) {
+					log.warn('ai_salvage_failed', { model: salvageModel, msg: (salvageErr as Error).message });
+				}
+			}
+		}
+
+		// If primary + salvage + fallback all failed and there was a real
+		// error, surface it so the turn isn't a confusing blank.
+		if (!fullText.trim() && aiError) {
+			fullText = `⚠️ <b>AI call failed</b>\n<code>${aiError.slice(0, 300)}</code>\n\n<i>provider: ${route.provider} · model: ${route.model}</i>`;
+		}
 
 	// --- Send final response ---
 	// Track whether delivery actually succeeded so we can:

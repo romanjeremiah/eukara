@@ -172,8 +172,19 @@ async function processTask(task: QueueTask, env: Env, attempts: number): Promise
 			// cap, 3h-since-chat, quiet hours, escalation limit) have already
 			// passed by the time this runs.
 			const all = await memory.getMemories(env, userId, 50).catch(() => []);
-			const casual = all.filter(m => !OUTREACH_EXCLUDED_CATEGORIES.includes(m.category));
+			let casual = all.filter(m => !OUTREACH_EXCLUDED_CATEGORIES.includes(m.category));
 			if (!casual.length) break;
+
+			// 2026-07-01: exclude the memory surfaced last time so outreach
+			// cannot repeat the same item on consecutive runs (a core cause
+			// of the "same message every day" report). Only applied when
+			// more than one candidate remains, so a single-memory user still
+			// gets contacted rather than silently skipped.
+			const lastFact = await env.CHAT_KV.get(`last_outreach_${userId}`);
+			if (lastFact && casual.length > 1) {
+				const filtered = casual.filter(m => m.fact !== lastFact);
+				if (filtered.length) casual = filtered;
+			}
 
 			const chosen = pickOutreachMemory(casual);
 			if (!chosen) break;
@@ -185,6 +196,10 @@ async function processTask(task: QueueTask, env: Env, attempts: number): Promise
 			);
 			if (greeting) {
 				await sendTelegram(token, chatId, greeting);
+				// Record what we just surfaced so the next run's dedup guard
+				// (above) can avoid repeating it. 14-day TTL. Best-effort.
+				await env.CHAT_KV.put(`last_outreach_${userId}`, chosen.fact, { expirationTtl: 14 * 86400 })
+					.catch(() => {});
 				// 2026-06-04 Inner Thoughts escalation guard. Increment
 				// unanswered counter after each successful send. Cleared
 				// when the user sends any message (bot/message.ts). When
@@ -412,7 +427,11 @@ Tone: warm, observant, personal. You know this person. Use their mood data as ev
 
 	let text: string;
 	try {
-		const provider = new CloudflareProvider(env.AI, CF_MODELS.chat);
+		// 2026-07-01: weekly report stays on the grounded model (Gemma).
+		// It sets enableGrounding:true, and only Gemma honours
+		// web_search_options; gpt-oss (the new CF_MODELS.chat) has no native
+		// grounding, so keeping this on chat would silently drop sourcing.
+		const provider = new CloudflareProvider(env.AI, CF_MODELS.grounded);
 		const response = await provider.chat(
 			[{ role: 'user', content: prompt }],
 			[],

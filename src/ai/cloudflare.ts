@@ -23,12 +23,31 @@ export class CloudflareProvider implements AIProvider {
 	private ai: Ai;
 	private model: string;
 	private useOpenAICompat: boolean;
+	private isGptOss: boolean;
 	private supportsVision: boolean;
 	private supportsGrounding: boolean;
 
 	constructor(ai: Ai, model?: string) {
 		this.ai = ai;
 		this.model = model ?? CF_MODELS.chat;
+
+		// OpenAI open models (@cf/openai/gpt-oss-*) are a distinct case
+		// (2026-07-01 migration). Via the Workers AI binding they use the
+		// Responses API family: env.AI.run() does "dynamic format detection"
+		// and accepts a Chat Completions `messages` array + `tools`, but the
+		// request uses `max_tokens` (NOT max_completion_tokens), does not
+		// accept `reasoning_effort` on this endpoint (that belongs to the
+		// /responses `reasoning:{effort}` shape), and has NO `web_search_options`
+		// (gpt-oss has no native grounding — Web Search is BYO-Exa, "coming
+		// soon"). The schema default max_tokens is only 256, so chat() sets a
+		// generous cap. Output is parsed tolerantly in parseResponse() to cover
+		// both the Responses-style `output[]`/`output_text` and the generic
+		// /run `{response, tool_calls}` shapes.
+		// Ref: https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/
+		this.isGptOss = [
+			'@cf/openai/gpt-oss-120b',
+			'@cf/openai/gpt-oss-20b',
+		].includes(this.model);
 
 		// Cloudflare has standardised on the OpenAI-compatible schema for
 		// all modern chat models (verified against sync-input.json schemas
@@ -40,12 +59,18 @@ export class CloudflareProvider implements AIProvider {
 		//
 		// Older models (Llama 3.x and earlier) use the legacy RoleScopedChatInput
 		// shape with string-only content and `max_tokens`.
+		//
+		// 2026-07-01: added `@cf/moonshotai/kimi-k2.7-code` (the code/analytical
+		// lane and fallbackPro). It was previously absent, so it was silently
+		// treated as a legacy native model — its OpenAI-compat `choices` output
+		// was parsed with the legacy `.response` reader and came back empty.
 		this.useOpenAICompat = [
 			'@cf/meta/llama-3.3-70b-instruct-fp8-fast',
 			'@cf/google/gemma-4-26b-a4b-it',
 			'@cf/qwen/qwen3-30b-a3b-fp8',
 			'@cf/zai-org/glm-4.7-flash',
 			'@cf/moonshotai/kimi-k2.6',
+			'@cf/moonshotai/kimi-k2.7-code',
 			'@cf/meta/llama-4-scout-17b-16e-instruct',
 			'@cf/meta/llama-3.2-3b-instruct',
 			'@cf/meta/llama-3.2-1b-instruct',
@@ -111,7 +136,15 @@ export class CloudflareProvider implements AIProvider {
 			tools: cfTools,
 		};
 
-		if (this.useOpenAICompat) {
+		if (this.isGptOss) {
+			// gpt-oss via env.AI.run() (dynamic detection). Send the
+			// Chat-Completions `messages` + `tools` we already built, but with
+			// `max_tokens` (the schema default is only 256, which would truncate
+			// replies) and no reasoning_effort / web_search_options (unsupported
+			// on this path). Grounding, when needed, is handled by routing the
+			// grounded lanes to Gemma (CF_MODELS.grounded) instead.
+			payload.max_tokens = config?.maxTokens ?? 2048;
+		} else if (this.useOpenAICompat) {
 			if (config?.maxTokens != null) {
 				payload.max_completion_tokens = config.maxTokens;
 			}
@@ -378,6 +411,49 @@ export class CloudflareProvider implements AIProvider {
 					model: this.model,
 					citations: message.annotations.length,
 				});
+			}
+		} else if (result && (typeof (result as any).output_text === 'string' || Array.isArray((result as any).output))) {
+			// gpt-oss Responses API shape (2026-07-01). Text lives either in a
+			// convenience `output_text` string or across `output[]` items of
+			// type 'message' whose `content[]` holds `output_text` parts. Tool
+			// calls appear as `output[]` items of type 'function_call'
+			// ({ name, arguments, call_id }). Some /run responses also carry a
+			// top-level `response` / `tool_calls`, handled as a fallback below.
+			const r = result as any;
+			if (typeof r.output_text === 'string') text = r.output_text;
+
+			if (Array.isArray(r.output)) {
+				for (const item of r.output) {
+					if (item?.type === 'message' && Array.isArray(item.content)) {
+						for (const part of item.content) {
+							if ((part?.type === 'output_text' || part?.type === 'text') && typeof part.text === 'string') {
+								if (!text) text = part.text;
+							}
+						}
+					} else if (item?.type === 'function_call') {
+						const rawArgs = item.arguments ?? item.function?.arguments;
+						const args = typeof rawArgs === 'string'
+							? (() => { try { return JSON.parse(rawArgs); } catch { return {}; } })()
+							: rawArgs ?? {};
+						toolCalls.push({
+							name: item.name ?? item.function?.name ?? '',
+							args,
+							id: item.call_id ?? item.id ?? `call_${Date.now()}`,
+						});
+					}
+				}
+			}
+
+			// Fallbacks for the generic /run output envelope.
+			if (!text && typeof r.response === 'string') text = r.response;
+			if (!toolCalls.length && Array.isArray(r.tool_calls)) {
+				for (const tc of r.tool_calls) {
+					toolCalls.push({
+						name: tc.name ?? tc.function?.name ?? '',
+						args: tc.arguments ?? tc.function?.arguments ?? {},
+						id: tc.id ?? `call_${Date.now()}`,
+					});
+				}
 			}
 		} else {
 			// Legacy Workers AI format
