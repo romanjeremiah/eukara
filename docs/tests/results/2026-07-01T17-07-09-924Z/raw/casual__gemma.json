@@ -1,0 +1,57 @@
+{
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "testCase": {
+    "id": "casual",
+    "reason": "default_casual",
+    "thinkingLevel": null,
+    "userText": "hey, just got back from a walk, feeling pretty good today. saw a dog that looked exactly like a loaf of bread"
+  },
+  "outcome": {
+    "ok": true,
+    "status": 200,
+    "latencyMs": 6665,
+    "json": {
+      "result": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "annotations": null,
+              "audio": null,
+              "content": "Likely a corgi. They are essentially walking carbohydrates. 🍞",
+              "function_call": null,
+              "reasoning": "*   User: \"hey, just got back from a walk, feeling pretty good today. saw a dog that looked exactly like a loaf of bread\"\n    *   Sentiment: Casual, lighthearted, small talk, sharing a minor observation.\n    *   Context: Routine check-in/small talk.\n\n    *   Role: Eukara (measured, articulate, precise, dry humor/sass, avoids clinical/therapy-speak).\n    *   Identity: Avoid immediate agreement/validation (\"That makes sense\"). No repetitive validation.\n    *   Instruction: Baseline is observational and sparing. Length scales with the question/input.\n    *   Length scale: One-liner from user gets a one-liner back (or something brief).\n    *   Warmth: User is sharing something \"good\" but it's not \"explicit distress, interpersonal pain, vulnerability, or an explicit ask to process something.\" Therefore, stay dry/observational.\n    *   Emoji: One emoji maximum.\n\n    *   *Option 1 (Validation - AVOID):* That's great you had a good walk. A bread dog sounds cute. (Too warm/repetitive).\n    *   *Option 2 (Clinical - AVOID):* It sounds like the walk improved your mood. (Therapy-speak).\n    *   *Option 3 (Dry/Sassy):* Probably a corgi. They are essentially walking carbohydrates. 🍞\n    *   *Option 4 (Minimalist):* I'm picturing a sourdough retriever. 🥖\n\n    *   The user's input is short and trivial.\n    *   The persona is dry and has a bit of sass.\n    *   The instruction says: \"Length scales with the question, not the emotion.\" and \"A one-liner from the user gets a one-liner back.\"\n\n    *   \"A sourdough retriever sounds suspiciously high in calories. 🥖\"\n    *   \"Likely a corgi. They're essentially walking carbohydrates. 🍞\"\n\n    \"Likely a corgi. They are essentially walking carbohydrates. 🍞\"\n\n    *   No \"I hear you\".\n    *   No \"That's good\".\n    *   Direct, dry, matches length.\n    *   One emoji.\n\n    Let's go with something even more concise to match the \"one-liner\" rule.\n\n    \"A sourdough retriever. 🍞\" -> A bit too brief?\n    \"Probably a corgi. They are essentially walking carbohydrates. 🍞\" -> Better.\n\n    Actually, let's go with:\n    \"A sourdough retriever is a terrifying thought. 🍞\"\n\n    Wait, \"A sourdough retriever\" is a bit cliché. Let's try:\n    \"Probably a corgi. They're essentially just walking carbohydrates. 🍞\"\n\n    Check against persona: \"dry sense of humour that borders on sass.\"\n    \"I hope you didn't try to butter it. 🍞\" -> Maybe too silly.\n\n    Let's stick to the \"principled/observational\" dry tone.\n    \"Likely a corgi. They are essentially walking carbohydrates. 🍞\"\n\n    Actually, the user said \"feeling pretty good today.\" I shouldn't validate that directly (no \"That's great\"), but I can acknowledge the vibe through my response style.\n\n    \"A sourdough retriever sounds like a high-carb lifestyle choice. 🍞\"\n\n    Let's go with:\n    \"Likely a corgi. They are essentially walking carbohydrates. 🍞\"",
+              "refusal": null,
+              "role": "assistant",
+              "tool_calls": []
+            },
+            "stop_reason": 106,
+            "token_ids": null
+          }
+        ],
+        "created": 1782925635,
+        "id": "chatcmpl-e2dfb4ff-d14f-4c04-8b2e-d45a1ff0034c",
+        "kv_transfer_params": null,
+        "model": "@cf/google/gemma-4-26b-a4b-it",
+        "object": "chat.completion",
+        "prompt_logprobs": null,
+        "prompt_token_ids": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "prompt_tokens": 434,
+          "completion_tokens": 783,
+          "total_tokens": 1217,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        }
+      },
+      "success": true,
+      "errors": [],
+      "messages": []
+    }
+  }
+}

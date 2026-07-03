@@ -1,0 +1,57 @@
+{
+  "model": "@cf/openai/gpt-oss-120b",
+  "testCase": {
+    "id": "reasoning_stress",
+    "reason": "code_content",
+    "thinkingLevel": "HIGH",
+    "userText": "Four friends — Ada, Ben, Cass, Dee — need to cover a shop across Mon-Fri, one person per day, no repeats needed beyond one full week. Ada can't work Mon or Fri. Ben can only work Tue-Thu. Cass refuses to work the day immediately after Ada. Dee will only work if it's not the last day of the week. Give a valid schedule and show your reasoning."
+  },
+  "outcome": {
+    "ok": true,
+    "status": 200,
+    "latencyMs": 24648,
+    "json": {
+      "result": {
+        "id": "chatcmpl-96447f59d8974575a9ba7afb3d96527a",
+        "object": "chat.completion",
+        "created": 1782925806,
+        "model": "@cf/openai/gpt-oss-120b",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "**Schedule**\n\n| Day | Person |\n|-----|--------|\n| Mon | Dee |\n| Tue | Ben |\n| Wed | Ada |\n| Thu | Dee |\n| Fri | Cass |\n\n**Why it works**\n\n1. **Ada** – prohibited on Mon & Fri. She is placed on Wed, which satisfies that rule.  \n2. **Ben** – can only work Tue‑Thu. He is assigned to Tue, a permissible day.  \n3. **Cass** – will not work the day *immediately after* Ada. Since Ada works Wed, Cass must not be on Thu. Cass is scheduled for Fri, which is not the day after Ada, so the restriction is met.  \n4. **Dee** – refuses the last day (Fri). Dee works Mon and Thu, both of which are not the last day.  \n\nAll five days are covered, each constraint is respected, and no person is forced into an illegal slot. The schedule is therefore valid.",
+              "refusal": null,
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": [],
+              "reasoning_content": "We need schedule Mon-Fri assign each day one friend, no repeats needed beyond one full week (means each person can work at most once? \"no repeats needed beyond one full week\" maybe means they can work at most once in the week, but we have 5 days and 4 friends, so one person must work twice? Actually \"no repeats needed beyond one full week\" maybe means you don't have to repeat beyond a full week, i.e., each can work at most once in the week, but we have 5 slots and 4 people, so impossible. Perhaps they mean they can repeat only after a full week passes, but within the week each day a different person, but we have 5 days, 4 people, so one must work twice. Could be that one person works two days, but not repeat beyond a full week—maybe they can work multiple days as long as they are not consecutive? Not clear. Let's assume each person can work at most once, but we have 5 days, so maybe one day remains unfilled? No, need cover Mon-Fri. So likely one person works twice, but repeats are allowed within the week, but not beyond a full week? The phrase \"no repeats needed beyond one full week\" maybe means you don't need to schedule beyond the week; repeats within the week are okay. So we can assign any person possibly multiple days, but no one repeats more than once? Let's assume each can work at most twice? Not specified.\n\nWe need to satisfy constraints:\n\nAda: not Mon, not Fri.\nBen: only Tue-Thu (so can work Tue, Wed, Thu only)\nCass: refuses to work the day immediately after Ada (i.e., if Ada works on a day, Cass cannot work the next day)\nDee: will only work if it's not the last day of the week (i.e., not Fri)\n\nWe need schedule Mon-Fri.\n\nLet's try assign each day:\n\nMon: cannot be Ada, can be Ben? Ben only Tue-Thu, so not Mon. Cass? Yes, Cass can work Mon. Dee? Dee can work Mon (not last day). So Mon can be Cass or Dee.\n\nTue: Ada allowed (Tue ok). Ben allowed. Cass allowed (but if Ada works Mon, Cass can't Tue). Dee allowed.\n\nWed: Ada allowed. Ben allowed. Cass allowed unless Ada previous day. Dee allowed.\n\nThu: Ada allowed. Ben allowed. Cass allowed unless Ada previous day. Dee allowed.\n\nFri: Ada not allowed. Ben not allowed (only Tue-Thu). Cass allowed unless Ada previous day (if Ada Thu, Cass cannot Fri). Dee not allowed (last day). So only Cass could work Fri, unless Cass is blocked.\n\nThus Friday seems forced to Cass, unless Cass is blocked. So need Cass on Fri. Therefore Cass cannot be the day after Ada. So Ada cannot work Thu (because then Cass would be forced Fri, which is after Ada). So Ada cannot work Thu either. Ada can work Tue or Wed only.\n\nNow assign.\n\nWe have 5 days, need fill with Ada (Tue or Wed), Ben (Tue-Thu), Cass (Fri mandatory, maybe also other days), Dee (Mon-Thu, not Fri). Let's try:\n\nMon: Dee\nTue: Ada\nWed: Ben\nThu: Dee? Can't repeat? But Dee already Mon, could repeat. But maybe we want each person once except Cass twice? Let's see constraints: Cass cannot be after Ada, Ada Tue, so Cass cannot be Wed. That's fine. Cass Fri.\n\nNow we have Thu left. Options: Ben (allowed Thu), Cass (but Cass already Fri, could also Thu?), Dee (but Dee already Mon). Could assign Ben Thu. That would give Ben Tue? No Ben already Wed. So Ben works Wed and Thu, two days. That's okay.\n\nSchedule:\nMon Dee\nTue Ada\nWed Ben\nThu Ben (but then Ben works two consecutive days, allowed)\nFri Cass\n\nCheck constraints:\nAda not Mon/Fri: ok (Tue)\nBen only Tue-Thu: works Wed, Thu (both allowed)\nCass not the day after Ada: Ada Tue, Cass Wed? No Cass Fri, not after Ada. Also Cass not after Ada Thu (Ada not Thu). So fine.\nDee not last day: works Mon only, fine.\n\nAll days covered. Works.\n\nBut maybe we want each person at most once except Cass twice? Not required. Could we make Ben only once? Let's try alternative:\n\nMon: Dee\nTue: Ben\nWed: Ada\nThu: Dee? can't repeat? Could be Cass but Cass Fri, so maybe Cass Thu? But Cass after Ada Wed? Cass refuses to work day after Ada, so can't Thu. So Thu could be Ben (but Ben already Tue). Could be Dee (repeat). So schedule similar.\n\nThus answer: Mon Dee, Tue Ben, Wed Ada, Thu Dee, Fri Cass. Check constraints: Ada not Mon/Fri (Wed ok); Ben only Tue-Thu (Tue ok); Cass not after Ada (Ada Wed, Cass Fri not after); Dee not last day (Mon, Thu ok). Works.\n\nProvide reasoning."
+            },
+            "logprobs": null,
+            "finish_reason": "stop",
+            "stop_reason": null,
+            "token_ids": null
+          }
+        ],
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "prompt_tokens": 529,
+          "completion_tokens": 1271,
+          "total_tokens": 1800,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "prompt_logprobs": null,
+        "prompt_token_ids": null,
+        "kv_transfer_params": null
+      },
+      "success": true,
+      "errors": [],
+      "messages": []
+    }
+  }
+}

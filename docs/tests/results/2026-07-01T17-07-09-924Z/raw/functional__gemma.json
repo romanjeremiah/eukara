@@ -1,0 +1,57 @@
+{
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "testCase": {
+    "id": "functional",
+    "reason": "analytical_content",
+    "thinkingLevel": "HIGH",
+    "userText": "help me structure a weekly reflection template I can fill in every Sunday — sections, prompts, and how long each should take, aim for under 15 minutes total"
+  },
+  "outcome": {
+    "ok": true,
+    "status": 200,
+    "latencyMs": 24630,
+    "json": {
+      "result": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "annotations": null,
+              "audio": null,
+              "content": "If you take longer than 15 minutes, you aren't reflecting; you're ruminating. Reflection should be a diagnostic, not a confession.\n\nTo keep this under the limit, you must use bullet points. No prose. No journaling your feelings unless they directly impacted your output.\n\n### The High-Leverage Weekly Audit\n\n**1. The Delta (3 minutes)**\n*Goal: Identify the gap between intention and reality.*\n* **Prompt:** List the 3 most important objectives for this week. Did they happen? (Yes/No/Partial).\n* **Prompt:** What was the biggest unplanned diversion?\n\n**2. Friction Audit (5 minutes)**\n*Goal: Locate the drag in your system.*\n* **Prompt:** Where did time or energy leak? (e.g., specific meetings, social media, decision fatigue, a specific person).\n* **Prompt:** What task felt like wading through mud? Why?\n\n**3. The Pivot (4 minutes)**\n*Goal: Determine the single most effective change.*\n* **Prompt:** If I lived this exact week again, what is the *one* decision I would change to improve the outcome?\n* **Prompt:** What is the systemic fix for that decision? (e.g., \"Move phone to other room\" rather than \"Be more disciplined\").\n\n**4. The Lead Domino (3 minutes)**\n*Goal: Set the trajectory for Monday.*\n* **Prompt:** What is the single most important task for next week that makes everything else easier or unnecessary?\n* **Prompt:** What is the very first step for that task to be completed by Monday noon?\n\n***\n\n**Execution Note:** Keep this in a plain text file or a dedicated note. If a section feels heavy, move on. The goal is the pattern, not the perfection. 🎯",
+              "function_call": null,
+              "reasoning": "Weekly reflection template.\nSunday.\nSections, prompts, estimated time per section.\nUnder 15 minutes total.\n\n        *   Eukara: Measured, articulate, precise, natural (no \"therapy-speak\"), dry humor/sass, clean/deliberate sentences.\n        *   No repetitive validation (\"That makes sense,\" etc.).\n        *   Technical/Analytical questions: Sharp, direct, \"Principal-engineer energy,\" strong opinions.\n        *   Length: Scales with the question.\n\n    *   A 15-minute reflection is a sprint, not a meditation. It needs to avoid fluff.\n    *   Standard categories: Wins/Successes, Challenges/Lessons, Planning/Adjustments.\n    *   Constraint: Must be actionable.\n\n    *   *Structure 1 (The Classic):*\n        1. Wins (2 mins)\n        2. Losses (3 mins)\n        3. Learnings (5 mins)\n        4. Next Week (5 mins)\n        *Critique:* A bit generic.\n\n    *   *Structure 2 (The High-Performance/Lean approach):*\n        1. The \"What\": Reviewing output (3 mins).\n        2. The \"Why\": Friction points (5 mins).\n        3. The \"Next\": Critical priority (5 mins).\n        *Critique:* Better. More precise.\n\n    *   *Structure 3 (The \"Delta\" method):*\n        Focus on the difference between intention and reality.\n\n    *   *Directness:* Avoid \"I can certainly help with that.\" Just get into it.\n    *   *Tone:* High-efficiency, low-friction.\n\n    *   *Sections:*\n        1. **Audit (3 mins):** What actually happened vs. what I planned.\n        2. **Friction (5 mins):** Where did time/energy leak? Why?\n        3. **The Pivot (4 mins):** One thing to change for next week.\n        4. **Objective (3 mins):** The single most important task for Monday.\n\n    *   *Detailed Breakdown:*\n        *   *Audit:* Did I hit my primary goals? (Bullet points only).\n        *   *Friction:* What felt like wading through mud? (Identify the bottleneck).\n        *   *The Pivot:* If I lived this week again, what one decision would I alter?\n        *   *Objective:* What is the one thing that makes everything else easier/unnecessary?\n\n    *   No \"That's a great idea.\"\n    *   No \"I understand you want to save time.\"\n    *   No \"Here is a template for you.\"\n    *   Just the structure.\n\n    *   *Intro:* Efficiency dictates brevity. If you spend more than 15 minutes, you're over-analyzing, not reflecting.\n    *   *Template Construction:*\n        *   **1. Reality Check (3 mins)** - Compare intention to outcome.\n        *   **2. Friction Audit (5 mins)** - Locate the drag.\n        *   **3. The Single Variable (4 mins)** - Identify the one change.\n        *   **4. Target Lock (3 mins)** - Define Monday's win.\n\n    *   Check constraints: No \"therapy-speak.\" No \"I hear you.\"\n    *   Check personality: Dry, sharp.\n    *   Check formatting: Clean.\n\n    *(Self-Correction during drafting)*: Make sure the prompts are sharp. Instead of \"How did you feel?\", use \"Where was the friction?\"\n\n    *Revised Structure:*\n    **Section 1: The Delta (3 mins)**\n    - Intent vs. Reality: List 3 major tasks. Did they happen?\n    **Section 2: Friction Points (5 mins)**\n    - Where did energy leak? (Distractions, poor planning, emotional drag).\n    **Section 3: The Pivot (4 mins)**\n    - One systemic change to implement on Monday.\n    **Section 4: The Lead Domino (3 mins)**\n    - The single most important task for the coming week.\n\n    *Final Polish:*\n    \"If you take longer than 15 minutes, you aren't reflecting; you're ruminating. Reflection should be a diagnostic, not a confession.\n\n    Here is a high-leverage structure designed for speed.\"\n\n    (Wait, the prompt asks for sections, prompts, and time. I will provide exactly that.)\n\n    *Finalizing the tone:* Professional, slightly impatient with inefficiency.\n\n    *Drafting the content...* (Proceeding to output)",
+              "refusal": null,
+              "role": "assistant",
+              "tool_calls": []
+            },
+            "stop_reason": 106,
+            "token_ids": null
+          }
+        ],
+        "created": 1782925736,
+        "id": "chatcmpl-1146eee5-4924-4d9c-a46c-d189f76c01f1",
+        "kv_transfer_params": null,
+        "model": "@cf/google/gemma-4-26b-a4b-it",
+        "object": "chat.completion",
+        "prompt_logprobs": null,
+        "prompt_token_ids": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "prompt_tokens": 442,
+          "completion_tokens": 1386,
+          "total_tokens": 1828,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        }
+      },
+      "success": true,
+      "errors": [],
+      "messages": []
+    }
+  }
+}

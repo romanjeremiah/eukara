@@ -1,0 +1,57 @@
+{
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "testCase": {
+    "id": "reasoning_stress",
+    "reason": "code_content",
+    "thinkingLevel": "HIGH",
+    "userText": "Four friends — Ada, Ben, Cass, Dee — need to cover a shop across Mon-Fri, one person per day, no repeats needed beyond one full week. Ada can't work Mon or Fri. Ben can only work Tue-Thu. Cass refuses to work the day immediately after Ada. Dee will only work if it's not the last day of the week. Give a valid schedule and show your reasoning."
+  },
+  "outcome": {
+    "ok": true,
+    "status": 200,
+    "latencyMs": 18772,
+    "json": {
+      "result": {
+        "choices": [
+          {
+            "finish_reason": "length",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "annotations": null,
+              "audio": null,
+              "content": null,
+              "function_call": null,
+              "reasoning": "\n*   Participants: Ada, Ben, Cass, Dee.\n    *   Goal: One person per day (Mon-Fri), no repeats needed (wait, the prompt says \"no repeats needed beyond one full week\", but there are 5 days and 4 people. This means one person *must* repeat or one day is left empty? Let's re-read: \"one person per day, no repeats needed beyond one full week\". This usually implies we are filling 5 slots. Since there are only 4 people, someone must work twice. Or perhaps I misread \"one person per day\" and \"no repeats needed beyond one full week\".)\n    *   Wait, let's re-examine the logic: 5 days, 4 people. To cover Mon-Fri, someone *must* repeat.\n    *   Constraints:\n        1.  Ada: Not Mon, Not Fri. (Available: Tue, Wed, Thu)\n        2.  Ben: Tue, Wed, Thu only.\n        3.  Cass: Not the day immediately after Ada.\n        4.  Dee: Not Fri. (Available: Mon, Tue, Wed, Thu)\n\n    *   Slots: Mon, Tue, Wed, Thu, Fri.\n    *   Constraints Summary:\n        *   Mon: Not Ada, Not Ben (Ben is Tue-Thu), Not Dee (wait, Dee is \"not the last day\", so Mon is fine), Not Cass (Cass has no specific day constraint other than the \"after Ada\" rule).\n            *   Mon options: Cass or Dee.\n        *   Fri: Not Ada, Not Ben, Not Dee.\n            *   Fri options: Cass.\n        *   If Cass is Fri:\n            *   Fri = Cass.\n            *   Now look at Ada. Ada can be Tue, Wed, Thu.\n            *   If Ada is Thu, Cass cannot be Fri (Constraint 3: Cass refuses to work the day after Ada).\n            *   Therefore, Ada *cannot* be Thu if Cass is Fri.\n            *   So Ada must be Tue or Wed.\n        *   If Cass is Fri and Ada is Tue:\n            *   Tue = Ada.\n            *   Wed = cannot be Cass (Cass is Fri).\n            *   Wait, if Ada is Tue, Cass can't be Wed.\n            *   Let's re-evaluate.\n\n    *   Slots: [Mon, Tue, Wed, Thu, Fri]\n    *   People: A, B, C, D.\n\n    *   *Constraint 1 (Ada):* Tue, Wed, or Thu.\n    *   *Constraint 2 (Ben):* Tue, Wed, or Thu.\n    *   *Constraint 3 (Cass):* $\\neq$ Day after Ada.\n    *   *Constraint 4 (Dee):* Mon, Tue, Wed, or Thu.\n\n    *   *Crucial bottleneck:* Who can work Fri?\n        *   Ada: No.\n        *   Ben: No.\n        *   Dee: No.\n        *   Cass: Yes.\n        *   **Conclusion: Cass must work Friday.**\n\n    *   *Backtracking from Cass on Friday:*\n        *   If Cass is Fri, Ada cannot be Thu (Rule: Cass $\\neq$ day after Ada).\n        *   Ada must be Tue or Wed.\n\n    *   *Scenario A: Ada is Tue.*\n        *   Mon: Needs someone. Dee or Cass? (Cass is on Fri). Let's try Dee on Mon.\n        *   Tue: Ada.\n        *   Wed: Who's left? Ben.\n        *   Thu: Who's left? Ben or Dee or Ada? (Wait, one person must repeat).\n        *   Let's check the prompt again: \"no repeats needed beyond one full week\". This implies we want to use all people, but since there are 5 days, someone repeats. Or is it a trick and one day is left? \"need to cover a shop across Mon-Fri\". No, it's 5 days.\n        *   Let's try: Mon (Dee), Tue (Ada), Wed (Ben), Thu (Ben), Fri (Cass).\n            *   Ada (Tue): OK.\n            *   Ben (Wed, Thu): OK.\n            *   Cass (Fri): Not after Ada (Tue). OK.\n            *   Dee (Mon): Not Fri. OK.\n            *   Wait, Ada is Tue, Wed is Ben. Cass is Fri. This works.\n\n    *   *Wait, let's try to minimize repeats or see if there's another way.*\n        *   Mon: Dee\n        *   Tue: Ada\n        *   Wed: Ben\n        *   Thu: Ben (Ben can work Tue-Thu)\n        *   Fri: Cass\n        *   Does this satisfy \"no repeats needed beyond one full week\"? It means we don't *need* to repeat someone *more* than once to cover the week.\n\n    *   *Let's try another configuration to see if it's cleaner:*\n        *   Mon: Cass\n        *   Tue: Ada\n        *   Wed: Ben\n        *   Thu: Dee\n        *   Fri: Cass (Cass is the only one who can do Fri)\n        *   Check:\n            *   Mon: Cass (OK)\n            *   Tue: Ada (OK)\n            *   Wed: Ben (OK)\n            *   Thu: Dee (OK)\n            *   Fri: Cass (OK)\n            *   Constraints:\n                1. Ada (Tue) is not Mon/Fri. (Pass)\n                2. Ben (Wed) is Tue-Thu. (Pass)\n                3. Cass (Mon/Fri) is not after Ada (Tue). (Pass - Fri is after Thu, Mon is before Tue).\n                4. Dee (Thu) is not Fri. (Pass)\n\n    *   *Let's double check the \"after Ada\" rule:*\n        *   Ada is Tue. The day after Ada is Wed. Cass is not on Wed. (Pass)\n        *   Ada is Tue. Cass is on Fri. Fri is not the day *immediately* after Tue. (Pass)\n\n    *   *Final Schedule candidate:*\n        *   Mon: Cass\n        *   Tue: Ada\n        *   Wed: Ben\n        *   Thu: Dee\n        *   Fri: Cass\n\n    *   *Wait, can I do it without repeating Cass?*\n        *   If I don't repeat Cass, someone else must.\n        *   Can Ben repeat? Yes (Tue-Thu).\n        *   Can Ada repeat? Yes (Tue-Thu).\n        *   Can Dee repeat? Yes (Mon-Thu).\n        *   But someone *must* work Friday. Only Cass can work Friday.\n        *   Therefore, Cass *must* work Friday.\n        *   If Cass is the only one working Friday, and we must cover 5 days with 4 people, one person *has* to repeat.\n        *   The schedule: Mon (Dee), Tue (Ada), Wed (Ben), Thu (Ben), Fri (Cass).\n        *   Wait, let's check:\n            *   Mon: Dee (Not Fri) - OK.\n            *   Tue: Ada (Not Mon/Fri) - OK.\n            *   Wed: Ben (Tue-Thu) - OK.\n            *   Thu: Ben (Tue-Thu) - OK.\n            *   Fri: Cass (Not after Ada) - OK.\n\n    *   *Let's try to find a schedule where everyone works at least once:*\n        1.  Mon: Dee\n        2.  Tue: Ben\n        3.  Wed: Ada\n        4.  Thu: Ben\n        5.  Fri: Cass\n        *   Check constraints:\n            *   Ada (Wed): Not Mon/Fri. OK.\n            *   Ben (Tue, Thu): Tue-Thu. OK.\n            *   Cass (Fri): Not after Ada (Wed is followed by Thu). OK.\n            *   Dee (Mon): Not Fri. OK.\n            *   All people (A, B, C, D) used. OK.\n\n    *   *Let's try one more:*\n        1. Mon: Dee\n        2. Tue: Ada\n        3. Wed: Ben\n        4. Thu: Ben\n        5. Fri: Cass\n        *   Check:\n            *   Ada (Tue) -> Day after is Wed. Is Cass on Wed? No. OK.\n            *   Dee (Mon) -> Not Fri. OK.\n            *   Ben (Wed, Thu) -> Tue-Thu. OK.\n            *   Cass (Fri) -> OK.\n\n    *   *One more check on the \"Cass refuses to work the day immediately after Ada\" rule.*\n        *   If Ada is Wed, Cass cannot be Thu.\n        *   If Ada is Tue, Cass cannot be Wed.\n        *   If Ada is Thu, Cass cannot be Fri. (This is the killer).\n\n    *   Since Cass must work Fri, Ada *cannot* work Thu.\n    *   Ada's options: Tue, Wed.\n    *   Ben's options: Tue, Wed, Thu.\n",
+              "refusal": null,
+              "role": "assistant",
+              "tool_calls": []
+            },
+            "stop_reason": null,
+            "token_ids": null
+          }
+        ],
+        "created": 1782925831,
+        "id": "chatcmpl-b0ce41c3-e8b7-4be1-b640-894d44391b66",
+        "kv_transfer_params": null,
+        "model": "@cf/google/gemma-4-26b-a4b-it",
+        "object": "chat.completion",
+        "prompt_logprobs": null,
+        "prompt_token_ids": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "prompt_tokens": 495,
+          "completion_tokens": 2048,
+          "total_tokens": 2543,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        }
+      },
+      "success": true,
+      "errors": [],
+      "messages": []
+    }
+  }
+}

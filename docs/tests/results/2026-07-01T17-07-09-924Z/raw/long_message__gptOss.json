@@ -1,0 +1,57 @@
+{
+  "model": "@cf/openai/gpt-oss-120b",
+  "testCase": {
+    "id": "long_message",
+    "reason": "long_message",
+    "thinkingLevel": "MEDIUM",
+    "userText": "okay so this week has been a lot. work was slammed monday through wednesday, then thursday my landlord texted about the lease renewal and now i have to decide by friday whether to resign for another year or start looking, and on top of that my friend's birthday dinner is saturday and i still haven't gotten a gift, and i'm supposed to be doing this weekly reflection thing but honestly i don't even know where today fits into it, i just feel like i'm reacting to stuff instead of deciding anything"
+  },
+  "outcome": {
+    "ok": true,
+    "status": 200,
+    "latencyMs": 17738,
+    "json": {
+      "result": {
+        "id": "chatcmpl-be8adddffd0b4c70b8a92ad69c2bff62",
+        "object": "chat.completion",
+        "created": 1782925761,
+        "model": "@cf/openai/gpt-oss-120b",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "You’ve got three time‑sensitive decisions stacked together. If you treat them as a single “react‑mode” queue, nothing moves. Try this three‑step sprint:\n\n1. **Lease** – List the top three factors that matter to you (cost, stability, flexibility, landlord relationship). Score each option 0‑5 on those factors; the higher total points to the logical choice. If the gap is narrow, set a hard deadline (e.g., 6 pm Thursday) and commit to the higher‑scoring option.\n\n2. **Gift** – Brainstorm three categories that fit your friend’s interests (experience, personal item, consumable). Pick the category that requires the least lead time, then choose a concrete item within it. Order or buy it now; you’ll have it well before Saturday.\n\n3. **Reflection** – Instead of asking where today fits, ask what *action* you just completed. Write a single sentence: “I clarified my lease decision criteria and chose a gift path.” That satisfies the habit without adding another layer of analysis.\n\nIf any of these steps feel forced, remember the alternative is letting the same overload spiral. A quick structure beats a vague feeling of “just reacting.” 👍",
+              "refusal": null,
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": [],
+              "reasoning_content": "We need to respond per system: dry, observant, no filler, minimal validation. The user is expressing being overwhelmed, needing to decide about lease, gift, reflection. The instruction: shift to warmth only on genuine emotional content (explicit distress). This is distress, feeling reactive. So we can shift a bit warmer, but still dry, constructive. Provide suggestions: prioritize decisions, break tasks, maybe a quick decision framework. Offer a brief reflection prompt. One emoji appropriate. No repetitive validation phrases.\n\nWe must avoid saying \"I understand\" etc. Provide constructive challenge: maybe question assumption about lease renewal timeline, consider pros/cons. Suggest gift brainstorming. Offer a reflection structure.\n\nOne emoji. Let's craft."
+            },
+            "logprobs": null,
+            "finish_reason": "stop",
+            "stop_reason": null,
+            "token_ids": null
+          }
+        ],
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "prompt_tokens": 546,
+          "completion_tokens": 405,
+          "total_tokens": 951,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "prompt_logprobs": null,
+        "prompt_token_ids": null,
+        "kv_transfer_params": null
+      },
+      "success": true,
+      "errors": [],
+      "messages": []
+    }
+  }
+}

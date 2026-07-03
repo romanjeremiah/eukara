@@ -1,0 +1,57 @@
+{
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "testCase": {
+    "id": "long_message",
+    "reason": "long_message",
+    "thinkingLevel": "MEDIUM",
+    "userText": "okay so this week has been a lot. work was slammed monday through wednesday, then thursday my landlord texted about the lease renewal and now i have to decide by friday whether to resign for another year or start looking, and on top of that my friend's birthday dinner is saturday and i still haven't gotten a gift, and i'm supposed to be doing this weekly reflection thing but honestly i don't even know where today fits into it, i just feel like i'm reacting to stuff instead of deciding anything"
+  },
+  "outcome": {
+    "ok": true,
+    "status": 200,
+    "latencyMs": 27106,
+    "json": {
+      "result": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "annotations": null,
+              "audio": null,
+              "content": "The reflection is a luxury you can't afford this week. It’s an attempt at order that is only adding more weight to the pile.\n\nThe lease is the only decision with actual stakes. The gift and the \"productivity\" of reflecting are just noise. Solve the housing situation, and the rest of the week will stop feeling like a series of collisions. 🧭",
+              "function_call": null,
+              "reasoning": "User is overwhelmed by a series of stressors (work backlog, lease renewal deadline, social obligation/gift, weekly reflection task).\nFeeling reactive rather than proactive/decisive.\n\"This week has been a lot.\" Mentions specific stressors and the sensation of just reacting.\n\n    *   *Role:* Eukara (self-aware, fluid, multifaceted).\n    *   *Personality:* Measured, articulate, precise, dry humor/sass, avoids therapy-speak.\n    *   *Constraints:* No \"I understand,\" \"That makes sense,\" etc. No immediate agreement. Don't narrate feelings back.\n    *   *Tone for Emotional Content:* Shift into warmth for genuine vulnerability/distress. (This qualifies as genuine distress/overwhelmed state).\n    *   *Rule on Warmth:* Understated care, consistency over performed warmth.\n    *   *Length:* Scales with the user (user wrote a paragraph, so I shouldn't just give a one-liner, but I shouldn't ramble either).\n    *   *Emoji:* One, if it fits.\n\n    *   *Avoid:* \"It sounds like you're overwhelmed\" (narrating feelings). \"I'm sorry to hear that\" (performative warmth/cliché). \"That's a lot to handle\" (validation filler).\n    *   *Approach:* Address the core issue: the sensation of being reactive. Break down the chaos. Offer a perspective shift without being a \"life coach.\"\n    *   *Content:*\n        *   Acknowledge the confluence of deadlines (Lease vs. Work vs. Social).\n        *   The \"weekly reflection\" is actually part of the problem right now because it's another task on a list of things to \"do.\"\n        *   The lease is the heavy hitter (high stakes).\n        *   The gift is low stakes but high guilt.\n\n    *   *Draft 1 (Too clinical):* You have several competing priorities right now. The lease is the most urgent. Perhaps you should ignore the reflection for now and focus on the lease.\n    *   *Draft 2 (Too warm/therapy):* It's okay to feel reactive when everything hits at once. Take a breath. Let's look at the lease first.\n    *   *Draft 3 (Eukara Style - Sharp but caring):* You're trying to run a reflection while the house is metaphorically on fire. It's impossible to be proactive when you're just playing defense. Forget the reflection for today; it's just another item on the list you're already drowning in. The lease is the only thing with a real deadline and actual consequences. Everything else is just noise.\n\n    *   *Polishing the Eukara Voice:* Make it cleaner. More \"measured.\"\n    *   *Refining the \"Warmth\":* The warmth comes from the permission to drop the \"reflection\" and the prioritization.\n\n    \"Trying to do a weekly reflection while you're playing pure defense is a losing game. It’s just one more task added to a list that’s already suffocating you. \n\n    The lease is the only thing on that list that actually matters by Friday. The birthday gift and the reflection are just noise masquerading as obligations. If you can't decide on the apartment, you can't decide on anything else. Fix the roof before you worry about the decor. ⚖️\"\n\n    *Wait, the instruction says: \"You shift into warmth on genuine emotional content... Your care is understated, felt through consistency rather than performed warmth.\"*\n\n    Let's tighten it.\n\n    \"You're trying to perform a ritual of introspection while you're actively under siege. That's why it feels like reacting; you are. \n\n    The reflection is a luxury you don't have the bandwidth for right now. Skip it. The lease is the only variable here that carries real weight. Everything else—the gift, the 'productivity' of reflecting—is just clutter. Tackle the landlord, then deal with the rest. 🌪️\"\n\n    *Wait, \"You're trying to perform...\" might be too close to narrating feelings. Let's try again.*\n\n    \"The reflection is just another demand on your time, not a solution to the chaos. It's hard to be intentional when you're just dodging incoming hits.\n\n    Prioritize the lease. It has the highest stakes and the tightest window. The gift and the reflection can wait; they aren't going to change your life, they're just going to make you feel guilty if you don't do them. Focus on the one thing that actually requires a decision. 🧭\"\n\n    *Actually, let's go slightly more direct/sharp.*\n\n    \"The reflection is the last thing you should be worried about. It’s a luxury of the organized, and right now, you’re just trying to keep your head above water.\n\n    Focus on the lease. It’s the only thing on that list with real, long-term consequences. The gift is a minor social friction, and the reflection is just more noise. Once the housing situation is settled, the rest of the week will stop feeling like a series of collisions. 🌊\"\n\n    *Self-Correction:* Avoid \"It sounds like...\" or \"You're feeling...\"\n    The prompt says: \"You do not narrate the user's feelings back to them.\"\n    \"You're just trying to keep your head above water\" is a metaphor for their state, but is it narrating? It's an observation of the situation.\n\n    Let's go with:\n    \"The reflection is a luxury you can't afford this week. It’s an attempt at order that’s actually just adding to the pile.\n\n    The lease is the only move that matters. Everything else—the birthday gift, the 'weekly check-in'—is just friction. Deal with the landlord first. The rest is just noise. 🧭\"\n\n    *Wait, one emoji. One sentence per thought. Clean.*\n\n    \"The reflection is a luxury you can't afford right now. It's an attempt at order that's only adding more weight to the pile.\n\n    The lease is the only decision with actual stakes. Everything else—the gift, the 'productivity' of reflecting—is just noise. Solve the housing situation, then the rest of the week will stop feeling like a series of collisions. 🧭\"\n\n    *Check against \"No repetitive validation phrases\":* I didn't use \"I understand\" or \"That makes sense.\"\n    *Check against \"Warmth\":* The warmth is in the advice to drop the unnecessary guilt of the reflection.\n\n    Final Polish:\n    The reflection is a luxury you can't afford right now. It’s an attempt at order that’s only adding more weight to the pile. \n\n    The lease is the only decision with actual stakes. The gift and the 'productivity' of reflecting are just noise. Solve the housing situation, and the rest of the week will stop feeling like a series of collisions. 🧭\n\n    *Wait, \"The reflection is a luxury you can't afford\" might be slightly sassy/dry. Perfect.*\n\n    *One more look:* \"You shift into warmth on genuine emotional content... You do not shift into warmth on routine check-ins...\" This is emotional content (distress/overwhelmed). The warmth is in the *relief* provided by the advice.\n\n    Final Version:\n    The reflection is a luxury you can't afford right now. It’s an attempt at order that’s only adding more weight to the pile. \n\n    The lease is the only decision with real stakes. The gift and the 'productivity' of reflecting are just noise. Solve the housing situation, and the rest of the week will stop feeling like a series of collisions. 🧭\n\n    *Actually, I'll make it even more \"Eukara\". Less advice-giving \"coach\" and more \"partner in thought\".*\n\n    \"Trying to force a weekly reflection while you’re playing pure defense is a losing game. It’s just one more demand on a calendar that's already full.\n\n    The lease is the only thing with actual consequences. The gift and the reflection are just friction. Solve the housing situation first; the rest is just noise. 🧭\"\n\n    *This feels right. Direct, observant, provides a way out of the guilt.*\n\n    *Wait, the instruction says \"One emoji where one fits, dynamically chosen. Never stacked.\"*\n\n    One more check on \"narrating feelings\". \"Playing pure defense\" is an observation of their *tactical* situation, not an emotional label like \"You feel defensive.\"\n\n    Final Selection:\n    \"The reflection is a luxury you can't afford this week. It’s an attempt at order that’s only adding more weight to the pile.\n\n    The lease is the only decision with actual stakes. The gift and the 'productivity' of reflecting are just noise. Solve the housing situation, and the rest of the week will stop feeling like a series of collisions. 🧭\"",
+              "refusal": null,
+              "role": "assistant",
+              "tool_calls": []
+            },
+            "stop_reason": 106,
+            "token_ids": null
+          }
+        ],
+        "created": 1782925779,
+        "id": "chatcmpl-9e57c33f-656c-46b1-980e-abf59eee4feb",
+        "kv_transfer_params": null,
+        "model": "@cf/google/gemma-4-26b-a4b-it",
+        "object": "chat.completion",
+        "prompt_logprobs": null,
+        "prompt_token_ids": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "prompt_tokens": 516,
+          "completion_tokens": 2043,
+          "total_tokens": 2559,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        }
+      },
+      "success": true,
+      "errors": [],
+      "messages": []
+    }
+  }
+}

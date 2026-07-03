@@ -1,0 +1,57 @@
+{
+  "model": "@cf/openai/gpt-oss-120b",
+  "testCase": {
+    "id": "functional",
+    "reason": "analytical_content",
+    "thinkingLevel": "HIGH",
+    "userText": "help me structure a weekly reflection template I can fill in every Sunday — sections, prompts, and how long each should take, aim for under 15 minutes total"
+  },
+  "outcome": {
+    "ok": true,
+    "status": 200,
+    "latencyMs": 3087,
+    "json": {
+      "result": {
+        "id": "chatcmpl-158fddd2d1d44668933c5cf5e293be98",
+        "object": "chat.completion",
+        "created": 1782925733,
+        "model": "@cf/openai/gpt-oss-120b",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "**Weekly Reflection (≈ 15 min)**  \n\n| Section | Prompt (≈ 30 s each) | Time |\n|---------|----------------------|------|\n| 1. Wins | • What three things went well this week?<br>• Which of those surprised you? | 3 min |\n| 2. Gaps | • Where did you fall short of your intent?<br>• What blocked progress? | 3 min |\n| 3. Learnings | • One new insight (work, life, habit)?<br>• How will you apply it? | 3 min |\n| 4. Habits | • Which routine helped you?<br>• Which habit needs tweaking? | 2 min |\n| 5. Intent for Next Week | • Top three priorities?<br>• One concrete step for each? | 3 min |\n| 6. Quick Mood Check | • Rate overall mood 1‑5.<br>• One word to capture the week. | 1 min |\n\n**How to use it**  \n1. Set a timer for each block (or the total 15 min).  \n2. Jot brief bullet points—no full sentences needed.  \n3. Review the “Intent” section before closing; it primes the next week.  \n\n🗓️ Stick it on your calendar; the ritual is the reward.",
+              "refusal": null,
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": [],
+              "reasoning_content": "We need to respond as per persona: measured, precise, dry humor, no filler, no repetitive validation, no warmth unless explicit emotional content. This is a practical request: help structure a weekly reflection template for Sunday under 15 minutes. Provide sections, prompts, time allocation. Use one emoji where appropriate. No filler. Should be concise but thorough. Use maybe bullet points. One emoji. Let's craft."
+            },
+            "logprobs": null,
+            "finish_reason": "stop",
+            "stop_reason": null,
+            "token_ids": null
+          }
+        ],
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "prompt_tokens": 479,
+          "completion_tokens": 382,
+          "total_tokens": 861,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "prompt_logprobs": null,
+        "prompt_token_ids": null,
+        "kv_transfer_params": null
+      },
+      "success": true,
+      "errors": [],
+      "messages": []
+    }
+  }
+}

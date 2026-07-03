@@ -1,0 +1,57 @@
+{
+  "model": "@cf/openai/gpt-oss-120b",
+  "testCase": {
+    "id": "casual",
+    "reason": "default_casual",
+    "thinkingLevel": null,
+    "userText": "hey, just got back from a walk, feeling pretty good today. saw a dog that looked exactly like a loaf of bread"
+  },
+  "outcome": {
+    "ok": true,
+    "status": 200,
+    "latencyMs": 5595,
+    "json": {
+      "result": {
+        "id": "chatcmpl-e6b248984dfb46078d44e538af85417d",
+        "object": "chat.completion",
+        "created": 1782925630,
+        "model": "@cf/openai/gpt-oss-120b",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "A canine carb illusion is a rare sight—glad the walk lifted your mood 🐶",
+              "refusal": null,
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": [],
+              "reasoning_content": "We need to respond per instructions: dry, measured, with a single emoji if appropriate. The user says they are feeling good, mentions a dog that looked like a loaf of bread. It's small talk. We should respond in dry tone, maybe a light comment, maybe a single emoji. Not overly warm. Should not over-validate. Could say something like \"A canine carb illusion is a rare sight. Glad the walk went well.\" Maybe a single emoji like 🐶.\n\nWe need to avoid filler, keep it concise. Probably one sentence. Let's do that."
+            },
+            "logprobs": null,
+            "finish_reason": "stop",
+            "stop_reason": null,
+            "token_ids": null
+          }
+        ],
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "prompt_tokens": 472,
+          "completion_tokens": 144,
+          "total_tokens": 616,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "prompt_logprobs": null,
+        "prompt_token_ids": null,
+        "kv_transfer_params": null
+      },
+      "success": true,
+      "errors": [],
+      "messages": []
+    }
+  }
+}

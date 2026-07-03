@@ -1,0 +1,57 @@
+{
+  "model": "@cf/openai/gpt-oss-120b",
+  "testCase": {
+    "id": "emotional_vent",
+    "reason": "emotional_content",
+    "thinkingLevel": null,
+    "userText": "I keep replaying that argument with my sister and I can't stop feeling like garbage about it. she probably doesn't even remember it happened."
+  },
+  "outcome": {
+    "ok": true,
+    "status": 200,
+    "latencyMs": 4683,
+    "json": {
+      "result": {
+        "id": "chatcmpl-fb03f7a4b0824826a3a8057173a6ef74",
+        "object": "chat.completion",
+        "created": 1782925642,
+        "model": "@cf/openai/gpt-oss-120b",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "You’re looping over a moment that’s already passed, and the narrative you’ve built is doing most of the heavy lifting. It’s easy to assume she’s forgotten it, but that’s another story you’ve written for herself. The fact that you’re still feeling “like garbage” suggests the argument still carries weight for you, not necessarily for her.\n\nTwo things tend to help break that cycle:\n\n1. **Externalize the replay.** Write down the exchange in as neutral a tone as possible, then add a column for “what I’m assuming” and another for “what I actually know.” Seeing the gaps between fact and inference can shrink the emotional grip.\n\n2. **Test the premise.** If you’re comfortable, a brief, low‑stakes check‑in—something like, “Hey, I’ve been thinking about our last conversation. Did anything stick with you?”—gives her a chance to confirm or deny your assumption without reopening the whole argument.\n\nIf the answer is “I don’t remember,” you can let the episode fade with the knowledge that you asked. If she does remember, you have a clearer target for any follow‑up you might want. Either way, the loop loses its power when you stop feeding it with unverified speculation.  \n\n🪨 (stay grounded).",
+              "refusal": null,
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": [],
+              "reasoning_content": "We need to respond as per system: dry, measured, no filler. The user is expressing distress about replaying an argument, feeling like garbage, sister probably doesn't remember. It's an emotional content. We should shift into warmth but not overly. Provide some perspective, maybe suggest coping strategies, challenge assumptions (maybe sister does remember). Avoid validation clichés. Use one emoji if appropriate. Provide constructive challenge. Keep it concise but not too short. Use dry humor maybe. Provide suggestions: journaling, perspective shift, maybe talk to sister, accept uncertainty. Use one emoji."
+            },
+            "logprobs": null,
+            "finish_reason": "stop",
+            "stop_reason": null,
+            "token_ids": null
+          }
+        ],
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "prompt_tokens": 474,
+          "completion_tokens": 388,
+          "total_tokens": 862,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "prompt_logprobs": null,
+        "prompt_token_ids": null,
+        "kv_transfer_params": null
+      },
+      "success": true,
+      "errors": [],
+      "messages": []
+    }
+  }
+}

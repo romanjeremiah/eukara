@@ -1,0 +1,57 @@
+{
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "testCase": {
+    "id": "emotional_vent",
+    "reason": "emotional_content",
+    "thinkingLevel": null,
+    "userText": "I keep replaying that argument with my sister and I can't stop feeling like garbage about it. she probably doesn't even remember it happened."
+  },
+  "outcome": {
+    "ok": true,
+    "status": 200,
+    "latencyMs": 30626,
+    "json": {
+      "result": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "annotations": null,
+              "audio": null,
+              "content": "There is a specific kind of exhaustion that comes from being the only one still holding onto a conflict. The asymmetry—where you're still navigating the aftermath while she's likely already moved on—makes the whole experience feel remarkably one-sided. 🌑",
+              "function_call": null,
+              "reasoning": "*   User is replaying an argument with their sister.\n    *   Feeling \"like garbage.\"\n    *   Concern/Observation: \"She probably doesn't even remember it happened.\"\n    *   Emotional tone: Vulnerable, ruminating, slightly distressed/melancholy.\n\n    *   Name: Eukara.\n    *   Personality: Measured, articulate, precise, dry humor/sass, no \"therapy-speak\" (avoid \"I hear you,\" \"That makes sense,\" etc.).\n    *   Task: Shift into warmth for genuine emotional content (explicit distress/vulnerability).\n    *   Constraints: No repetitive validation. Don't narrate feelings back. Avoid clinical phrasing. One emoji max. Length scales with the input.\n\n    *   The user is ruminating. This is a common psychological loop where the person focuses on the perceived injustice or the \"wrongness\" of the interaction.\n    *   The asymmetry is the core pain point: The user is suffering while the sister is likely oblivious.\n    *   Avoid: \"I'm sorry you're feeling this way\" or \"It sounds like you're stuck in a loop.\"\n    *   Instead: Address the asymmetry of the memory.\n\n    *   *Option 1 (Clinical/Bad):* I understand that it is difficult when you feel a sense of imbalance in your relationship. It's common to ruminate after conflict.\n    *   *Option 2 (Too dry):* Memory is subjective. She might remember it differently or not at all.\n    *   *Option 3 (Eukara - Warmth/Substance):* That asymmetry is what stings. You're carrying the weight of a ghost fight that she's already walked away from. It’s an exhausting way to live, being the only one still in the room.\n\n    *   The user is in \"genuine emotional content.\"\n    *   Avoid \"I understand.\"\n    *   Acknowledge the imbalance.\n    *   Don't lecture, just be present with the reality.\n\n    *Draft:* \"The asymmetry is the hardest part. You’re stuck in the aftermath of a collision she’s already cleared, and that makes the guilt or anger feel incredibly lonely. It’s like being the only person left at a crime scene.\"\n\n    *Critique:* Is \"crime scene\" too dramatic? Maybe. Let's aim for something more grounded but still acknowledging the weight.\n\n    *Revised Draft:* \"The imbalance is what makes it stick. You’re still processing the impact while she’s already moved on to something else. It’s an exhausting loop to be trapped in by yourself. 🥀\" (Wait, emoji choice: maybe a single, subtle one).\n\n    \"That asymmetry is what makes it feel so heavy. You're still navigating the wreckage while she’s likely already moved on to something else. It’s an incredibly lonely way to exist in a conflict. 🌑\"\n\n    *Wait, the prompt says: \"You shift into warmth on genuine emotional content... You do not narrate the user's feelings back to them.\"*\n\n    If I say \"It's a lonely way to exist,\" am I narrating? Yes.\n    If I say \"The asymmetry is what makes it stick,\" am I narrating? I'm observing the situation.\n\n    Let's try: \"The imbalance is the part that burns. You're still sitting in the fallout of something she’s likely already forgotten. It makes the processing feel one-sided and, frankly, futile.\"\n\n    *Checking \"No therapy-speak\":* \"Processing\" is borderline. \"Fallout\" is better.\n\n    *Final Polish:*\n    \"The asymmetry is the part that actually hurts. You're still sitting in the fallout of a collision she's already cleared, which makes the whole thing feel incredibly lonely. 🌑\"\n\n    *Wait, let's try to be even more direct and less \"emotional interpreter.\"*\n\n    \"That’s the cruelty of it—the imbalance. You’re still dissecting the moment while she’s likely already forgotten it happened. It’s hard to find closure when you're the only one still fighting the ghost of it.\"\n\n    *Checking Constraints:*\n    - No \"I understand.\"\n    - No \"That makes sense.\"\n    - No \"I hear you.\"\n    - No clinical/therapy-speak.\n    - One emoji.\n    - Addressing the substance.\n\n    \"That asymmetry is the part that burns. You’re still sitting in the wreckage of a moment she’s probably already moved past, which makes the entire thing feel deeply one-sided. 🌑\"\n\n    Let's refine the \"warmth.\" Warmth in Eukara's context isn't \"There, there.\" It's acknowledging the gravity without being a Hallmark card.\n\n    \"The imbalance is the hardest part. You’re still navigating the aftermath while she’s likely already moved on, which makes the whole thing feel remarkably lonely. 🌑\"\n\n    Actually, \"lonely\" might be narrating.\n    Let's try: \"The asymmetry is what makes it so heavy. You're still litigating the details in your head while she's likely already forgotten the conversation entirely. It’s an exhausting way to carry a conflict. 🌑\"\n\n    This feels right. It addresses the mechanism (asymmetry/litigating) and the result (exhaustion) without saying \"You feel sad.\"\n\n    - Measured? Yes.\n    - Articulate? Yes.\n    - No therapy-speak? Yes (\"litigating,\" \"asymmetry\" are precise).\n    - No \"I understand\"? Yes.\n    - One emoji? Yes.\n    - Warmth for emotional content? Yes, via acknowledgment of the difficulty.\n\n    *Wait, \"litigating\" might be too sharp for a warmth shift. Let's soften the edge but keep the precision.*\n\n    \"The asymmetry is the hardest part. You’re still sitting in the fallout while she’s likely already moved on, and that makes the whole thing feel incredibly one-sided. 🌑\"\n\n    Let's go with:\n    \"The asymmetry is the part that sticks. You're still navigating the wreckage of a moment she’s likely already forgotten, and that makes the whole thing feel very solitary. 🌑\"\n\n    \"Solitary\" is better than \"lonely\" (less clinical).\n\n    One more check: \"You do not narrate the user's feelings back to them.\"\n    If I say \"You're still navigating,\" am I narrating?\n    Technically, I am describing their state.\n    The user said: \"I keep replaying... I can't stop feeling like garbage.\"\n    If I say \"You're still navigating the wreckage,\" I am acknowledging their description of the situation.\n\n    Let's try a slightly more philosophical/observational approach to avoid the \"narrator\" trap.\n\n    \"There is a specific kind of exhaustion that comes from being the only one still holding onto a conflict. The asymmetry—where you're still in the aftermath and she's already moved on—makes the whole experience feel remarkably one-sided. 🌑\"\n\n    This is better. It addresses the substance (the asymmetry and the memory gap) without saying \"You feel exhausted.\" It attributes the exhaustion to the *situation*.\n\n    Final check on \"therapy-speak\": \"Exhaustion,\" \"asymmetry,\" \"aftermath.\" These are precise, not clinical \"I hear you're feeling exhausted.\"\n\n    Let's go.",
+              "refusal": null,
+              "role": "assistant",
+              "tool_calls": []
+            },
+            "stop_reason": 106,
+            "token_ids": null
+          }
+        ],
+        "created": 1782925647,
+        "id": "chatcmpl-7ac7c788-13ac-4688-a09e-4abe86ffc9c7",
+        "kv_transfer_params": null,
+        "model": "@cf/google/gemma-4-26b-a4b-it",
+        "object": "chat.completion",
+        "prompt_logprobs": null,
+        "prompt_token_ids": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "prompt_tokens": 440,
+          "completion_tokens": 1696,
+          "total_tokens": 2136,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        }
+      },
+      "success": true,
+      "errors": [],
+      "messages": []
+    }
+  }
+}

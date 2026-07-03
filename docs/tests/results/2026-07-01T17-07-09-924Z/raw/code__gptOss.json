@@ -1,0 +1,57 @@
+{
+  "model": "@cf/openai/gpt-oss-120b",
+  "testCase": {
+    "id": "code",
+    "reason": "code_content",
+    "thinkingLevel": "HIGH",
+    "userText": "can you write a Python function that dedupes a list of dicts by a specific key, keeping the LAST occurrence, and explain the one subtle bug someone would hit with a naive version?"
+  },
+  "outcome": {
+    "ok": true,
+    "status": 200,
+    "latencyMs": 18307,
+    "json": {
+      "result": {
+        "id": "chatcmpl-621959ac7fa74944be093528dbf757e9",
+        "object": "chat.completion",
+        "created": 1782925677,
+        "model": "@cf/openai/gpt-oss-120b",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "```python\ndef dedupe_by_key(items, key):\n    \"\"\"\n    Return a new list of dictionaries where only the last dict\n    for each distinct ``key`` value is kept, preserving the original\n    order of those last occurrences.\n\n    Example\n    -------\n    >>> data = [{'id': 1, 'v': 'a'},\n    ...         {'id': 2, 'v': 'b'},\n    ...         {'id': 1, 'v': 'c'}]\n    >>> dedupe_by_key(data, 'id')\n    [{'id': 2, 'v': 'b'}, {'id': 1, 'v': 'c'}]\n    \"\"\"\n    # Walk backwards so the first time we see a key it is the *last*\n    # occurrence in the original list.\n    seen = set()\n    result_rev = []\n    for entry in reversed(items):\n        val = entry.get(key)\n        if val not in seen:\n            seen.add(val)\n            result_rev.append(entry)\n    # Reverse again to restore forward order of the kept items.\n    return list(reversed(result_rev))\n```\n\n**The subtle bug in a naïve implementation**\n\nA common first attempt is:\n\n```python\ndef naive(items, key):\n    out = []\n    for entry in items:                # forward iteration\n        out = [e for e in out if e[key] != entry[key]]\n        out.append(entry)\n    return out\n```\n\nIt looks fine until the list contains *mutable* dictionaries that share the same underlying object. If the same dict instance appears twice (e.g., `a = {'id': 1}; lst = [a, a]`), the comprehension removes the earlier reference, but the later `append` adds the *same object* again. Any later mutation of that dict will appear in **both** positions, defeating the “last‑wins” guarantee. The bug is not about duplicate values but about duplicate *references*.\n\nThe reverse‑walk solution sidesteps the issue because it never mutates the accumulator while scanning; it only records keys once, regardless of whether the dict objects are identical. 🐛",
+              "refusal": null,
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": [],
+              "reasoning_content": "We need to produce Python function dedupes list of dicts by specific key, keeping last occurrence. Also explain subtle bug in naive version. Follow style: dry, measured, precise, slight sass. One emoji where one fits. No filler. Provide code and explanation. Use one emoji."
+            },
+            "logprobs": null,
+            "finish_reason": "stop",
+            "stop_reason": null,
+            "token_ids": null
+          }
+        ],
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "prompt_tokens": 486,
+          "completion_tokens": 510,
+          "total_tokens": 996,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "prompt_logprobs": null,
+        "prompt_token_ids": null,
+        "kv_transfer_params": null
+      },
+      "success": true,
+      "errors": [],
+      "messages": []
+    }
+  }
+}
