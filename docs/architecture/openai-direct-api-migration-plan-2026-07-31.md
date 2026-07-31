@@ -1,7 +1,7 @@
 # Direct OpenAI API Migration Plan
 
 Date: 2026-07-31
-Status: Recommended baseline approved; Stages 1 to 3 implemented locally
+Status: Recommended baseline approved; Stages 1 to 3 deployed behind Cloudflare flag
 Owner instruction: Replace Eukara's model routing and AI-provider architecture with the direct OpenAI API.
 
 ## 1. Current situation
@@ -169,7 +169,8 @@ Fire-and-forget R2 writes are not an acceptable success path.
 - [x] make Workflow writes and notifications idempotent and keep provider
   calls inside independently retryable steps.
 
-Stage 3 remains disabled in production by `AI_PROVIDER_MODE = "cloudflare"`
+Stage 3 OpenAI routing remains disabled in production by
+`AI_PROVIDER_MODE = "cloudflare"`
 until Stage 4 provides the versioned OpenAI embedding projection and the
 cutover gates have passed.
 

@@ -344,3 +344,57 @@ This session focused on fixing an infinite-loop bug that caused the AI to become
   `docs/architecture/openai-direct-api-migration-plan-2026-07-31.md`.
 - Live evidence:
   `docs/tests/results/2026-07-31T10-24-44Z/openai-stage3-smoke.json`.
+
+## 2026-07-31: Stage 3 Production Deployment
+
+### Change Log
+
+- Applied additive D1 migration `0003_media_assets.sql` to remote database
+  `my-db` and verified the complete table shape on the production primary.
+- Deployed feature commit `35eed89` to the Eukara Worker.
+- Production version changed from
+  `f7bae9fe-424d-4836-9094-216235b10d35` to
+  `38ca8719-2700-4520-a4dc-157b3f832707`.
+- Confirmed the public Worker endpoint returned HTTP 200 with
+  `Eukara is running` after deployment.
+
+### Decision Register
+
+- The OpenAI production cutover remains intentionally blocked. The deployed
+  `AI_PROVIDER_MODE` value is still `cloudflare` until Stage 4 finishes the
+  versioned embedding projection and recall comparison.
+- Version `f7bae9fe-424d-4836-9094-216235b10d35` is the application rollback
+  target for this deployment. The additive D1 table contains no rows and does
+  not require rollback if the Worker version is reverted.
+
+### Impact Assessment
+
+- Durable media persistence is active in the existing Cloudflare provider
+  path. New accepted Telegram media will create an owned R2 object plus an
+  authoritative D1 lifecycle row before provider processing.
+- OpenAI specialist and Workflow routing is deployed but dormant. No existing
+  Vectorize reads or primary model requests were switched.
+- The new production table was verified empty immediately after deployment;
+  no existing user data was rewritten or deleted.
+
+### Validation
+
+- Remote migration `0003_media_assets.sql` applied successfully.
+- Remote `PRAGMA table_info(media_assets)` returned all 12 expected columns.
+- Production health check returned HTTP 200 from Cloudflare LHR.
+- Wrangler confirmed version `38ca8719-2700-4520-a4dc-157b3f832707` receives
+  100% of traffic.
+
+### Deployment Commit Summary
+
+`feat(ai): complete OpenAI specialist migration`
+
+Adds durable media ownership, specialist audio/image services and
+provider-switched Workflows while retaining the Cloudflare production flag
+pending the embedding cutover.
+
+### Traceability
+
+- Owner's guardrailed autonomy baseline dated 2026-07-31.
+- Feature commit: `35eed89`.
+- Migration: `migrations/0003_media_assets.sql`.
