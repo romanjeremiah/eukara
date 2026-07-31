@@ -403,8 +403,9 @@ describe('OpenAI streaming and routing foundation', () => {
 			'openai',
 		)).toMatchObject({
 			provider: 'openai',
-			model: OPENAI_MODELS.casual,
-			thinkingLevel: 'HIGH',
+			model: OPENAI_MODELS.chat,
+			thinkingLevel: 'LOW',
+			reason: 'default_casual',
 			enableGrounding: false,
 		});
 

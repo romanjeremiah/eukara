@@ -12,7 +12,7 @@ complexity, crisis status and whether current external information is needed.
 | Workload | Model | Reasoning | Notes |
 |---|---|---:|---|
 | Curator, intent and crisis triage | GPT-5.6 Luna | Medium | Strict JSON Schema plus deterministic narrow crisis fallback |
-| Short casual conversation | GPT-5.6 Luna | High | Owner-approved quality bias for social turns |
+| Short casual conversation | GPT-5.6 Terra | Low | Low-latency lane with curator promotion to Terra Medium |
 | Simple reminder or tool action | GPT-5.6 Luna | Medium | Low-complexity functional lane |
 | Substantive everyday conversation | GPT-5.6 Terra | Medium | Context-dependent discussion, planning and multi-step requests |
 | Reflection, journalling, mental-health and health conversation | GPT-5.6 Terra | Medium | Nuance and continuity take priority over minimum cost |
@@ -25,18 +25,19 @@ Web search is available only when the curator says that current information is
 required. Reasoning effort is passed through streaming as well as non-streaming
 requests, so the router's decision is not silently replaced by the API default.
 
-## Luna High versus Terra Low
+## Casual routing decision: Terra Low
 
-Luna is OpenAI's cost-sensitive, high-volume tier. Terra has a higher base
-capability ceiling and is positioned as the intelligence-and-cost balance.
-The per-token Luna price is 40% of Terra's, but High effort may produce enough
-additional reasoning tokens and latency to narrow or reverse the total-turn
-advantage over Terra Low. High effort should therefore remain only if
-representative Eukara evaluations show a measurable conversational benefit.
+OpenAI positions Terra as the balance of intelligence and cost. Its official
+reasoning guidance identifies Medium as the balanced starting point and Low as
+the setting for latency-sensitive workloads. Eukara therefore uses Terra Low
+only for simple casual turns rather than inheriting the omitted Medium default.
 
 The curator is the guardrail around this decision. A casual turn that is
 nuanced, reflective, multi-part or context-dependent is promoted to Terra
-Medium rather than left on Luna High.
+Medium. Emotional, health and reflective conversations also remain Terra
+Medium. This preserves the stronger quality lane where extra reasoning is
+likely to matter without applying its latency to greetings and lightweight
+social exchanges.
 
 ## Evaluation gates
 
@@ -50,8 +51,9 @@ Track by route reason and model:
 - crisis false-negative and false-positive test cases;
 - curator promotion rate from casual to substantive.
 
-Compare Luna High against Luna Medium and Terra Low on a fixed, anonymised
-conversation set before changing the approved route.
+Compare Terra Low against Terra Medium on a fixed, anonymised conversation set.
+Promote the default only if Medium produces a measured conversational-quality
+gain that justifies its additional latency and token use.
 
 ## Official references
 

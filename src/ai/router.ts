@@ -150,7 +150,7 @@ export function routeMessage(
 		provider,
 		model: models.casual,
 		reason: 'default_casual',
-		thinkingLevel: providerMode === 'openai' ? 'HIGH' : undefined,
+		thinkingLevel: providerMode === 'openai' ? 'LOW' : undefined,
 		enableGrounding: needsCurrentInformation,
 	};
 }

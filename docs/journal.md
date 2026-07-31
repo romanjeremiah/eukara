@@ -750,3 +750,61 @@ pending the embedding cutover.
   `docs/architecture/governed-memory-v1-plan-2026-07-31.md`.
 - Migration record: `docs/migrations/0004-governed-memory-v1.md`.
 - Current OpenAI and Cloudflare official guidance checked on 2026-07-31.
+
+## 2026-07-31: Casual Conversation Route Changed to Terra Low
+
+### Change Log
+
+- Changed the short casual conversation lane from GPT-5.6 Luna High to
+  GPT-5.6 Terra Low.
+- Preserved curator Luna Medium, simple functional Luna Medium, substantive
+  and emotional Terra Medium, code Terra High, and research/architecture Sol
+  High.
+- Updated the routing contract tests and architecture record.
+
+### Decision Register
+
+- The owner delegated the Terra Low versus Terra Medium decision based on
+  current official OpenAI recommendations, conversational quality and latency.
+- Terra Low is selected because OpenAI positions Terra as the
+  intelligence-and-cost balance and Low as the latency-sensitive reasoning
+  setting. The omitted/default effort is Medium.
+- Substantive, nuanced, reflective, health and emotional turns continue to be
+  promoted to Terra Medium, so Low is restricted to genuinely simple casual
+  exchanges.
+
+### Impact Assessment
+
+- Simple casual turns should have lower reasoning latency than Terra Medium
+  while retaining Terra's stronger base capability compared with Luna.
+- The change does not affect memory, tools, reminders, crisis handling,
+  grounding, D1, Vectorize, Queues, Workflows or Telegram rendering.
+- Streaming remains restricted by the `default_casual` route reason, so sharing
+  the Terra model identifier with substantive routes does not widen streaming.
+
+### Validation
+
+- `npm run typecheck`: passed.
+- `npm run test:unit`: 3 files and 19 tests passed.
+- `npm run test:run`: 9 files and 52 tests passed. Vitest emitted its known
+  delayed-close warning after every assertion passed.
+- `npm run deploy:dry-run`: passed at 1,714.63 KiB raw and 277.50 KiB gzip.
+- `git diff --check`: passed.
+- Initial sandboxed Wrangler attempts were blocked by diagnostic-log and
+  localhost permissions; scoped reruns passed, confirming a harness constraint
+  rather than an application failure.
+
+### Deployment
+
+- Deployed Worker version `870701dd-ca5a-4d2c-bc7e-8b870b049433` with 10 ms
+  startup time.
+- Confirmed the production health response: `Eukara is running`.
+
+### Traceability
+
+- Owner instruction: choose and implement the best casual-chat option based on
+  official documentation, with quality and low latency as the priorities.
+- Official source:
+  `https://developers.openai.com/api/docs/guides/latest-model`.
+- Architecture record:
+  `docs/architecture/openai-model-routing-v1-2026-07-31.md`.

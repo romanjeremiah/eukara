@@ -599,10 +599,11 @@ export async function handleMessage(
 	}
 	const maxToolRounds = 5;
 
-	// --- Optimistic streaming (casual inline lane, gpt-oss) ---
-	// Stream the reply as a live Telegram draft while gpt-oss generates. Gated
+	// --- Optimistic streaming (casual inline lane) ---
+	// Stream the reply as a live Telegram draft while the casual model generates.
+	// Gated
 	// to: inline dispatch (ctx present — the queue consumer passes none),
-	// text-only turns, the casual default lane, the gpt-oss chat model, and a
+	// text-only turns, the casual default lane, the configured casual model, and a
 	// private chat (sendRichMessageDraft requires one). If the model wants a
 	// tool or the stream yields nothing, `streamed` stays false and the normal
 	// tool loop below runs unchanged. On success we already have the text, so

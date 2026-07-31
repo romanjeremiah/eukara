@@ -24,7 +24,7 @@ Date: 2026-07-31
 
 ## Behavioural contracts
 
-- Luna High handles simple casual turns.
+- Terra Low handles simple casual turns.
 - Luna Medium handles curator and simple functional turns.
 - Terra Medium handles substantive, emotional and reflective turns.
 - Terra High handles code; Sol High handles research and architecture.

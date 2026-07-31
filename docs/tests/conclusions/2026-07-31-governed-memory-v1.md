@@ -16,6 +16,7 @@ non-destructive recall rollback is
 `GOVERNED_MEMORY_RECALL_ENABLED=false`; the D1 Time Travel bookmark remains
 available for database recovery if required.
 
-Luna High remains the approved casual lane. Because reasoning effort can alter
-total latency and token use, it should be evaluated against Luna Medium and
-Terra Low using route-level usage and feedback data before further tuning.
+Post-release routing decision: Terra Low replaces Luna High for simple casual
+turns. The curator continues to promote substantive casual conversation to
+Terra Medium. Route-level latency, token use and feedback should be compared
+before any further tuning.
