@@ -3,8 +3,8 @@
 //
 // Durable multi-step workflow that consolidates memories monthly.
 // Step 1: Fetch all memories from D1
-// Step 2: First-pass deduplication via CF AI (free)
-// Step 3: Gemini consolidation (paid, retryable)
+// Step 2: First-pass deduplication via the configured provider
+// Step 3: Quality-first consolidation via the configured provider
 // Step 4: Atomic D1 write + cleanup
 //
 // 2026-06-02 changes:
@@ -17,7 +17,8 @@
 
 import { WorkflowEntrypoint, WorkflowStep } from 'cloudflare:workers';
 import type { WorkflowEvent } from 'cloudflare:workers';
-import { CF_MODELS } from '../config/models';
+import { createOpenAIProvider, getAIProviderMode } from '../ai/provider-factory';
+import { CF_MODELS, OPENAI_MODELS } from '../config/models';
 
 interface ConsolidationParams {
 	userId: number;
@@ -29,6 +30,12 @@ interface MemoryItem {
 	fact: string;
 	importance_score: number;
 	created_at: string;
+}
+
+interface ConsolidatedMemory {
+	category: string;
+	fact: string;
+	importance: number;
 }
 
 export class MemoryConsolidationWorkflow extends WorkflowEntrypoint<Env, ConsolidationParams> {
@@ -69,21 +76,15 @@ export class MemoryConsolidationWorkflow extends WorkflowEntrypoint<Env, Consoli
 		}
 		const dedupedMemories = allMemories.filter(m => !dupIds.has(m.id));
 
-		// Step 3: Gemini consolidation (expensive, retryable)
+		// Step 3: Quality-first consolidation (expensive, retryable)
 		const consolidated = await step.do('ai-consolidation', {
 			retries: { limit: 3, delay: '10 seconds', backoff: 'exponential' },
 			timeout: '120 seconds',
 		}, async () => {
-			const { GoogleGenAI } = await import('@google/genai');
-			const ai = new GoogleGenAI({ apiKey: this.env.GEMINI_API_KEY });
-
 			const rawText = dedupedMemories
 				.map(m => `[${m.category}] ${m.fact} (Score: ${m.importance_score})`)
 				.join('\n');
-
-			const response = await ai.models.generateContent({
-				model: CF_MODELS.chat,
-				contents: `You are performing memory consolidation for a therapeutic Second Brain.
+			const prompt = `You are performing memory consolidation for a therapeutic Second Brain.
 Here are the user's saved memories:
 ${rawText}
 
@@ -91,18 +92,41 @@ Task:
 1. Remove duplicate facts.
 2. Merge outdated preferences with newer ones.
 3. Group related therapeutic patterns into coherent summaries.
-4. Preserve exact wording of critical triggers (importance 3).
+4. Preserve exact wording of critical triggers with importance 3.
 5. Keep all unique facts and ideas.
 
 Return ONLY a raw JSON array:
 [{"category":"preference","fact":"...","importance":1}]
-No markdown, no backticks.`,
+No markdown and no backticks.`;
+
+			if (getAIProviderMode(this.env) === 'openai') {
+				const provider = createOpenAIProvider(
+					this.env,
+					OPENAI_MODELS.consolidation,
+					{ timeoutMs: 120_000 },
+				);
+				const response = await provider.chat(
+					[{ role: 'user', content: prompt }],
+					undefined,
+					{
+						maxTokens: 8_000,
+						systemInstruction: 'Return only valid JSON matching the requested array shape.',
+						thinkingLevel: 'LOW',
+					},
+				);
+				return parseConsolidatedMemories(response.text);
+			}
+
+			const { GoogleGenAI } = await import('@google/genai');
+			const ai = new GoogleGenAI({ apiKey: this.env.GEMINI_API_KEY });
+
+			const response = await ai.models.generateContent({
+				model: CF_MODELS.chat,
+				contents: prompt,
 				config: { thinkingConfig: { thinkingLevel: 'LOW' as any } },
 			});
 
-			const text = response.text ?? '';
-			const match = text.match(/\[[\s\S]*\]/);
-			return match ? JSON.parse(match[0]) as Array<{ category: string; fact: string; importance: number }> : [];
+			return parseConsolidatedMemories(response.text ?? '');
 		});
 
 		if (!consolidated.length) {
@@ -126,5 +150,35 @@ No markdown, no backticks.`,
 			afterDedup: dedupedMemories.length,
 			afterConsolidation: consolidated.length,
 		};
+	}
+}
+
+/**
+ * Validate provider JSON before it reaches the destructive replacement batch.
+ */
+function parseConsolidatedMemories(text: string): ConsolidatedMemory[] {
+	const match = text.match(/\[[\s\S]*\]/);
+	if (!match) return [];
+
+	try {
+		const parsed: unknown = JSON.parse(match[0]);
+		if (!Array.isArray(parsed)) return [];
+		return parsed.flatMap((item): ConsolidatedMemory[] => {
+			if (!item || typeof item !== 'object') return [];
+			const candidate = item as Record<string, unknown>;
+			if (typeof candidate.fact !== 'string' || !candidate.fact.trim()) return [];
+			const importance = Number(candidate.importance);
+			return [{
+				category: typeof candidate.category === 'string'
+					? candidate.category
+					: 'general',
+				fact: candidate.fact.trim(),
+				importance: Number.isFinite(importance)
+					? Math.max(1, Math.min(3, Math.round(importance)))
+					: 1,
+			}];
+		});
+	} catch {
+		return [];
 	}
 }

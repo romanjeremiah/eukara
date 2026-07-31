@@ -1,11 +1,12 @@
 // ============================================================
 // Text-to-Speech Service
 //
-// Uses Gemini API (gemini-3.1-flash-tts-preview) for voice generation.
-// Returns WAV audio data.
+// Uses the configured provider during the staged OpenAI migration.
 // ============================================================
 
-import { log } from './logger';
+import type { GeneratedSpeech } from '../ai/openai-specialists';
+import { createOpenAISpecialistService } from '../ai/openai-specialists';
+import { getAIProviderMode } from '../ai/provider-factory';
 
 const VOICE_NAME = 'Zubenelgenubi';
 
@@ -53,13 +54,16 @@ function writeString(view: DataView, offset: number, string: string) {
 }
 
 /**
- * Generate speech audio from text using Gemini TTS.
- * Returns an ArrayBuffer of WAV audio.
+ * Generate speech audio using the configured provider.
  */
 export async function generateSpeech(
 	text: string,
 	env: Env
-): Promise<ArrayBuffer> {
+): Promise<GeneratedSpeech> {
+	if (getAIProviderMode(env) === 'openai') {
+		return createOpenAISpecialistService(env).generateSpeech(text);
+	}
+
 	const apiKey = env.GEMINI_API_KEY;
 	if (!apiKey) throw new Error('No TTS API key available');
 
@@ -102,5 +106,9 @@ export async function generateSpeech(
 	const pcmBuffer = Buffer.from(inlineData.data, 'base64');
 	const wavBuffer = encodeWAV(new Uint8Array(pcmBuffer));
 	
-	return wavBuffer;
+	return {
+		data: wavBuffer,
+		filename: 'voice.wav',
+		mimeType: 'audio/wav',
+	};
 }

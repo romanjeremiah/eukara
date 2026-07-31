@@ -1,0 +1,45 @@
+{
+  "timestamp": "2026-07-31T10:24:44.536Z",
+  "status": "passed",
+  "checks": [
+    {
+      "name": "responses-luna",
+      "status": "passed",
+      "durationMs": 912,
+      "model": "gpt-5.6-luna"
+    },
+    {
+      "name": "responses-terra",
+      "status": "passed",
+      "durationMs": 1044,
+      "model": "gpt-5.6-terra"
+    },
+    {
+      "name": "responses-sol",
+      "status": "passed",
+      "durationMs": 1202,
+      "model": "gpt-5.6-sol"
+    },
+    {
+      "name": "transcription-ogg",
+      "status": "passed",
+      "durationMs": 455,
+      "model": "gpt-transcribe",
+      "inputBytes": 9036
+    },
+    {
+      "name": "speech-mp3",
+      "status": "passed",
+      "durationMs": 2194,
+      "model": "tts-1",
+      "outputBytes": 33408
+    },
+    {
+      "name": "image-png",
+      "status": "passed",
+      "durationMs": 44494,
+      "model": "gpt-image-2",
+      "outputBytes": 796133
+    }
+  ]
+}

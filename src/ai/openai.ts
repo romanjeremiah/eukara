@@ -57,17 +57,19 @@ export class OpenAIProvider implements AIProvider {
 	 * @param apiKey OpenAI project API key.
 	 * @param model Model selected by the central routing registry.
 	 * @param client Optional injected client used by isolated unit tests.
+	 * @param timeoutMs Optional request timeout for durable specialist Workflows.
 	 */
 	constructor(
 		apiKey: string,
 		model: string = OPENAI_MODELS.chat,
 		client?: OpenAI,
+		timeoutMs: number = DEFAULT_TIMEOUT_MS,
 	) {
 		this.model = model;
 		this.client = client ?? new OpenAI({
 			apiKey,
 			maxRetries: 0,
-			timeout: DEFAULT_TIMEOUT_MS,
+			timeout: timeoutMs,
 		});
 	}
 

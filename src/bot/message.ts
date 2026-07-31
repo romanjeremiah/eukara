@@ -20,8 +20,13 @@ import {
 	extractMediaFromMessage,
 	mediaPlaceholder,
 	arrayBufferToBase64,
+	persistTelegramMedia,
+	updateStoredMediaState,
 	type MediaRef,
+	type StoredMediaRef,
 } from '../lib/media';
+import { createOpenAISpecialistService } from '../ai/openai-specialists';
+import { getAIProviderMode } from '../ai/provider-factory';
 import * as memory from '../services/memory';
 import * as episode from '../services/episode';
 import * as knowledgeGraph from '../services/knowledge-graph';
@@ -508,8 +513,17 @@ export async function handleMessage(
 	// convert to base64, and send as multimodal parts. If the download
 	// fails (size limit, API error), degrade to a text-only turn that
 	// tells the user and the model what happened.
-	const currentUserContent = await buildUserTurnContent(userText, media, env, chatId, threadId, messageId);
-	if (!currentUserContent) return; // unrecoverable media error, already messaged the user
+	const builtUserTurn = await buildUserTurnContent(
+		userText,
+		media,
+		env,
+		userId,
+		chatId,
+		threadId,
+		messageId,
+	);
+	if (!builtUserTurn) return; // unrecoverable media error, already messaged the user
+	const currentUserContent = builtUserTurn.content;
 
 	const messages: AIMessage[] = [
 		...priorHistory,
@@ -957,6 +971,18 @@ export async function handleMessage(
 		...(sendError ? { sendError } : {}),
 	});
 
+	if (builtUserTurn.storedMedia) {
+		await updateStoredMediaState(
+			env,
+			builtUserTurn.storedMedia,
+			sent ? 'ready' : 'failed',
+			sent ? undefined : (sendError ?? aiError ?? 'No response delivered'),
+		).catch((error) => log.warn('media_state_update_failed', {
+			key: builtUserTurn.storedMedia?.key,
+			msg: (error as Error).message,
+		}));
+	}
+
 	// Sticky Pro routing (2026-06-02): write KV anchor after a successful
 	// Pro turn so the next user message can be content-classified against
 	// this topic by the webhook dispatcher (src/index.ts). The classifier
@@ -1001,16 +1027,22 @@ export async function handleMessage(
  * a short default prompt so the model always has something to respond
  * to ("Describe this image", "Transcribe this voice note", etc).
  */
+interface BuiltUserTurn {
+	content: string | AIMessagePart[];
+	storedMedia?: StoredMediaRef;
+}
+
 async function buildUserTurnContent(
 	userText: string,
 	media: MediaRef | null,
 	env: Env,
+	userId: number,
 	chatId: number,
 	threadId: string,
 	messageId: number
-): Promise<string | AIMessagePart[] | null> {
+): Promise<BuiltUserTurn | null> {
 	if (!media) {
-		return userText;
+		return { content: userText };
 	}
 
 	// Enforce the 20MB Telegram bot download cap up-front.
@@ -1037,26 +1069,86 @@ async function buildUserTurnContent(
 		return null;
 	}
 
-	const base64 = arrayBufferToBase64(buffer);
-
-	// Fire-and-forget: store the raw bytes in R2 for future recall.
-	// MEDIA_BUCKET binding is in wrangler.jsonc but may be absent locally.
-	if (env.MEDIA_BUCKET) {
-		const key = `media/${chatId}/${messageId}-${media.kind}`;
-		env.MEDIA_BUCKET.put(key, buffer, {
-			httpMetadata: { contentType: media.mimeType },
-			customMetadata: { chatId: String(chatId), kind: media.kind },
-		}).catch(e => log.warn('r2_store_error', { key, msg: (e as Error).message }));
+	let storedMedia: StoredMediaRef;
+	try {
+		storedMedia = await persistTelegramMedia(env, media, buffer, {
+			chatId,
+			fileId: media.fileId,
+			messageId,
+			threadId,
+			userId,
+		});
+		await updateStoredMediaState(env, storedMedia, 'processing');
+	} catch (error) {
+		log.error('media_persistence_failed', {
+			kind: media.kind,
+			msg: (error as Error).message,
+		});
+		await telegram.sendMessage(chatId, threadId,
+			`⚠️ I couldn't safely save that ${media.kind}, so I did not send it for AI processing. Please try again.`,
+			env, { replyId: messageId });
+		return null;
 	}
+
+	const providerMode = getAIProviderMode(env);
+	if (
+		providerMode === 'openai'
+		&& (media.kind === 'voice' || media.kind === 'audio')
+	) {
+		try {
+			const transcript = await createOpenAISpecialistService(env)
+				.transcribe(buffer, media.mimeType);
+			const caption = userText.trim();
+			return {
+				content: caption
+					? `${caption}\n\n<audio_transcript>${transcript}</audio_transcript>`
+					: transcript,
+				storedMedia,
+			};
+		} catch (error) {
+			await updateStoredMediaState(
+				env,
+				storedMedia,
+				'failed',
+				(error as Error).message,
+			).catch(() => {});
+			log.error('openai_transcription_failed', {
+				kind: media.kind,
+				msg: (error as Error).message,
+			});
+			await telegram.sendMessage(chatId, threadId,
+				`⚠️ I saved that ${media.kind}, but couldn't transcribe it. Please try again.`,
+				env, { replyId: messageId });
+			return null;
+		}
+	}
+
+	if (providerMode === 'openai' && !media.mimeType.startsWith('image/')) {
+		await updateStoredMediaState(
+			env,
+			storedMedia,
+			'failed',
+			`Unsupported OpenAI media type: ${media.mimeType}`,
+		).catch(() => {});
+		await telegram.sendMessage(chatId, threadId,
+			`⚠️ I saved that ${media.kind}, but direct OpenAI processing for ${media.mimeType} is not enabled yet.`,
+			env, { replyId: messageId });
+		return null;
+	}
+
+	const base64 = arrayBufferToBase64(buffer);
 
 	// Always include a text prompt — if the user sent no caption, pick
 	// a sensible default based on media kind so the model has direction.
 	const promptText = userText.trim() || defaultPromptFor(media.kind);
 
-	return [
-		{ type: 'text', text: promptText },
-		{ type: 'inline_data', mimeType: media.mimeType, data: base64 },
-	];
+	return {
+		content: [
+			{ type: 'text', text: promptText },
+			{ type: 'inline_data', mimeType: media.mimeType, data: base64 },
+		],
+		storedMedia,
+	};
 }
 
 /**

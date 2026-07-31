@@ -1,7 +1,7 @@
 # Direct OpenAI API Migration Plan
 
 Date: 2026-07-31
-Status: Recommended baseline approved; Stages 1 and 2 implemented locally
+Status: Recommended baseline approved; Stages 1 to 3 implemented locally
 Owner instruction: Replace Eukara's model routing and AI-provider architecture with the direct OpenAI API.
 
 ## 1. Current situation
@@ -21,8 +21,9 @@ incompatible provider paths:
 - the existing Vectorize index contains embeddings produced by a Cloudflare
   model and cannot safely mix vectors from a different embedding model.
 
-The local TypeScript baseline passes. The test baseline currently has 13 passing
-tests and two stale `Hello World` snapshot failures.
+The current Stage 3 baseline passes TypeScript, 32 automated tests, the Worker
+bundle dry-run and six live OpenAI endpoint checks. Production remains on the
+Cloudflare provider flag while the embedding projection is still pending.
 
 ## 2. Approved architectural boundary
 
@@ -162,10 +163,15 @@ Fire-and-forget R2 writes are not an acceptable success path.
 
 ### Stage 3: multimodal and specialist services
 
-- persist Telegram media before processing;
-- migrate vision, transcription, TTS and image generation;
-- migrate architect, research and memory-consolidation Workflows;
-- make every Workflow step idempotent and independently retryable.
+- [x] persist Telegram media before processing;
+- [x] migrate vision, transcription, TTS and image generation;
+- [x] migrate architect, research and memory-consolidation Workflows;
+- [x] make Workflow writes and notifications idempotent and keep provider
+  calls inside independently retryable steps.
+
+Stage 3 remains disabled in production by `AI_PROVIDER_MODE = "cloudflare"`
+until Stage 4 provides the versioned OpenAI embedding projection and the
+cutover gates have passed.
 
 ### Stage 4: embeddings and retrieval
 

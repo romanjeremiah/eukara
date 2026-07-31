@@ -22,13 +22,22 @@ export function getAIProviderMode(env: Env): AIProviderMode {
 /**
  * Create an OpenAI provider only when the Worker secret is configured.
  */
-export function createOpenAIProvider(env: Env, model: string): OpenAIProvider {
+export function createOpenAIProvider(
+	env: Env,
+	model: string,
+	options?: { timeoutMs?: number },
+): OpenAIProvider {
 	if (!env.OPENAI_API_KEY) {
 		throw new Error(
 			'OPENAI_API_KEY is required when AI_PROVIDER_MODE is "openai"',
 		);
 	}
-	return new OpenAIProvider(env.OPENAI_API_KEY, model);
+	return new OpenAIProvider(
+		env.OPENAI_API_KEY,
+		model,
+		undefined,
+		options?.timeoutMs,
+	);
 }
 
 /**

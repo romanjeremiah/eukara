@@ -1,8 +1,8 @@
 // ============================================================
 // Architect Workflow
 //
-// Durable innovation review. Runs as a Workflow to avoid
-// the timeout issues that plagued the inline /architect command.
+// Durable innovation review. OpenAI mode uses a stateless Sol Responses call;
+// Cloudflare mode preserves the existing Gemini path until final cutover.
 // Steps: Research → Generate proposals → Save → Notify
 //
 // 2026-06-02 changes:
@@ -16,7 +16,8 @@
 
 import { WorkflowEntrypoint, WorkflowStep } from 'cloudflare:workers';
 import type { WorkflowEvent } from 'cloudflare:workers';
-import { CF_MODELS } from '../config/models';
+import { createOpenAIProvider, getAIProviderMode } from '../ai/provider-factory';
+import { CF_MODELS, OPENAI_MODELS } from '../config/models';
 
 interface ArchitectParams {
 	chatId: number;
@@ -78,30 +79,49 @@ export class ArchitectWorkflow extends WorkflowEntrypoint<Env, ArchitectParams> 
 			}
 		});
 
-		// Step 2: Generate proposals via Gemini
+		// Step 2: Generate proposals through the configured provider.
 		const suggestions = await step.do('generate-proposals', {
 			retries: { limit: 2, delay: '10 seconds', backoff: 'exponential' },
 			timeout: '60 seconds',
 		}, async () => {
 			await notify('<i>Step 2/3: Generating innovation proposals...</i>');
 
+			const researchSection = researchContext
+				? `\n\nRESEARCH FINDINGS:\n${researchContext}` : '';
+			const prompt = `You are an AI product strategist reviewing Eukara, a Telegram AI companion.
+
+PROJECT: TypeScript on Cloudflare Workers. OpenAI provides model inference. Cloudflare provides D1, KV, R2, Vectorize, Queues and Workflows.
+${researchSection}
+
+RESEARCH ACROSS: Telegram Bot API, OpenAI API, Cloudflare Workers, competitors (Pi, Replika, ChatGPT), and therapeutic AI (AEDP, IFS, DBT).
+
+Find exactly 3 distinctive innovations. For each, explain what it is, why it is differentiated, an implementation sketch, operational risks, and why it matters for mental health. Be bold but technically credible.`;
+
+			if (getAIProviderMode(this.env) === 'openai') {
+				const provider = createOpenAIProvider(
+					this.env,
+					OPENAI_MODELS.architect,
+					{ timeoutMs: 90_000 },
+				);
+				const response = await provider.chat(
+					[{ role: 'user', content: prompt }],
+					undefined,
+					{
+						enableGrounding: !researchContext,
+						maxTokens: 5_000,
+						systemInstruction: 'Return a concise, evidence-led architecture review.',
+						thinkingLevel: 'HIGH',
+					},
+				);
+				return response.text.trim();
+			}
+
 			const { GoogleGenAI } = await import('@google/genai');
 			const ai = new GoogleGenAI({ apiKey: this.env.GEMINI_API_KEY });
 
-			const researchSection = researchContext
-				? `\n\nRESEARCH FINDINGS:\n${researchContext}` : '';
-
 			const response = await ai.models.generateContent({
 				model: CF_MODELS.chat,
-				contents: `You are an AI product strategist reviewing a Telegram AI companion chatbot. Find 3 unique innovations.
-
-PROJECT: TypeScript on Cloudflare Workers. Uses Gemma 4 (CF AI), Gemini 3.5 Flash (Pro lane), D1, Vectorize, Queues, Workflows.
-${researchSection}
-
-RESEARCH ACROSS: Telegram Bot API, Gemini API, Cloudflare Workers AI, competitors (Pi, Replika, ChatGPT), therapeutic AI (AEDP, IFS, DBT).
-
-For each of 3 proposals: what it is, why unique, implementation sketch, why it matters for mental health.
-Be bold.`,
+				contents: prompt,
 				config: {
 					tools: researchContext ? [] : [{ googleSearch: {} }],
 					thinkingConfig: { thinkingLevel: 'HIGH' as any },
@@ -130,9 +150,17 @@ Be bold.`,
 			await this.env.DB.prepare(
 				'INSERT OR IGNORE INTO user_profiles (user_id) VALUES (?)'
 			).bind(userId).run();
+			const fact = `Architect review [${event.instanceId}] (${today}): ${suggestions.slice(0, 500)}`;
 			await this.env.DB.prepare(
-				'INSERT INTO memories (user_id, category, fact, importance_score) VALUES (?, ?, ?, ?)'
-			).bind(userId, 'discovery', `Architect review (${today}): ${suggestions.slice(0, 500)}`, 1).run();
+				`INSERT INTO memories (user_id, category, fact, importance_score)
+				 SELECT ?, ?, ?, ?
+				 WHERE NOT EXISTS (
+					SELECT 1 FROM memories WHERE user_id = ? AND category = ? AND fact = ?
+				 )`
+			).bind(
+				userId, 'discovery', fact, 1,
+				userId, 'discovery', fact,
+			).run();
 
 			// Send final result. Without this `res.ok` check, a 4xx from
 			// Telegram (typically HTML parse errors in the suggestions

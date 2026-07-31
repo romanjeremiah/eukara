@@ -1,20 +1,71 @@
 // Media Tools (Image, Effect, Checklist)
 
-import { defineTool, ok, err, empty } from './factory';
+import { createOpenAISpecialistService } from '../ai/openai-specialists';
+import { getAIProviderMode } from '../ai/provider-factory';
+import { defineTool, ok, err } from './factory';
 import * as telegram from '../lib/telegram';
 
 export const generateImage = defineTool(
 	'generate_image',
-	'Generate an AI image based on a text prompt. Only available via Gemini provider.',
+	'Generate an image from a detailed text prompt and send it to the current Telegram chat.',
 	{
 		prompt: { type: 'string', description: 'Detailed image generation prompt' },
 	},
 	['prompt'],
-	async (args) => {
-		// Image generation requires Gemini - handled by message handler
-		return ok({ prompt: args.prompt }, 'Image generation routed to Gemini provider');
+	async (args, env, ctx) => {
+		if (getAIProviderMode(env) !== 'openai') {
+			return err('Image generation is available when direct OpenAI mode is enabled.');
+		}
+
+		const prompt = String(args.prompt ?? '').trim();
+		if (!prompt) return err('Image prompt is empty.');
+
+		try {
+			const image = await createOpenAISpecialistService(env).generateImage(prompt);
+			const promptHash = await sha256Hex(prompt);
+			const key = `generated/${ctx.userId}/${ctx.messageId}-${promptHash.slice(0, 16)}.png`;
+
+			await env.MEDIA_BUCKET.put(key, image.data, {
+				httpMetadata: { contentType: image.mimeType },
+				customMetadata: {
+					chatId: String(ctx.chatId),
+					messageId: String(ctx.messageId),
+					provider: 'openai',
+					userId: String(ctx.userId),
+				},
+			});
+
+			const sent = await telegram.sendPhoto(
+				ctx.chatId,
+				ctx.threadId,
+				image.data,
+				image.mimeType,
+				env,
+				{ replyId: ctx.messageId },
+			);
+			if (!sent.ok) {
+				return err(`Image generated but Telegram delivery failed: ${sent.description ?? 'unknown error'}`);
+			}
+
+			return ok({ r2Key: key }, 'Image generated, persisted and sent.');
+		} catch (error) {
+			return err(`Image generation failed: ${(error as Error).message}`);
+		}
 	}
 );
+
+/**
+ * Produce a deterministic suffix so tool retries overwrite the same R2 object.
+ */
+async function sha256Hex(value: string): Promise<string> {
+	const digest = await crypto.subtle.digest(
+		'SHA-256',
+		new TextEncoder().encode(value),
+	);
+	return Array.from(new Uint8Array(digest))
+		.map((byte) => byte.toString(16).padStart(2, '0'))
+		.join('');
+}
 
 export const messageEffect = defineTool(
 	'send_message_effect',
@@ -45,4 +96,3 @@ export const messageEffect = defineTool(
 // unticked state via the chk| callback handler in src/bot/callback.ts.
 // The static text-only version had no progress tracking and no
 // completion feedback, so the upgraded tool fully supersedes it.
-

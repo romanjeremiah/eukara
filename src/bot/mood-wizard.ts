@@ -2,9 +2,14 @@ import * as telegram from '../lib/telegram';
 import type { TelegramMessage, TelegramCallbackQuery } from '../types/telegram';
 import { log } from '../lib/logger';
 import { loadHistory } from '../lib/history';
-import { CloudflareProvider } from '../ai/cloudflare';
-import { CF_MODELS } from '../config/models';
-import { arrayBufferToBase64 } from '../lib/media';
+import { createConfiguredProvider } from '../ai/provider-factory';
+import { CF_MODELS, OPENAI_MODELS } from '../config/models';
+import {
+	arrayBufferToBase64,
+	persistTelegramMedia,
+	updateStoredMediaState,
+	type StoredMediaRef,
+} from '../lib/media';
 
 export interface MoodWizardState {
 	step: 'sleep' | 'mood' | 'photo';
@@ -63,7 +68,7 @@ export async function handleWizardCallback(query: TelegramCallbackQuery, env: En
 
 	if (state.step === 'photo' && action === 'skip_photo') {
 		await telegram.editMessage(chatId, msgId, 'Skipped photo.', env);
-		await finishWizard(chatId, threadId, userId, state, null, env);
+		await finishWizard(chatId, threadId, userId, state, null, null, msgId, env);
 		return true;
 	}
 
@@ -123,48 +128,86 @@ export async function handleWizardMessage(message: TelegramMessage, env: Env): P
 
 	if (state.step === 'photo') {
 		let photoBuffer: ArrayBuffer | null = null;
+		let photoFileId: string | null = null;
 		
 		if (message.photo && message.photo.length > 0) {
 			// Get the largest photo
 			const largestPhoto = message.photo.reduce((prev, current) => 
 				(prev.file_size || 0) > (current.file_size || 0) ? prev : current
 			);
+			photoFileId = largestPhoto.file_id;
 			photoBuffer = await telegram.downloadFile(largestPhoto.file_id, env);
 		}
 		
-		await finishWizard(chatId, threadId, userId, state, photoBuffer, env);
+		await finishWizard(
+			chatId,
+			threadId,
+			userId,
+			state,
+			photoBuffer,
+			photoFileId,
+			message.message_id,
+			env,
+		);
 		return true;
 	}
 
 	return true;
 }
 
-async function finishWizard(chatId: number, threadId: string, userId: number, state: MoodWizardState, photo: ArrayBuffer | null, env: Env) {
+async function finishWizard(
+	chatId: number,
+	threadId: string,
+	userId: number,
+	state: MoodWizardState,
+	photo: ArrayBuffer | null,
+	photoFileId: string | null,
+	sourceMessageId: number,
+	env: Env,
+) {
 	await env.CHAT_KV.delete(`mood_wizard_${userId}`);
 	await telegram.sendChatAction(chatId, threadId, 'typing', env);
 
 	let visionContext = '';
-	if (photo) {
-		const photoKey = `mood_photo_${userId}_${Date.now()}.jpg`;
-		
-		// 1. Save photo to R2 for history
+	if (photo && photoFileId) {
+		let storedPhoto: StoredMediaRef | undefined;
 		try {
-			await env.MEDIA_BUCKET.put(photoKey, photo);
-			state.data.photoRef = photoKey;
+			storedPhoto = await persistTelegramMedia(env, {
+				fileId: photoFileId,
+				kind: 'photo',
+				mimeType: 'image/jpeg',
+			}, photo, {
+				chatId,
+				fileId: photoFileId,
+				messageId: sourceMessageId,
+				threadId,
+				userId,
+			});
+			await updateStoredMediaState(env, storedPhoto, 'processing');
+			state.data.photoRef = storedPhoto.key;
 		} catch (e) {
-			log.error('r2_upload_failed', { msg: (e as Error).message });
+			log.error('mood_photo_persistence_failed', { msg: (e as Error).message });
+			visionContext = '(Photo could not be saved, so it was not analysed)';
 		}
 
-		// 2. Perform Vision Analysis using Cloudflare
-		try {
-			visionContext = await analyzeImage(
-				"Describe what is in this photo briefly. This photo is attached to a mood log.",
-				photo,
-				env
-			);
-		} catch (e) {
-			log.error('vision_analysis_failed', { msg: (e as Error).message });
-			visionContext = '(Photo analysis failed)';
+		if (storedPhoto) {
+			try {
+				visionContext = await analyzeImage(
+					'Describe what is in this photo briefly. This photo is attached to a mood log.',
+					photo,
+					env,
+				);
+				await updateStoredMediaState(env, storedPhoto, 'ready');
+			} catch (e) {
+				log.error('vision_analysis_failed', { msg: (e as Error).message });
+				visionContext = '(Photo analysis failed)';
+				await updateStoredMediaState(
+					env,
+					storedPhoto,
+					'failed',
+					(e as Error).message,
+				).catch(() => {});
+			}
 		}
 	}
 
@@ -180,7 +223,7 @@ async function finishWizard(chatId: number, threadId: string, userId: number, st
 	if (moodStr.includes('Happy') || moodStr.includes('🙃')) moodScore = 5;
 
 	// Extract sleep hours numerically for DB
-	let numericSleep = parseFloat(state.data.sleepHours || '0') || null;
+	const numericSleep = parseFloat(state.data.sleepHours || '0') || null;
 
 	try {
 		await env.DB.prepare(
@@ -214,7 +257,10 @@ Recent Chat History:
 ${history}
 `;
 
-	const provider = new CloudflareProvider(env.AI, CF_MODELS.chat);
+	const provider = createConfiguredProvider(env, {
+		cloudflare: CF_MODELS.chat,
+		openai: OPENAI_MODELS.chat,
+	});
 	
 	try {
 		const aiResponse = await provider.chat([
@@ -226,11 +272,14 @@ ${history}
 
 		// Inject the final summary into the conversation history so the AI remembers it
 		const entryStr = `[Mood Logged] Sleep: ${state.data.sleepHours}, Mood: ${state.data.moodLevel}. Summary: ${aiResponse.text}`;
-		import('../lib/history').then(async (historyLib) => {
+		try {
+			const historyLib = await import('../lib/history');
 			const hist = await historyLib.loadHistory(env, chatId, threadId);
 			hist.push({ role: 'system', content: entryStr });
 			await historyLib.saveHistory(env, chatId, threadId, hist);
-		}).catch(e => log.error('append_history_failed', { msg: (e as Error).message }));
+		} catch (error) {
+			log.error('append_history_failed', { msg: (error as Error).message });
+		}
 
 	} catch (e) {
 		log.error('wizard_summary_failed', { msg: (e as Error).message });
@@ -246,16 +295,17 @@ async function getFormattedHistory(env: Env, chatId: number, threadId: string, l
 
 async function analyzeImage(prompt: string, imageBuffer: ArrayBuffer, env: Env): Promise<string> {
 	const base64Image = arrayBufferToBase64(imageBuffer);
-	const response = await env.AI.run(CF_MODELS.vision, {
-		prompt,
-		image: [...new Uint8Array(imageBuffer)]
-	}) as any;
+	const provider = createConfiguredProvider(env, {
+		cloudflare: CF_MODELS.vision,
+		openai: OPENAI_MODELS.vision,
+	});
+	const response = await provider.chat([{
+		role: 'user',
+		content: [
+			{ type: 'text', text: prompt },
+			{ type: 'inline_data', mimeType: 'image/jpeg', data: base64Image },
+		],
+	}], undefined, { thinkingLevel: 'LOW', maxTokens: 300 });
 
-	if (response && 'description' in response) {
-		return response.description as string;
-	} else if (response && 'response' in response) {
-		return response.response as string;
-	}
-
-	return 'No description generated.';
+	return response.text?.trim() || 'No description generated.';
 }

@@ -13,6 +13,14 @@
 	"vars": {
 		"AI_PROVIDER_MODE": "cloudflare"
 	},
+	"secrets": {
+		"required": [
+			"GEMINI_API_KEY",
+			"OPENAI_API_KEY",
+			"OWNER_ID",
+			"TELEGRAM_TOKEN"
+		]
+	},
 	"limits": {
 		"cpu_ms": 300000
 	},

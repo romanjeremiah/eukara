@@ -64,7 +64,7 @@ export const OPENAI_MODELS = {
 	consolidation: 'gpt-5.6-sol',
 	fallback: 'gpt-5.6-luna',
 	embedding: 'text-embedding-3-small',
-	transcription: 'gpt-4o-transcribe',
+	transcription: 'gpt-transcribe',
 	speech: 'tts-1',
 	image: 'gpt-image-2',
 } as const;

@@ -22,6 +22,25 @@ export type MediaKind =
 	| 'photo' | 'voice' | 'audio' | 'video' | 'video_note'
 	| 'document' | 'sticker';
 
+export type MediaLifecycleState =
+	| 'accepted'
+	| 'processing'
+	| 'ready'
+	| 'failed';
+
+export interface StoredMediaRef {
+	key: string;
+	stateKey: string;
+}
+
+export interface MediaOwnershipContext {
+	chatId: number;
+	fileId: string;
+	messageId: number;
+	threadId: string;
+	userId: number;
+}
+
 /**
  * Extract the first processable media attachment from a Telegram message.
  * Returns null when the message has no media or the media is not a kind
@@ -119,6 +138,99 @@ export function mediaPlaceholder(kind: MediaKind, caption?: string): string {
 }
 
 /**
+ * Persist accepted Telegram bytes and ownership metadata before any optional
+ * provider processing. The deterministic key makes webhook retries idempotent.
+ */
+export async function persistTelegramMedia(
+	env: Env,
+	media: MediaRef,
+	buffer: ArrayBuffer,
+	owner: MediaOwnershipContext,
+): Promise<StoredMediaRef> {
+	if (!env.MEDIA_BUCKET) {
+		throw new Error('MEDIA_BUCKET binding is required for media processing');
+	}
+
+	const key = [
+		'media',
+		String(owner.userId),
+		String(owner.chatId),
+		`${owner.messageId}-${media.kind}.${extensionForMedia(media.mimeType)}`,
+	].join('/');
+	const stateKey = `media_state:${key}`;
+	const acceptedAt = new Date().toISOString();
+
+	await env.MEDIA_BUCKET.put(key, buffer, {
+		httpMetadata: { contentType: media.mimeType },
+		customMetadata: {
+			acceptedAt,
+			chatId: String(owner.chatId),
+			fileId: owner.fileId,
+			kind: media.kind,
+			messageId: String(owner.messageId),
+			state: 'accepted',
+			threadId: owner.threadId,
+			userId: String(owner.userId),
+		},
+	});
+	await env.DB.prepare(
+		`INSERT INTO media_assets (
+			object_key, user_id, chat_id, thread_id, message_id,
+			telegram_file_id, kind, mime_type, state, accepted_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'accepted', ?, ?)
+		ON CONFLICT(object_key) DO UPDATE SET
+			telegram_file_id = excluded.telegram_file_id,
+			mime_type = excluded.mime_type,
+			updated_at = excluded.updated_at`,
+	).bind(
+		key,
+		owner.userId,
+		owner.chatId,
+		owner.threadId,
+		owner.messageId,
+		owner.fileId,
+		media.kind,
+		media.mimeType,
+		acceptedAt,
+		acceptedAt,
+	).run();
+
+	await env.CHAT_KV.put(stateKey, JSON.stringify({
+		acceptedAt,
+		key,
+		mimeType: media.mimeType,
+		state: 'accepted' satisfies MediaLifecycleState,
+		userId: owner.userId,
+	}), { expirationTtl: 30 * 24 * 60 * 60 });
+
+	return { key, stateKey };
+}
+
+/**
+ * Update the lifecycle projection for a persisted media object.
+ */
+export async function updateStoredMediaState(
+	env: Env,
+	stored: StoredMediaRef,
+	state: MediaLifecycleState,
+	detail?: string,
+): Promise<void> {
+	const updatedAt = new Date().toISOString();
+	const boundedDetail = detail?.slice(0, 500);
+	await env.DB.prepare(
+		`UPDATE media_assets
+		 SET state = ?, detail = ?, updated_at = ?
+		 WHERE object_key = ?`,
+	).bind(state, boundedDetail ?? null, updatedAt, stored.key).run();
+	await env.CHAT_KV.put(stored.stateKey, JSON.stringify({
+		detail: boundedDetail,
+		key: stored.key,
+		state,
+		updatedAt,
+	}), { expirationTtl: 30 * 24 * 60 * 60 });
+}
+
+/**
  * Remap Telegram client MIME quirks to ones Gemini accepts.
  * Extend this list when new client versions surface more odd types.
  */
@@ -141,4 +253,23 @@ export function arrayBufferToBase64(buffer: ArrayBuffer): string {
 		binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
 	}
 	return btoa(binary);
+}
+
+/**
+ * Map provider MIME types to stable R2 object suffixes.
+ */
+function extensionForMedia(mimeType: string): string {
+	const extensions: Record<string, string> = {
+		'application/pdf': 'pdf',
+		'audio/mp4': 'm4a',
+		'audio/mpeg': 'mp3',
+		'audio/ogg': 'ogg',
+		'audio/wav': 'wav',
+		'image/jpeg': 'jpg',
+		'image/png': 'png',
+		'image/webp': 'webp',
+		'text/plain': 'txt',
+		'video/mp4': 'mp4',
+	};
+	return extensions[mimeType] ?? 'bin';
 }

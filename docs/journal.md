@@ -272,3 +272,75 @@ This session focused on fixing an infinite-loop bug that caused the AI to become
   must not delete or rotate credentials, modify production data destructively,
   apply irreversible migrations, delete Cloudflare resources, change billing
   or force-push without explicit approval.”
+
+## 2026-07-31: Stage 3 OpenAI Specialist and Workflow Migration
+
+### Change Log
+
+- Added direct OpenAI transcription, speech and image services behind the
+  central provider boundary.
+- Added durable Telegram media acceptance: bytes are awaited in R2, ownership
+  and lifecycle state are authoritative in the new D1 `media_assets` table,
+  and KV retains a 30-day fast lifecycle projection.
+- Added OpenAI vision and voice-note transcription to normal messages and the
+  mood wizard. Unsupported OpenAI video and document processing now fails
+  visibly after safe persistence instead of silently dropping content.
+- Replaced the placeholder image tool with real OpenAI image generation,
+  awaited R2 persistence and checked Telegram delivery.
+- Routed TTS through OpenAI in OpenAI mode and labelled the playback as an
+  AI-generated voice. The Cloudflare-mode Gemini path remains available during
+  migration.
+- Routed architect, deep-research and memory-consolidation Workflows through
+  the configured provider. Added deterministic keys, idempotent D1 inserts,
+  retry-owned provider calls, checked Telegram delivery and citation retention.
+- Added required Wrangler secret declarations while leaving
+  `AI_PROVIDER_MODE = "cloudflare"`.
+- Added pure specialist/media regression tests, a repeatable live OpenAI smoke
+  harness and durable raw/conclusion evidence.
+- Repaired local `npm test` and `npm run typecheck` scripts so they do not
+  depend on OneDrive-damaged package-manager shim files.
+
+### Decision Register
+
+- D1 is the authoritative media lifecycle store. KV is only a replaceable
+  projection and R2 is authoritative for accepted bytes.
+- OpenAI audio uses `gpt-transcribe`; speech uses `tts-1` with `nova`; image
+  generation uses `gpt-image-2` with medium-quality 1024 px PNG output.
+- OpenAI deep research remains synchronous inside a retryable Cloudflare
+  Workflow step. OpenAI background mode is not used because the approved
+  privacy boundary requires `store: false`.
+- The production provider flag stays on `cloudflare`. Stage 3 code may deploy
+  dormant, but the OpenAI cutover remains blocked by the Stage 4 embedding and
+  recall-quality gates.
+
+### Impact Assessment
+
+- In the current production mode, primary inference and the preserved Gemini
+  specialist branches are unchanged. Media acceptance becomes durable for all
+  provider modes and therefore requires migration `0003_media_assets` before
+  deploying this code.
+- OpenAI mode gains real image, vision, transcription, speech and specialist
+  Workflow execution without adding provider-hosted state.
+- Accepted bytes can remain in R2 if a later D1 or provider operation fails;
+  deterministic keys make retry safe and prevent duplicate objects.
+- Document and video inference is deliberately not enabled in OpenAI mode yet.
+  The user receives a transparent failure and the accepted bytes remain owned
+  by Eukara for a future document-processing stage.
+
+### Validation
+
+- TypeScript 6.0.2 validation passed.
+- The complete automated suite passed: 6 files and 32 tests.
+- Wrangler 4.107.0 dry-run passed: 1,475.75 KiB raw and 251.10 KiB gzip.
+- Live OpenAI validation passed for Luna, Terra, Sol, OGG transcription, MP3
+  speech and PNG image generation. No API key value was logged or committed.
+- Local test warnings concern intentionally absent non-OpenAI `.dev.vars`
+  values and remote-only AI/Vectorize bindings; they did not fail the suite.
+
+### Traceability
+
+- Owner instruction: “All set up is done, continue with the development.”
+- Approved migration plan:
+  `docs/architecture/openai-direct-api-migration-plan-2026-07-31.md`.
+- Live evidence:
+  `docs/tests/results/2026-07-31T10-24-44Z/openai-stage3-smoke.json`.

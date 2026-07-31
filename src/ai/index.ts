@@ -10,6 +10,10 @@
 export { CloudflareProvider } from './cloudflare';
 export { OpenAIProvider, UnsupportedOpenAIMediaError } from './openai';
 export {
+	createOpenAISpecialistService,
+	OpenAISpecialistService,
+} from './openai-specialists';
+export {
 	createConfiguredProvider,
 	createOpenAIProvider,
 	createRouteProvider,

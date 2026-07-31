@@ -41,11 +41,19 @@ export async function handleCallback(
 			await telegram.answerCallbackQuery(query.id, env, { text: 'No text to convert.' });
 			return;
 		}
-		await telegram.answerCallbackQuery(query.id, env, { text: '🔊 Generating voice...' });
+		await telegram.answerCallbackQuery(query.id, env, { text: '🔊 Generating AI voice...' });
 		await telegram.sendChatAction(chatId, threadId, 'upload_voice', env);
 		try {
-			const audio = await generateSpeech(botText, env);
-			await telegram.sendAudio(chatId, threadId, audio, 'voice.wav', 'audio/wav', env, msgId);
+			const speech = await generateSpeech(botText, env);
+			await telegram.sendAudio(
+				chatId,
+				threadId,
+				speech.data,
+				speech.filename,
+				speech.mimeType,
+				env,
+				msgId,
+			);
 		} catch (e) {
 			log.error('voice_error', { msg: (e as Error).message });
 			await telegram.sendMessage(chatId, threadId, '⚠️ Voice generation failed.', env);
