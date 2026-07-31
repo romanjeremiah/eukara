@@ -1,7 +1,7 @@
 # Direct OpenAI API Migration Plan
 
 Date: 2026-07-31
-Status: Stages 1 to 4 complete; OpenAI production cutover ready to deploy
+Status: OpenAI production cutover deployed; rollback observation active
 Owner instruction: Replace Eukara's model routing and AI-provider architecture with the direct OpenAI API.
 
 ## 1. Current situation
@@ -21,9 +21,10 @@ incompatible provider paths:
 - the existing Vectorize index contains embeddings produced by a Cloudflare
   model and cannot safely mix vectors from a different embedding model.
 
-The current Stage 3 baseline passes TypeScript, 32 automated tests, the Worker
-bundle dry-run and six live OpenAI endpoint checks. Production remains on the
-Cloudflare provider flag while the embedding projection is still pending.
+The cutover baseline passes TypeScript, 43 automated tests, the Worker bundle
+dry-run and eight live OpenAI endpoint checks. Both memory projections have
+108/108 production coverage, and normal production inference is routed to
+OpenAI while the prior provider and index remain available for rollback.
 
 ## 2. Approved architectural boundary
 
@@ -189,11 +190,12 @@ cutover gates have passed.
 
 ### Stage 5: removal and production rollout
 
-- remove Gemini and Workers AI runtime dependencies only after all paths pass;
-- remove obsolete provider types, comments, secrets and configuration;
-- update the compatibility date and run `wrangler types`;
-- deploy gradually, inspect structured logs and cost, then close the rollback
-  window.
+- [x] deploy the OpenAI routing cutover and verify Worker health;
+- [ ] observe structured production logs, latency and cost before closing the
+  rollback window;
+- [ ] remove Gemini and Workers AI runtime dependencies only after observation;
+- [ ] remove obsolete provider types, comments, secrets and configuration;
+- [ ] update the compatibility date and run `wrangler types`.
 
 ## 10. Validation gates
 

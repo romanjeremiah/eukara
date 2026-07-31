@@ -527,3 +527,49 @@ pending the embedding cutover.
 - Owner instruction: “All set up is done, continue with the development.”
 - Official OpenAI file-input guidance and Cloudflare Vectorize guidance checked
   on 2026-07-31.
+
+## 2026-07-31: Direct OpenAI Production Cutover
+
+### Change Log
+
+- Committed the reproducible release candidate as `e109ff2` with
+  `AI_PROVIDER_MODE = "openai"`.
+- Deployed Worker version `cc80dcb3-d3a9-4702-9d93-81682e4e9706` with the
+  OpenAI provider flag resolved in the production binding manifest.
+- Preserved version `277ce8ac-82d6-4bab-afac-1ec965390bee` as the immediate
+  code/configuration rollback target.
+- Verified `https://eukara.roman-jeremiah.workers.dev/health` returned HTTP 200
+  with body `OK` after deployment.
+
+### Decision Register
+
+- The production cutover is complete, but the rollback observation window
+  remains open. Legacy model bindings and the blue Vectorize projection must
+  not be removed until production behaviour, latency and cost are reviewed.
+- No synthetic Telegram webhook was injected into production because doing so
+  could create user-visible messages or state. Endpoint-specific OpenAI live
+  evidence and the non-mutating Worker health check form the release gate.
+
+### Impact Assessment
+
+- Normal production inference now selects the direct OpenAI adapter and the
+  OpenAI Vectorize projection.
+- Blue projection dual writes continue temporarily and therefore retain some
+  Workers AI embedding usage during the rollback window.
+- Rollback does not require a database or media restoration because D1 and R2
+  remain authoritative and both vector projections are current.
+
+### Validation
+
+- Generated Cloudflare types resolve `AI_PROVIDER_MODE` to `"openai"`.
+- TypeScript passed, 7 test files and 43 tests passed, and the deployment
+  dry-run passed at 1,489.47 KiB raw and 254.42 KiB gzip.
+- The deployed bundle completed with a 9 ms Worker startup time and HTTP 200
+  post-deployment health result.
+
+### Traceability
+
+- Approved baseline: direct OpenAI API with Cloudflare retained as the
+  application and durability platform.
+- Release commit: `e109ff2 feat(ai): switch production routing to OpenAI`.
+- Rollback version: `277ce8ac-82d6-4bab-afac-1ec965390bee`.
