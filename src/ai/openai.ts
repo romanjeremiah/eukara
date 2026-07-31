@@ -139,12 +139,23 @@ export class OpenAIProvider implements AIProvider {
 	 * Generate an embedding for the blue-green Vectorize projection.
 	 */
 	async embed(text: string): Promise<number[]> {
+		const vectors = await this.embedMany([text]);
+		return vectors[0] ?? [];
+	}
+
+	/**
+	 * Generate an ordered embedding batch for Queue-owned backfills.
+	 */
+	async embedMany(texts: string[]): Promise<number[][]> {
+		if (!texts.length) return [];
 		const response = await this.client.embeddings.create({
 			model: OPENAI_MODELS.embedding,
-			input: text,
+			input: texts,
 			encoding_format: 'float',
 		});
-		return response.data[0]?.embedding ?? [];
+		return [...response.data]
+			.sort((left, right) => left.index - right.index)
+			.map(item => item.embedding);
 	}
 
 	/**

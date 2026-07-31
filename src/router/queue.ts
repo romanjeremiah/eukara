@@ -29,6 +29,14 @@ import { handleMessage } from '../bot/message';
 import { allTools } from '../tools';
 import type { AIMessage } from '../types/ai';
 import type { TelegramMessage } from '../types/telegram';
+import {
+	evaluateEmbeddingRecall,
+	OPENAI_BACKFILL_STATE_KEY,
+	OPENAI_EMBEDDING_EVAL_KEY,
+	projectMemoryForRollback,
+	projectMemoriesForRollback,
+	type MemoryProjectionRow,
+} from '../services/embedding-projection';
 
 interface QueueTask {
 	type: string;
@@ -52,6 +60,10 @@ interface QueueTask {
 	 * Pre-computed intent triage from Curator (Layer A1).
 	 */
 	curatorResult?: { intent: string; isCrisis: boolean };
+	memoryId?: number;
+	category?: string;
+	fact?: string;
+	afterId?: number;
 }
 
 const CHECKIN_THREAD_ID = 'default';
@@ -164,6 +176,79 @@ async function processTask(task: QueueTask, env: Env, attempts: number): Promise
 	const { userId, chatId } = task;
 
 	switch (task.type) {
+		case 'index_memory_projection': {
+			if (!task.memoryId || !task.category || !task.fact) {
+				throw new Error('Invalid index_memory_projection task');
+			}
+			await projectMemoryForRollback(env, {
+				id: task.memoryId,
+				user_id: userId,
+				category: task.category,
+				fact: task.fact,
+			});
+			break;
+		}
+
+		case 'backfill_openai_embeddings': {
+			const afterId = Math.max(0, task.afterId ?? 0);
+			const batchSize = 25;
+			const { results } = await env.DB.prepare(
+				`SELECT id, user_id, category, fact
+				 FROM memories
+				 WHERE superseded_at IS NULL AND id > ?
+				 ORDER BY id ASC
+				 LIMIT ?`,
+			).bind(afterId, batchSize).all<MemoryProjectionRow>();
+			const memories = results ?? [];
+			await projectMemoriesForRollback(env, memories);
+
+			if (memories.length === batchSize) {
+				await env.TASK_QUEUE.send({
+					type: 'backfill_openai_embeddings',
+					userId: 0,
+					chatId: 0,
+					afterId: memories[memories.length - 1]!.id,
+				});
+			} else {
+				await env.CHAT_KV.put(OPENAI_BACKFILL_STATE_KEY, 'complete');
+				await env.TASK_QUEUE.send({
+					type: 'evaluate_embedding_recall',
+					userId: 0,
+					chatId: 0,
+				});
+			}
+			log.info('openai_embedding_backfill_batch', {
+				afterId,
+				count: memories.length,
+				complete: memories.length < batchSize,
+			});
+			break;
+		}
+
+		case 'evaluate_embedding_recall': {
+			const { results } = await env.DB.prepare(
+				`SELECT id, user_id, category, fact
+				 FROM memories
+				 WHERE superseded_at IS NULL
+				 ORDER BY importance_score DESC, id DESC
+				 LIMIT 10`,
+			).all<MemoryProjectionRow>();
+			const evaluation = await evaluateEmbeddingRecall(env, results ?? []);
+			if (evaluation.openaiTop3 !== evaluation.sampleSize) {
+				throw new Error(
+					`OpenAI projection is not query-ready: ${evaluation.openaiTop3}/${evaluation.sampleSize} top-3 self recall`,
+				);
+			}
+			await env.CHAT_KV.put(
+				OPENAI_EMBEDDING_EVAL_KEY,
+				JSON.stringify({
+					...evaluation,
+					evaluatedAt: new Date().toISOString(),
+				}),
+			);
+			log.info('embedding_recall_evaluated', { ...evaluation });
+			break;
+		}
 
 		case 'spontaneous_outreach': {
 			// Interest-driven casual share. Pull recent memories, keep

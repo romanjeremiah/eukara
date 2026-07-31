@@ -37,6 +37,7 @@ async function loadModelRegistry() {
 		transcription: model('transcription'),
 		speech: model('speech'),
 		image: model('image'),
+		embedding: model('embedding'),
 	};
 }
 
@@ -77,6 +78,19 @@ for (const [role, model] of Object.entries({
 		return { model };
 	}));
 }
+
+checks.push(await check('embedding-1536', async () => {
+	const response = await client.embeddings.create({
+		model: OPENAI_MODELS.embedding,
+		input: ['Eukara embedding dimension smoke test.'],
+		encoding_format: 'float',
+	});
+	const dimensions = response.data[0]?.embedding.length ?? 0;
+	if (dimensions !== 1_536) {
+		throw new Error(`Expected 1536 embedding dimensions, received ${dimensions}`);
+	}
+	return { model: OPENAI_MODELS.embedding, dimensions };
+}));
 
 const audioResponse = await fetch(SAMPLE_OGG_URL);
 if (!audioResponse.ok) throw new Error(`Could not fetch OGG fixture: ${audioResponse.status}`);

@@ -19,6 +19,7 @@ import { WorkflowEntrypoint, WorkflowStep } from 'cloudflare:workers';
 import type { WorkflowEvent } from 'cloudflare:workers';
 import { createOpenAIProvider, getAIProviderMode } from '../ai/provider-factory';
 import { CF_MODELS, OPENAI_MODELS } from '../config/models';
+import { scheduleEmbeddingBackfill } from '../services/embedding-projection';
 
 interface ConsolidationParams {
 	userId: number;
@@ -142,6 +143,10 @@ No markdown and no backticks.`;
 				).bind(userId, (m.category ?? 'general').toLowerCase(), m.fact, m.importance ?? 1)
 			);
 			await this.env.DB.batch([deleteStmt, ...inserts]);
+		});
+
+		await step.do('schedule-memory-reprojection', async () => {
+			await scheduleEmbeddingBackfill(this.env, true);
 		});
 
 		return {

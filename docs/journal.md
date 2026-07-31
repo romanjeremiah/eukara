@@ -398,3 +398,72 @@ pending the embedding cutover.
 - Owner's guardrailed autonomy baseline dated 2026-07-31.
 - Feature commit: `35eed89`.
 - Migration: `migrations/0003_media_assets.sql`.
+
+## 2026-07-31: Stage 4 Blue-Green Embedding Projection
+
+### Change Log
+
+- Inspected production: `my-ai-bot-memory` is a 1,024-dimension cosine index
+  with 11 vectors while D1 contains 108 active memories.
+- Provisioned `eukara-memory-openai-v1` as an isolated 1,536-dimension cosine
+  index. Added numeric `userId` and string `embeddingVersion` metadata indexes
+  before inserting any vectors.
+- Added batch OpenAI embedding support with strict result-count and 1,536-
+  dimension validation.
+- Added Queue-owned blue-green projection tasks. New memories are dual-written
+  during the rollback window, and cron schedules an idempotent D1 backfill in
+  batches of 25.
+- Replaced the floating Vectorize write after `saveMemory` with an awaited
+  Queue enqueue. D1 remains authoritative if projection enqueueing fails.
+- Added OpenAI-mode semantic search against the green index and Luna-based
+  reranking with validated ID ordering. Cloudflare mode continues to use the
+  existing index and reranker.
+- Added automatic full reprojection after memory consolidation replaces D1
+  rows.
+- Added an aggregate recall evaluator that stores only counts, never private
+  memory text, and blocks readiness unless every sampled memory appears in the
+  OpenAI top three.
+
+### Decision Register
+
+- The new projection uses default 1,536-dimension
+  `text-embedding-3-small` vectors and cosine distance.
+- Both indexes remain write-active during the rollback observation window.
+- Backfill ownership belongs to Cloudflare Queues; request handlers only await
+  enqueueing and never perform unbounded projection work.
+- Recall evidence uses exact-memory self-recall over ten importance-ranked
+  active rows. It is a coverage/readiness gate, not a complete semantic-quality
+  benchmark.
+- `AI_PROVIDER_MODE` remains `cloudflare` until production coverage and recall
+  results are verified.
+
+### Impact Assessment
+
+- No existing Vectorize resource was modified or deleted.
+- Provisioning the green index creates no model cutover. Backfill will add
+  OpenAI embedding usage and Vectorize stored dimensions once the updated
+  Worker is deployed.
+- Dual writes intentionally retain Workers AI embedding usage until the
+  rollback window closes.
+- The existing blue projection was already incomplete relative to D1. The
+  Queue backfill repairs both projections, improving rollback coverage as well
+  as preparing OpenAI retrieval.
+
+### Validation
+
+- Live `text-embedding-3-small` output contained exactly 1,536 dimensions.
+- Vectorize reported the green index at 1,536 dimensions, zero vectors, and
+  both metadata indexes active before deployment.
+- TypeScript validation passed.
+- The complete automated suite passed: 7 files and 39 tests.
+- Wrangler dry-run passed: 1,485.79 KiB raw and 253.56 KiB gzip, with both
+  Vectorize bindings resolved.
+
+### Traceability
+
+- Approved Stage 4 decision D5 in
+  `docs/architecture/openai-direct-api-migration-plan-2026-07-31.md`.
+- Current Cloudflare Vectorize create/query guidance and OpenAI embedding model
+  documentation checked on 2026-07-31.
+- Live evidence:
+  `docs/tests/results/2026-07-31T10-33-51Z/openai-stage4-smoke.json`.

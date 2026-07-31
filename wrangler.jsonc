@@ -47,6 +47,10 @@
 		{
 			"binding": "VECTORIZE",
 			"index_name": "my-ai-bot-memory"
+		},
+		{
+			"binding": "VECTORIZE_OPENAI",
+			"index_name": "eukara-memory-openai-v1"
 		}
 	],
 	"ai": {

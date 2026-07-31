@@ -29,9 +29,19 @@ export async function saveMemory(
 	).bind(userId, category.toLowerCase(), fact, importance).run();
 
 	const memoryId = result?.meta?.last_row_id ?? Date.now();
-	indexInVectorize(env, userId, category, fact, memoryId).catch(
-		e => log.error('vectorize_index_error', { msg: (e as Error).message })
-	);
+	try {
+		await env.TASK_QUEUE.send({
+			type: 'index_memory_projection',
+			userId,
+			chatId: userId,
+			memoryId: Number(memoryId),
+			category: category.toLowerCase(),
+			fact,
+		});
+	} catch (error) {
+		// D1 is authoritative. A later backfill can repair a missed projection.
+		log.error('vectorize_enqueue_error', { msg: (error as Error).message });
+	}
 }
 
 export async function getMemories(env: Env, userId: number, limit = 30): Promise<MemoryRow[]> {
@@ -157,24 +167,4 @@ function getRelativeAge(dateStr: string): string {
 	if (days < 7) return `${days}d ago`;
 	if (days < 30) return `${Math.floor(days / 7)}w ago`;
 	return `${Math.floor(days / 30)}mo ago`;
-}
-
-async function indexInVectorize(
-	env: Env, userId: number, category: string, fact: string, memoryId: number
-): Promise<void> {
-	if (!env.VECTORIZE || !env.AI) return;
-	try {
-		const { CloudflareProvider } = await import('../ai/cloudflare');
-		const provider = new CloudflareProvider(env.AI);
-		const vector = await provider.embed(fact);
-		if (vector.length) {
-			await env.VECTORIZE.upsert([{
-				id: String(memoryId),
-				values: vector,
-				metadata: { userId, category, fact: fact.slice(0, 200), preview: fact.slice(0, 100) },
-			}]);
-		}
-	} catch (e) {
-		log.error('vectorize_upsert_error', { msg: (e as Error).message });
-	}
 }

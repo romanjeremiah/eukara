@@ -1,7 +1,7 @@
 # Direct OpenAI API Migration Plan
 
 Date: 2026-07-31
-Status: Recommended baseline approved; Stages 1 to 3 deployed behind Cloudflare flag
+Status: Stages 1 to 3 deployed; Stage 4 blue-green projection ready for backfill
 Owner instruction: Replace Eukara's model routing and AI-provider architecture with the direct OpenAI API.
 
 ## 1. Current situation
@@ -176,10 +176,14 @@ cutover gates have passed.
 
 ### Stage 4: embeddings and retrieval
 
-- provision the blue-green Vectorize index;
-- backfill from D1 through a Queue;
-- run recall-quality evaluation;
-- cut over reads with an explicit rollback window.
+- [x] provision a separate 1,536-dimension cosine Vectorize index with
+  `userId` and `embeddingVersion` metadata indexes;
+- [x] add Queue-owned, retry-safe dual projection for new writes and D1
+  backfill batches;
+- [x] route OpenAI-mode semantic search and Luna reranking to the green
+  projection while retaining Cloudflare-mode reads from the blue index;
+- [ ] complete the production backfill and aggregate recall comparison;
+- [ ] cut over reads with an explicit rollback window.
 
 ### Stage 5: removal and production rollout
 

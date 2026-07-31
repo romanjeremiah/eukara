@@ -35,7 +35,15 @@ function fakeClient(response, embedding = [0.1, 0.2]) {
 			embeddings: {
 				create: async (request) => {
 					embeddingRequests.push(request);
-					return { data: [{ embedding }] };
+					const vectors = Array.isArray(embedding[0])
+						? embedding
+						: [embedding];
+					return {
+						data: vectors.map((values, index) => ({
+							embedding: values,
+							index,
+						})),
+					};
 				},
 			},
 		},
@@ -273,9 +281,23 @@ describe('OpenAIProvider Responses API adapter', () => {
 		await expect(provider.embed('memory')).resolves.toEqual([0.3, 0.4]);
 		expect(fake.embeddingRequests[0]).toEqual({
 			model: OPENAI_MODELS.embedding,
-			input: 'memory',
+			input: ['memory'],
 			encoding_format: 'float',
 		});
+	});
+
+	it('batches embeddings in response index order', async () => {
+		const fake = fakeClient(
+			{ output_text: '', output: [] },
+			[[0.1, 0.2], [0.3, 0.4]],
+		);
+		const provider = new OpenAIProvider('test-key', undefined, fake.client);
+
+		await expect(provider.embedMany(['first', 'second'])).resolves.toEqual([
+			[0.1, 0.2],
+			[0.3, 0.4],
+		]);
+		expect(fake.embeddingRequests[0].input).toEqual(['first', 'second']);
 	});
 });
 

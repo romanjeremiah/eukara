@@ -9,16 +9,34 @@
 // ============================================================
 
 import type { MemoryRow } from '../types/db';
-import { CF_MODELS } from '../config/models';
+import { CF_MODELS, OPENAI_MODELS } from '../config/models';
 import { queryAll } from '../lib/db';
 import { log } from '../lib/logger';
 import { runAI } from '../lib/ai-gateway';
+import {
+	createOpenAIProvider,
+	getAIProviderMode,
+} from '../ai/provider-factory';
 
 export async function semanticSearch(
 	env: Env, userId: number, query: string, topK = 10
 ): Promise<Array<{ id: string; score: number; metadata: Record<string, unknown> }>> {
-	if (!env.VECTORIZE || !env.AI || !query.trim()) return [];
+	if (!query.trim()) return [];
 	try {
+		if (getAIProviderMode(env) === 'openai') {
+			if (!env.VECTORIZE_OPENAI) return [];
+			const provider = createOpenAIProvider(env, OPENAI_MODELS.embedding);
+			const vector = await provider.embed(query);
+			if (!vector.length) return [];
+			const matches = await env.VECTORIZE_OPENAI.query(vector, {
+				topK,
+				filter: { userId },
+				returnMetadata: 'all',
+			});
+			return normaliseMatches(matches);
+		}
+
+		if (!env.VECTORIZE || !env.AI) return [];
 		const result = await runAI<{ data?: number[][] }>(
 			env.AI,
 			CF_MODELS.embedding as unknown as keyof AiModels,
@@ -32,10 +50,7 @@ export async function semanticSearch(
 			filter: { userId },
 			returnMetadata: 'all',
 		});
-		return (matches.matches ?? []).map(m => ({
-			id: m.id, score: m.score,
-			metadata: (m.metadata ?? {}) as Record<string, unknown>,
-		}));
+		return normaliseMatches(matches);
 	} catch (e) {
 		log.error('semantic_search_error', { msg: (e as Error).message });
 		return [];
@@ -46,8 +61,32 @@ export async function rerank(
 	env: Env, query: string,
 	results: Array<{ id: string; score: number; metadata: Record<string, unknown> }>
 ): Promise<typeof results> {
-	if (!env.AI || !results.length || !query?.trim()) return results;
+	if (!results.length || !query?.trim()) return results;
 	try {
+		if (getAIProviderMode(env) === 'openai') {
+			const provider = createOpenAIProvider(env, OPENAI_MODELS.reranker);
+			const candidates = results.map(result => ({
+				id: result.id,
+				text: (result.metadata?.fact as string)
+					?? (result.metadata?.preview as string)
+					?? '',
+			}));
+			const response = await provider.chat(
+				[{
+					role: 'user',
+					content: `Query: ${query}\n\nCandidates:\n${JSON.stringify(candidates)}`,
+				}],
+				undefined,
+				{
+					maxTokens: 500,
+					systemInstruction: 'Return only a JSON array of candidate ids ordered from most to least relevant. Include every id exactly once.',
+					thinkingLevel: 'LOW',
+				},
+			);
+			return orderResultsByIds(results, response.text);
+		}
+
+		if (!env.AI) return results;
 		const contexts = results
 			.map(r => (r.metadata?.fact as string) ?? (r.metadata?.preview as string) ?? '')
 			.filter(Boolean)
@@ -67,6 +106,46 @@ export async function rerank(
 			.filter((r): r is NonNullable<typeof r> => r != null);
 	} catch (e) {
 		log.error('reranker_error', { msg: (e as Error).message });
+		return results;
+	}
+}
+
+/**
+ * Normalise the Vectorize binding response into the service contract.
+ */
+function normaliseMatches(
+	result: VectorizeMatches,
+): Array<{ id: string; score: number; metadata: Record<string, unknown> }> {
+	return (result.matches ?? []).map(match => ({
+		id: match.id,
+		score: match.score,
+		metadata: (match.metadata ?? {}) as Record<string, unknown>,
+	}));
+}
+
+/**
+ * Validate an OpenAI reranker response and preserve omitted candidates.
+ */
+export function orderResultsByIds<T extends { id: string }>(
+	results: T[],
+	text: string,
+): T[] {
+	const match = text.match(/\[[\s\S]*\]/);
+	if (!match) return results;
+	try {
+		const parsed: unknown = JSON.parse(match[0]);
+		if (!Array.isArray(parsed)) return results;
+		const byId = new Map(results.map(result => [result.id, result]));
+		const ordered: T[] = [];
+		for (const id of parsed) {
+			if (typeof id !== 'string') continue;
+			const result = byId.get(id);
+			if (!result) continue;
+			ordered.push(result);
+			byId.delete(id);
+		}
+		return [...ordered, ...byId.values()];
+	} catch {
 		return results;
 	}
 }

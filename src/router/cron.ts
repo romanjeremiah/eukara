@@ -13,6 +13,7 @@ import * as persona from '../services/persona';
 import * as reminders from '../services/reminders';
 import type { ReminderMetadata } from '../services/reminders';
 import * as curiosity from '../services/curiosity';
+import { scheduleEmbeddingBackfill } from '../services/embedding-projection';
 
 // Per-user spontaneous-outreach behaviour, dialled by
 // persona_config.proactivity_level (2026-06-04). Each entry tunes
@@ -34,6 +35,11 @@ interface ScheduleConfig { hour: number; minute: number }
 
 export async function handleCron(env: Env): Promise<void> {
 	if (!env.OWNER_ID) return;
+	await ensureOpenAIEmbeddingBackfill(env).catch((error) =>
+		log.error('openai_embedding_backfill_schedule_error', {
+			msg: (error as Error).message,
+		}),
+	);
 
 	// For multi-user: iterate over all active users
 	// For now: single owner
@@ -113,6 +119,15 @@ export async function handleCron(env: Env): Promise<void> {
 		try {
 			await enqueueWeeklyReport(env, userId, localTime);
 		} catch (e) { log.error('cron_weekly_report_error', { userId, msg: (e as Error).message }); }
+	}
+}
+
+/**
+ * Start or recover the one-time blue-green OpenAI embedding backfill.
+ */
+async function ensureOpenAIEmbeddingBackfill(env: Env): Promise<void> {
+	if (await scheduleEmbeddingBackfill(env)) {
+		log.info('openai_embedding_backfill_scheduled', { version: 'v1' });
 	}
 }
 

@@ -22,6 +22,7 @@ declare global {
 		MEMORY_WORKFLOW: Workflow;
 		RESEARCH_WORKFLOW: Workflow;
 		ARCHITECT_WORKFLOW: Workflow;
+		VECTORIZE_OPENAI: VectorizeIndex;
 	}
 }
 
