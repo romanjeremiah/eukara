@@ -228,3 +228,47 @@ This session focused on fixing an infinite-loop bug that caused the AI to become
 - Owner instruction: “Continue. I set OPENAI_API_KEY, so we can freely use it.”
 - Approved migration plan:
   `docs/architecture/openai-direct-api-migration-plan-2026-07-31.md`.
+
+## 2026-07-31: Guardrailed Autonomy Baseline
+
+### Change Log
+
+- Recorded the owner's standing authority for Codex to execute routine Eukara
+  delivery work within the guardrails below.
+- No application code, configuration, credentials, Cloudflare resources,
+  production data or deployment state changed in this interaction.
+
+### Decision Register
+
+- **Approved autonomous actions:** modify Eukara; run local tests and live
+  integration checks; create branches; stage task-related files; commit; push;
+  open pull requests; deploy; perform post-deployment checks; and roll back
+  failed application deployments.
+- **Actions requiring explicit approval:** delete or rotate credentials;
+  destructively modify production data; apply irreversible migrations; delete
+  Cloudflare resources; change billing; or force-push.
+- This baseline grants execution authority but does not waive the project's
+  architectural pause requirement. New architectural decisions, structural
+  shifts and materially ambiguous implementation choices must still be
+  presented with options, implications and trade-offs before implementation.
+- Staging and commits must remain limited to task-related files. Unrelated
+  existing worktree changes remain user-owned and must be preserved.
+
+### Impact Assessment
+
+- This is a documentation-only governance change with no runtime or production
+  impact.
+- Future tasks can proceed through delivery and deployment without repeated
+  approval when they remain inside the approved scope and an agreed design.
+- Destructive, irreversible, financial and credential-management boundaries
+  remain protected by an explicit approval gate.
+
+### Traceability
+
+- Owner instruction: “Approve guardrailed autonomy baseline. Codex may modify
+  Eukara, run tests and live integration checks, create branches, stage
+  task-related files, commit, push, open pull requests, deploy, perform
+  post-deployment checks and roll back failed application deployments. Codex
+  must not delete or rotate credentials, modify production data destructively,
+  apply irreversible migrations, delete Cloudflare resources, change billing
+  or force-push without explicit approval.”
