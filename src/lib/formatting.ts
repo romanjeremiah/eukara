@@ -185,12 +185,14 @@ export function normaliseMarkdown(text: string): string {
 		return stash(`<code>${code}</code>`);
 	});
 
-	// 3. Markdown headers (###, ##, #) → bold on their own line.
-	//    Telegram has no headers, so bold is the closest equivalent.
+	// 3. Markdown headers (###, ##, #) → normal paragraph text.
+	//    Persistent conversation uses Telegram's classic HTML renderer. A model
+	//    heading should not silently become heavier or appear larger than the
+	//    surrounding companion reply.
 	//    NOTE: use [ \t]* not \s* for leading whitespace — \s includes
 	//    newlines, which would cause the regex to eat blank lines
 	//    preceding the header.
-	out = out.replace(/^[ \t]*#{1,6}\s+(.+)$/gm, '<b>$1</b>');
+	out = out.replace(/^[ \t]*#{1,6}\s+(.+)$/gm, '$1');
 
 	// 4. Bold **text** or __text__ → <b>text</b>
 	//    Non-greedy to avoid swallowing multiple paragraphs.

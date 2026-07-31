@@ -573,3 +573,87 @@ pending the embedding cutover.
   application and durability platform.
 - Release commit: `e109ff2 feat(ai): switch production routing to OpenAI`.
 - Rollback version: `277ce8ac-82d6-4bab-afac-1ec965390bee`.
+
+## 2026-07-31: Classic Telegram Conversation Rendering
+
+### Change Log
+
+- Restored classic `sendMessage` and `editMessageText` HTML payloads for
+  persistent Eukara conversation.
+- Retained Rich Messages only for ephemeral streaming drafts.
+- Changed leaked Markdown headings to normal paragraph text instead of bold
+  labels and tightened the persona typography rules around sparse emphasis.
+- Added regression coverage for send, edit and heading-normalisation behaviour.
+
+### Decision Register
+
+- The owner approved the proposed classic-conversation rendering correction.
+- Model routing and reasoning effort remain unchanged pending a separate
+  architectural decision.
+- Governed-memory design remains proposal-only pending a lifecycle and evidence
+  policy decision; no production memory rows or schemas were changed.
+
+### Impact Assessment
+
+- Persistent messages return to the previous normal-size Telegram renderer.
+- Existing HTML emphasis, code, links, spoilers, blockquotes, reply markup and
+  message effects remain supported.
+- No model, D1, KV, R2, Vectorize, Queue or Workflow behaviour changes.
+
+### Validation
+
+- `npm run typecheck`: passed.
+- `npm run deploy:dry-run`: passed; Wrangler produced a 270.21 KiB gzip
+  production bundle with the expected bindings.
+- Direct compiled contract check: passed for classic send/edit payloads, HTML
+  parse mode, disabled link previews, absence of `rich_message`, and plain-text
+  heading normalisation.
+- `npm run test:run`: 23 assertions passed in the locally started pools. Five
+  Cloudflare Worker pools could not start because the remote preview API
+  returned malformed responses and HTTP 522 errors; no test assertion failed.
+- `git diff --check`: passed.
+
+### Traceability
+
+- Owner instruction: “I agree with your proposal, please implement”.
+- Architecture record:
+  `docs/architecture/telegram-conversation-rendering-2026-07-31.md`.
+- Current Telegram Bot API and Cloudflare Workers guidance checked on
+  2026-07-31.
+
+## 2026-07-31: Governed Memory v1 Discovery
+
+### Change Log
+
+- Completed a read-only source and production aggregate audit of Eukara memory.
+- Added a proposal-only governed-memory architecture record; no memory runtime,
+  schema, projection or production data was changed.
+- Production contains 108 active generic memories. Of these, 81 are automatic
+  `implicit_mood`, `episode_topic` or `personality_trait` records, representing
+  75% of the active set.
+
+### Decision Register
+
+- Memory implementation is paused at the architectural boundary until the
+  owner chooses confirmation, review-surface and legacy-migration policies.
+- Recommended baseline: evidence-backed explicit first-person facts may be
+  confirmed; inferred or sensitive claims remain candidates; legacy rows enter
+  the governed store as `legacy_unverified`.
+
+### Impact Assessment
+
+- The audit read aggregate counts only and wrote no production rows.
+- The proposal preserves D1 authority, treats Vectorize as a disposable
+  projection, and retains the legacy path during shadow rollout.
+- The present delete-and-reinsert consolidation Workflow is identified as a
+  containment priority because it can lose provenance and rows outside its
+  bounded input.
+
+### Traceability
+
+- Owner instruction: build better memory for Eukara using the governed-memory
+  direction proposed for Xaridotis.
+- Architecture record:
+  `docs/architecture/governed-memory-v1-plan-2026-07-31.md`.
+- Current OpenAI and Cloudflare D1, Queues and Vectorize guidance checked on
+  2026-07-31.

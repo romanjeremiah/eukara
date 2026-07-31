@@ -187,14 +187,15 @@ export async function sendMessage(
 	const cleanText = sanitizeHtml(text);
 	const payload: Record<string, unknown> = {
 		chat_id: chatId,
-		rich_message: { html: cleanText || '...' },
-		disable_notification: false,
+		text: cleanText || '...',
+		parse_mode: 'HTML',
+		link_preview_options: { is_disabled: true },
 	};
 	if (threadId !== 'default') payload.message_thread_id = threadId;
 	if (opts.replyId) payload.reply_parameters = { message_id: opts.replyId };
 	if (opts.markup) payload.reply_markup = opts.markup;
 	if (opts.effectId) payload.message_effect_id = opts.effectId;
-	return tgApi<TelegramMessage>('sendRichMessage', env, payload);
+	return tgApi<TelegramMessage>('sendMessage', env, payload);
 }
 
 export async function editMessage(
@@ -208,7 +209,9 @@ export async function editMessage(
 	const payload: Record<string, unknown> = {
 		chat_id: chatId,
 		message_id: msgId,
-		rich_message: { html: cleanText || '...' },
+		text: cleanText || '...',
+		parse_mode: 'HTML',
+		link_preview_options: { is_disabled: true },
 	};
 	if (markup) payload.reply_markup = markup;
 	return tgApi<TelegramMessage>('editMessageText', env, payload);

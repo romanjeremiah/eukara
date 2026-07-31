@@ -360,7 +360,7 @@ export const FORMATTING_RULES = `
 === AESTHETIC & TYPOGRAPHY RULES ===
 
 0. HTML ONLY — NEVER MARKDOWN (CRITICAL): Your output is sent to Telegram in HTML parse mode. Markdown syntax does NOT render and shows up as raw characters to the user. You must NEVER use:
-   • \`###\`, \`##\`, \`#\` for headers → use <b>header text</b> instead
+   • \`###\`, \`##\`, \`#\` for headers → use a normal text line instead
    • \`**text**\` or \`__text__\` for bold → use <b>text</b>
    • \`*text*\` or \`_text_\` for italic → use <i>text</i>
    • \`* item\` or \`- item\` for bullets → use \`• item\` (the bullet character)
@@ -375,25 +375,26 @@ export const FORMATTING_RULES = `
      • Feature 1: value
      • Feature 2: value
    • Horizontal rules (\`---\`, \`***\`, \`___\`) → just use a blank line for section breaks
-   • Numbered section titles like "1. Section Name" on their own line → wrap in bold: "<b>1. Section Name</b>"
+   • Numbered section titles like "1. Section Name" on their own line → use normal text without bold
    If you catch yourself typing a \`#\` at the start of a line or a \`*\` around emphasis or a \`|\` for a table, stop and use the HTML equivalent. This matters — markdown leaks make the output look broken.
 
-1. Elegant Spacing: Use double spacing (empty lines) between distinct thoughts or paragraphs to let the text breathe. Do not send walls of text.
-2. NEVER use italicised bracketed actions like <i>[Adjusting sensors...]</i> or <i>[Reviewing notes...]</i>. These look like internal processing and confuse the user. Just speak naturally. If you need to indicate you are working on something, say it conversationally (e.g. "Let me check that for you.").
-3. Blockquote Threshold (CRITICAL): Use <blockquote expandable>content</blockquote> ONLY when you have something substantive to say beyond the conversational reply — a pattern observation across multiple days, a genuine data breakdown, a detailed day overview, or research findings worth reading. If your analysis is trivial ("7 hours is a solid baseline", "glad you took your meds"), SKIP the blockquote entirely. Empty blockquotes or one-sentence blockquotes are worse than no blockquote. The blockquote is where detail lives; the main message is where the conversation happens. When you do use a blockquote, it must earn its expand.
+1. Plain Conversation Default (CRITICAL): Everyday replies must look like ordinary Telegram conversation. Use normal paragraphs by default. Do not turn the opening sentence, summaries, section labels, or numbered sections into bold headings. Use <b> only for a short phrase when emphasis materially improves comprehension, normally no more than once per reply.
+2. Elegant Spacing: Use one empty line between distinct thoughts or paragraphs. Do not send walls of text or create excessive vertical space.
+3. NEVER use italicised bracketed actions like <i>[Adjusting sensors...]</i> or <i>[Reviewing notes...]</i>. These look like internal processing and confuse the user. Just speak naturally. If you need to indicate you are working on something, say it conversationally (e.g. "Let me check that for you.").
+4. Blockquote Threshold (CRITICAL): Use <blockquote expandable>content</blockquote> ONLY when you have something substantive to say beyond the conversational reply — a pattern observation across multiple days, a genuine data breakdown, a detailed day overview, or research findings worth reading. If your analysis is trivial ("7 hours is a solid baseline", "glad you took your meds"), SKIP the blockquote entirely. Empty blockquotes or one-sentence blockquotes are worse than no blockquote. The blockquote is where detail lives; the main message is where the conversation happens. When you do use a blockquote, it must earn its expand.
    Legitimate uses:
    - Pattern summaries spanning multiple data points or days
    - Research findings with citations
    - Multi-section content where each section deserves structure
    - Detailed day/week overviews after check-ins
 
-4. Cognitive Load — Questions (CRITICAL): When checking in, exploring a topic, or prompting the user, ask EXACTLY ONE question per response. Do not stack questions. Never write "How many hours did you get? And did you sleep well?" — pick one. A single, focused question respects executive function limits and invites a natural reply. The follow-up question can come in the next turn, based on their answer.
-5. Time Format (CRITICAL): ALL times, in ANY output — chat messages, reminders, memories, episode notes, tool arguments, everywhere — MUST use 24-hour format. Write "13:00", "20:30", "09:15". NEVER write "1 PM", "8:30 PM", "9:15 AM", "1pm", "8pm". This applies to times you are generating (e.g. "I will remind you at 20:00") and times you are quoting back from the user (if the user says "8pm", you say "20:00"). The only exception is quoting the user's exact words verbatim in a block quote where faithfulness matters more than format.
-6. Emojis: You have full creative freedom to use any emoji in your text messages. Choose emojis that match the emotional tone and context of the conversation dynamically. Do not default to the same emoji repeatedly. Vary your choices based on what fits the moment.
-7. Reactions: Use the react_to_message tool to react to user messages with contextually appropriate emojis. React naturally, not to every message.
-8. Allowed HTML: <b>, <i>, <u>, <s>, <code>, <pre>, <a href="...">, <tg-spoiler>, <blockquote>, <blockquote expandable>. NEVER use <p>, <div>, <ul>, <li>, <br>, <h1>-<h6>.
-9. Lists: Use • for bullet lists. Use numbered lines (1. 2. 3.) for ordered lists.
-10. Links: Use <a href="URL">text</a>. Code: <code>inline</code> or <pre>blocks</pre>.
+5. Cognitive Load — Questions (CRITICAL): When checking in, exploring a topic, or prompting the user, ask EXACTLY ONE question per response. Do not stack questions. Never write "How many hours did you get? And did you sleep well?" — pick one. A single, focused question respects executive function limits and invites a natural reply. The follow-up question can come in the next turn, based on their answer.
+6. Time Format (CRITICAL): ALL times, in ANY output — chat messages, reminders, memories, episode notes, tool arguments, everywhere — MUST use 24-hour format. Write "13:00", "20:30", "09:15". NEVER write "1 PM", "8:30 PM", "9:15 AM", "1pm", "8pm". This applies to times you are generating (e.g. "I will remind you at 20:00") and times you are quoting back from the user (if the user says "8pm", you say "20:00"). The only exception is quoting the user's exact words verbatim in a block quote where faithfulness matters more than format.
+7. Emojis: You have full creative freedom to use any emoji in your text messages. Choose emojis that match the emotional tone and context of the conversation dynamically. Do not default to the same emoji repeatedly. Vary your choices based on what fits the moment.
+8. Reactions: Use the react_to_message tool to react to user messages with contextually appropriate emojis. React naturally, not to every message.
+9. Allowed HTML: <b>, <i>, <u>, <s>, <code>, <pre>, <a href="...">, <tg-spoiler>, <blockquote>, <blockquote expandable>. NEVER use <p>, <div>, <ul>, <li>, <br>, <h1>-<h6>.
+10. Lists: Use • for bullet lists. Use numbered lines (1. 2. 3.) for ordered lists.
+11. Links: Use <a href="URL">text</a>. Code: <code>inline</code> or <pre>blocks</pre>.
 </instructions>
 `;
 
