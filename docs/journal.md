@@ -41,3 +41,126 @@ This session focused on fixing an infinite-loop bug that caused the AI to become
   2. Mood scale (`inline_keyboard` with predefined emojis)
   3. Optional photo upload (`inline_keyboard` with Skip button)
 - **Decision:** Integrate Gemini Vision API to analyze uploaded photos, extracting a concise, friendly summary to store alongside the sleep and mood data in the long-term history.
+
+## 2026-07-31: Direct OpenAI API Migration Approved
+
+### Change Log
+
+- Added `docs/architecture/openai-direct-api-migration-plan-2026-07-31.md`.
+- Recorded the current hybrid Workers AI/Gemini execution paths, known media,
+  Workflow, authorisation and Vectorize migration risks.
+- Documented a staged migration and rollback approach. No runtime code,
+  configuration, secrets, provider calls, production data or deployments were
+  changed in this interaction.
+
+### Decision Register
+
+- **Approved by owner:** Eukara will migrate to the direct OpenAI API rather than
+  Cloudflare AI Gateway.
+- **Approved boundary:** Cloudflare remains the application and durability
+  platform for Workers, D1, KV, R2, Vectorize, Queues and Workflows.
+- **Approved scope:** migrate chat, curator, research, vision, transcription,
+  speech, image generation, embeddings and reranking to direct OpenAI APIs.
+- **Approved state policy:** set OpenAI `store: false`; Eukara's D1, KV and R2
+  stores remain authoritative.
+- **Approved routing baseline:** GPT-5.6 Luna for inexpensive high-volume work,
+  GPT-5.6 Terra for the main chat and tool loop, and GPT-5.6 Sol for difficult
+  research and architecture tasks.
+- **Approved failure policy:** provider fallbacks remain OpenAI-only.
+- **Approved vector migration:** use a blue-green Vectorize index with
+  Queue-owned backfill, validation, cutover and rollback retention.
+- **Implementation stage authorised:** Stage 1 may add the direct OpenAI SDK,
+  model registry, provider adapter, tests and a disabled-by-default migration
+  switch. Existing production routing remains unchanged until later gates pass.
+
+### Impact Assessment
+
+- Documentation-only change with no effect on Worker behaviour or production
+  state.
+- The future runtime migration will affect every AI route, tool-loop
+  continuation, media flow, specialist Workflow, secret definition and semantic
+  retrieval projection.
+- Existing vectors and user memories must remain recoverable throughout the
+  migration; an in-place embedding-model replacement is not approved.
+- Added the direct OpenAI Node SDK dependency (`openai` 7.2.0). No API key,
+  provider traffic or deployment has been configured.
+
+### Traceability
+
+- Owner instruction: “I agree with you to implement direct OpenAI API. Can you
+  start working on it?”
+- Owner approval: “Approve recommended baseline”.
+- Architecture plan:
+  `docs/architecture/openai-direct-api-migration-plan-2026-07-31.md`.
+
+## 2026-07-31: Stage 1 OpenAI Foundation
+
+### Change Log
+
+- Added the direct Responses API adapter in `src/ai/openai.ts`.
+- Added a central OpenAI model registry for the approved Luna, Terra and Sol
+  workload tiers plus specialist audio, image and embedding models.
+- Extended the provider-neutral contracts and exports for OpenAI.
+- Added `AI_PROVIDER_MODE = "cloudflare"` as a disabled-by-default migration
+  switch and taught the router to select OpenAI when explicitly enabled.
+- Added an optional `OPENAI_API_KEY` secret type. No secret value was created,
+  read or committed.
+- Corrected the provider constructor and environment augmentation types found
+  by the first direct TypeScript validation pass.
+- Added isolated OpenAI adapter and routing regression tests. The tests mock all
+  SDK calls and cover stateless requests, tool conversion, tool-loop
+  continuation, images, explicit unsupported-media failure, citation
+  normalisation, embeddings, stream filtering and the disabled routing default.
+- Regenerated Cloudflare Worker types after adding the migration variable. The
+  generated file is ignored by Git and produced no tracked diff.
+- Updated the architecture plan status and decision register to reflect the
+  owner's approval, and corrected provider-specific router comments.
+
+### Decision Register
+
+- The adapter sends `store: false` on every Responses API request.
+- Direct SDK retries are disabled so later application-level fallback policy
+  remains the single retry owner.
+- Existing sequential tool-loop behaviour is preserved with
+  `parallel_tool_calls: false`.
+- Non-image inline media fails explicitly in this first adapter slice instead
+  of being silently discarded. Audio and document conversion remain
+  specialist-workload migration tasks.
+- OpenAI web citations are normalised into Eukara's existing annotation shape
+  to avoid breaking Telegram source rendering.
+
+### Impact Assessment
+
+- Production behaviour is unchanged because the routing switch defaults to
+  `cloudflare`.
+- Enabling `openai` without the `OPENAI_API_KEY` secret fails closed with a
+  configuration error.
+- The new provider is not yet wired into curator, background tasks,
+  specialist Workflows, TTS, image generation or the Vectorize read path.
+- The OpenAI SDK requires local Node.js 22 or later for supported development;
+  local Node.js 26.4.0 satisfies that requirement, and the Worker dry-run
+  subsequently validated bundle compatibility.
+- The repository's `node_modules/.bin/tsc` wrapper is a stale regular script
+  with a broken relative path, so validation uses the installed TypeScript
+  entry point directly pending a dependency-directory refresh.
+
+### Validation
+
+- Direct TypeScript validation passed with TypeScript 6.0.2.
+- The isolated OpenAI test suite passed: 1 file, 7 tests.
+- The complete suite ran 22 tests: 20 passed and the same 2 pre-existing
+  `Hello World!` snapshots failed because the Worker now returns `OK` and
+  `Eukara is running`. These stale snapshots are unrelated to the OpenAI
+  change and were not rewritten.
+- Wrangler 4.107.0 produced a successful dry-run bundle: 1,387.53 KiB raw and
+  240.63 KiB gzip. No deployment occurred.
+- `npm audit --omit=dev` reported zero production dependency
+  vulnerabilities. The install-time warning refers to development or optional
+  packages outside this implementation scope.
+- No live OpenAI call was attempted because `OPENAI_API_KEY` is not configured.
+
+### Traceability
+
+- Approved baseline and staged implementation:
+  `docs/architecture/openai-direct-api-migration-plan-2026-07-31.md`.
+- Owner approval: “Approve recommended baseline”.

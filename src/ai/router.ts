@@ -2,7 +2,8 @@
 // AI Model Router
 //
 // Decides which provider + model to use for each message.
-// Routes all traffic to Cloudflare Workers AI.
+// Routes to the selected provider while the OpenAI migration flag remains
+// disabled by default.
 //
 // 2026-06-22 changes:
 //   - Migrated completely to Cloudflare Workers AI.
@@ -13,10 +14,13 @@
 // ============================================================
 
 import type { AIProvider, ModelRoute } from '../types/ai';
-import { CF_MODELS } from '../config/models';
+import { CF_MODELS, OPENAI_MODELS } from '../config/models';
 import type { CuratorResult } from './curator';
 import { CloudflareProvider } from './cloudflare';
+import { OpenAIProvider } from './openai';
 import { log } from '../lib/logger';
+
+export type AIProviderMode = 'cloudflare' | 'openai';
 
 export interface RouterContext {
 	userText: string;
@@ -36,25 +40,36 @@ export interface RouterContext {
  * Detect the complexity of a user's message.
  * Returns which provider + model + thinking level to use.
  */
-export function routeMessage(ctx: RouterContext): ModelRoute {
+export function routeMessage(
+	ctx: RouterContext,
+	providerMode: AIProviderMode = 'cloudflare',
+): ModelRoute {
 	const { userText, hasMedia, forceHeavyLane, curatorResult } = ctx;
+	const provider = providerMode;
+	const models = providerMode === 'openai'
+		? {
+			chat: OPENAI_MODELS.chat,
+			code: OPENAI_MODELS.tools,
+			vision: OPENAI_MODELS.vision,
+		}
+		: CF_MODELS;
 
 	// Sticky Heavy: previous turn was Heavy and the topic classifier said
 	// the new message is still in the same topic.
 	if (forceHeavyLane) {
 		return {
-			provider: 'cloudflare',
-			model: CF_MODELS.chat,
+			provider,
+			model: models.chat,
 			reason: 'sticky_heavy_context',
 			enableGrounding: true,
 		};
 	}
 
-	// Media present: route to Cloudflare Vision model.
+	// Media present: route to the selected provider's vision-capable model.
 	if (hasMedia) {
 		return {
-			provider: 'cloudflare',
-			model: CF_MODELS.vision,
+			provider,
+			model: models.vision,
 			reason: 'multimodal_input',
 			enableGrounding: false, // Vision models usually don't support grounding
 		};
@@ -65,8 +80,8 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 	if (curatorResult) {
 		if (curatorResult.intent === 'emotional_vent' || curatorResult.intent === 'crisis') {
 			return {
-				provider: 'cloudflare',
-				model: CF_MODELS.chat,
+				provider,
+				model: models.chat,
 				reason: 'emotional_content',
 				enableGrounding: true,
 			};
@@ -74,8 +89,8 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 
 		if (curatorResult.intent === 'code') {
 			return {
-				provider: 'cloudflare',
-				model: CF_MODELS.code,
+				provider,
+				model: models.code,
 				reason: 'code_content',
 				thinkingLevel: 'HIGH',
 				enableGrounding: false,
@@ -84,8 +99,8 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 
 		if (curatorResult.intent === 'functional') {
 			return {
-				provider: 'cloudflare',
-				model: CF_MODELS.code,
+				provider,
+				model: models.code,
 				reason: 'analytical_content',
 				thinkingLevel: 'HIGH',
 				enableGrounding: false,
@@ -96,18 +111,18 @@ export function routeMessage(ctx: RouterContext): ModelRoute {
 	// Long messages (>300 chars): bump to reasoning model
 	if (userText.length > 300) {
 		return {
-			provider: 'cloudflare',
-			model: CF_MODELS.code,
+			provider,
+			model: models.code,
 			reason: 'long_message',
 			thinkingLevel: 'MEDIUM',
 			enableGrounding: false,
 		};
 	}
 
-	// Default: 70b Chat on CF AI.
+	// Default: the selected provider's main conversation model.
 	return {
-		provider: 'cloudflare',
-		model: CF_MODELS.chat,
+		provider,
+		model: models.chat,
 		reason: 'default_casual',
 		enableGrounding: true,
 	};
@@ -133,6 +148,14 @@ export function willHitHeavyLane(
  * Create the appropriate AI provider based on the route.
  */
 export function createProvider(route: ModelRoute, env: Env): AIProvider {
+	if (route.provider === 'openai') {
+		if (!env.OPENAI_API_KEY) {
+			throw new Error(
+				'OPENAI_API_KEY is required when AI_PROVIDER_MODE is "openai"',
+			);
+		}
+		return new OpenAIProvider(env.OPENAI_API_KEY, route.model);
+	}
 	return new CloudflareProvider(env.AI, route.model);
 }
 
@@ -140,7 +163,9 @@ export function createProvider(route: ModelRoute, env: Env): AIProvider {
  * Convenience: route + create in one call.
  */
 export function getProvider(ctx: RouterContext, env: Env): { provider: AIProvider; route: ModelRoute } {
-	const route = routeMessage(ctx);
+	const providerMode: AIProviderMode =
+		env.AI_PROVIDER_MODE === 'openai' ? 'openai' : 'cloudflare';
+	const route = routeMessage(ctx, providerMode);
 	const provider = createProvider(route, env);
 
 	if (route.provider !== 'cloudflare' || route.reason !== 'default_casual') {

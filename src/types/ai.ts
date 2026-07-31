@@ -3,7 +3,8 @@
 //
 // All AI interactions go through the AIProvider interface.
 // Tools use OpenAI-format schemas (industry standard).
-// Each provider (Cloudflare AI, Gemini) implements AIProvider.
+// Each provider (Cloudflare AI, OpenAI, Gemini during migration) implements
+// AIProvider.
 // ============================================================
 
 // --- Tool Contract ---
@@ -131,6 +132,12 @@ export interface AIProviderConfig {
 	thinkingLevel?: 'LOW' | 'MEDIUM' | 'HIGH';
 	systemInstruction?: string;
 	/**
+	 * Stable, pseudonymous end-user identifier sent to OpenAI for abuse
+	 * detection. Callers must hash or otherwise pseudonymise personal
+	 * identifiers before setting this field.
+	 */
+	safetyIdentifier?: string;
+	/**
 	 * Always-on grounding flag. Effect depends on provider+model:
 	 *  - GeminiProvider on a Gemini 3 family model (e.g. gemini-3.5-flash):
 	 *    prepends `{googleSearch: {}}` to the tools array and sets
@@ -172,7 +179,7 @@ export interface AIProvider {
 // --- Model Router Types ---
 
 export interface ModelRoute {
-	provider: 'cloudflare' | 'gemini';
+	provider: 'cloudflare' | 'openai' | 'gemini';
 	model: string;
 	maxTokens?: number;
 	thinkingLevel?: 'LOW' | 'MEDIUM' | 'HIGH';

@@ -11,10 +11,12 @@ declare global {
 		// Secrets (set via `wrangler secret put`)
 		TELEGRAM_TOKEN: string;
 		GEMINI_API_KEY: string;
+		OPENAI_API_KEY?: string;
 		OWNER_ID: string;
 		TAVILY_API_KEY?: string;
 		GITHUB_TOKEN?: string;
 		GCP_TTS_API_KEY?: string;
+		AI_PROVIDER_MODE: 'cloudflare' | 'openai';
 
 		// Workflow bindings (auto-generated types may lag behind wrangler.jsonc)
 		MEMORY_WORKFLOW: Workflow;

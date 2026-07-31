@@ -45,3 +45,26 @@ export const CF_MODELS = {
 	// Cross-model fallback when the primary gpt-oss chat call fails.
 	fallbackPro: '@cf/google/gemma-4-26b-a4b-it',
 } as const;
+
+/**
+ * Direct OpenAI model registry for the staged migration.
+ *
+ * All model identifiers live here so routing and specialist workloads do not
+ * scatter provider-specific strings throughout the application.
+ */
+export const OPENAI_MODELS = {
+	chat: 'gpt-5.6-terra',
+	tools: 'gpt-5.6-terra',
+	vision: 'gpt-5.6-terra',
+	background: 'gpt-5.6-luna',
+	curator: 'gpt-5.6-luna',
+	reranker: 'gpt-5.6-luna',
+	research: 'gpt-5.6-sol',
+	architect: 'gpt-5.6-sol',
+	consolidation: 'gpt-5.6-sol',
+	fallback: 'gpt-5.6-luna',
+	embedding: 'text-embedding-3-small',
+	transcription: 'gpt-4o-transcribe',
+	speech: 'tts-1',
+	image: 'gpt-image-2',
+} as const;

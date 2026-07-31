@@ -10,6 +10,9 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
+	"vars": {
+		"AI_PROVIDER_MODE": "cloudflare"
+	},
 	"limits": {
 		"cpu_ms": 300000
 	},
