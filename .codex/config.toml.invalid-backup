@@ -1,0 +1,4 @@
+mkdir -p .codex
+touch .codex/config.toml
+chmod 600 .codex/config.toml
+open -e .codex/config.toml
