@@ -2,11 +2,12 @@
 
 import { defineTool, ok } from './factory';
 import * as memory from '../services/memory';
+import * as governedMemory from '../services/governed-memory';
 import * as episodeSvc from '../services/episode';
 
 export const saveMemory = defineTool(
 	'save_memory',
-	"Save an important fact about the user. Always use the person's actual first name. Categories: preference, personal, work, hobby, identity, relationship, health, habit, pattern, trigger, avoidance, schema, growth, coping, insight, idea, brain_dump, discovery. Set importance 2-3 for therapeutic breakthroughs.",
+	"Capture an important fact explicitly stated by the user. The system records the current user turn as evidence. Sensitive health, relationship, personality and therapeutic claims require user confirmation before recall. Never save an inference as an established fact. Categories: preference, personal, work, hobby, identity, relationship, health, habit, pattern, trigger, avoidance, schema, growth, coping, insight, idea, brain_dump, discovery.",
 	{
 		category: { type: 'string', description: 'Memory category' },
 		fact: { type: 'string', description: "The fact to remember. Use the person's real name." },
@@ -14,8 +15,27 @@ export const saveMemory = defineTool(
 	},
 	['category', 'fact'],
 	async (args, env, ctx) => {
-		await memory.saveMemory(env, ctx.userId, args.category as string, args.fact as string, (args.importance as number) ?? 1);
-		return ok({ category: args.category, importance: args.importance ?? 1 });
+		if (env.GOVERNED_MEMORY_CAPTURE_ENABLED !== 'true') {
+			await memory.saveMemory(env, ctx.userId, args.category as string, args.fact as string, (args.importance as number) ?? 1);
+			return ok({ category: args.category, importance: args.importance ?? 1, governance: 'legacy' });
+		}
+		const assertion = await governedMemory.captureUserMemory(
+			env,
+			ctx.userId,
+			args.category as string,
+			args.fact as string,
+			{
+				sourceType: 'telegram_user_turn',
+				sourceId: ctx.messageId ? String(ctx.messageId) : undefined,
+				excerpt: ctx.sourceText ?? String(args.fact),
+				extractionConfidence: 0.9,
+			},
+		);
+		return ok({
+			assertion_id: assertion.id,
+			category: assertion.category,
+			status: assertion.status,
+		});
 	}
 );
 

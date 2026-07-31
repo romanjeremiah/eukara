@@ -53,7 +53,9 @@ export const CF_MODELS = {
  * scatter provider-specific strings throughout the application.
  */
 export const OPENAI_MODELS = {
+	casual: 'gpt-5.6-luna',
 	chat: 'gpt-5.6-terra',
+	functional: 'gpt-5.6-luna',
 	tools: 'gpt-5.6-terra',
 	vision: 'gpt-5.6-terra',
 	background: 'gpt-5.6-luna',

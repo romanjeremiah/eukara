@@ -19,7 +19,7 @@ import {
 } from '../ai/provider-factory';
 
 export async function semanticSearch(
-	env: Env, userId: number, query: string, topK = 10
+	env: Env, userId: number, query: string, topK = 10, governedOnly = false,
 ): Promise<Array<{ id: string; score: number; metadata: Record<string, unknown> }>> {
 	if (!query.trim()) return [];
 	try {
@@ -30,7 +30,7 @@ export async function semanticSearch(
 			if (!vector.length) return [];
 			const matches = await env.VECTORIZE_OPENAI.query(vector, {
 				topK,
-				filter: { userId },
+				filter: governedOnly ? { userId, memoryKind: 'governed' } : { userId },
 				returnMetadata: 'all',
 			});
 			return normaliseMatches(matches);
@@ -47,7 +47,7 @@ export async function semanticSearch(
 
 		const matches = await env.VECTORIZE.query(vector, {
 			topK,
-			filter: { userId },
+			filter: governedOnly ? { userId, memoryKind: 'governed' } : { userId },
 			returnMetadata: 'all',
 		});
 		return normaliseMatches(matches);
@@ -151,9 +151,9 @@ export function orderResultsByIds<T extends { id: string }>(
 }
 
 export async function getSemanticContext(
-	env: Env, userId: number, query: string, maxResults = 5
+	env: Env, userId: number, query: string, maxResults = 5, governedOnly = false,
 ): Promise<string> {
-	const results = await semanticSearch(env, userId, query, maxResults * 2);
+	const results = await semanticSearch(env, userId, query, maxResults * 2, governedOnly);
 	if (!results.length) return '';
 	const reranked = await rerank(env, query, results);
 	const top = reranked.slice(0, maxResults);
@@ -170,31 +170,58 @@ export async function getSemanticContext(
 		.filter((id): id is string => typeof id === 'string' && id.length > 0);
 	if (!ids.length) return '';
 
-	const placeholders = ids.map(() => '?').join(',');
+	const legacyIds = governedOnly ? [] : ids.filter(id => !id.startsWith('assert_'));
+	const assertionIds = ids
+		.filter(id => id.startsWith('assert_'))
+		.map(id => id.slice('assert_'.length));
 	let fullMemories: MemoryRow[] = [];
+	let assertions: Array<{ id: string; category: string; statement: string }> = [];
 	try {
-		fullMemories = await queryAll<MemoryRow>(
-			env.DB.prepare(
-				`SELECT id, user_id, category, fact, importance_score, created_at, superseded_at
-				 FROM memories
-				 WHERE id IN (${placeholders}) AND user_id = ? AND superseded_at IS NULL`
-			).bind(...ids, userId)
-		);
+		if (legacyIds.length) {
+			const placeholders = legacyIds.map(() => '?').join(',');
+			fullMemories = await queryAll<MemoryRow>(
+				env.DB.prepare(
+					`SELECT id, user_id, category, fact, importance_score, created_at, superseded_at
+					 FROM memories
+					 WHERE id IN (${placeholders}) AND user_id = ? AND superseded_at IS NULL
+					   AND category NOT IN ('implicit_mood', 'episode_topic', 'personality_trait')`
+				).bind(...legacyIds, userId)
+			);
+		}
+		if (assertionIds.length) {
+			const placeholders = assertionIds.map(() => '?').join(',');
+			assertions = await queryAll<{ id: string; category: string; statement: string }>(
+				env.DB.prepare(`
+					SELECT a.id, a.category, a.statement
+					FROM memory_assertions a
+					WHERE a.id IN (${placeholders}) AND a.user_id = ?
+					  AND a.status = 'confirmed'
+					  AND (a.valid_until IS NULL OR a.valid_until > CURRENT_TIMESTAMP)
+					  AND EXISTS (SELECT 1 FROM memory_evidence e WHERE e.assertion_id = a.id)
+				`).bind(...assertionIds, userId),
+			);
+		}
 	} catch (e) {
 		log.error('semantic_rehydrate_error', { msg: (e as Error).message });
 		return '';
 	}
 
-	if (!fullMemories.length) return '';
+	if (!fullMemories.length && !assertions.length) return '';
 
 	// Preserve the semantic ranking order from Vectorize/reranker.
 	const factsById = new Map<string, MemoryRow>();
 	for (const m of fullMemories) factsById.set(String(m.id), m);
+	const assertionsById = new Map(assertions.map(assertion => [
+		`assert_${assertion.id}`,
+		assertion,
+	]));
 
 	let ctx = '\nSemantically relevant memories:\n';
 	for (const r of top) {
 		const m = factsById.get(r.id);
 		if (m && m.fact) ctx += `- [${m.category}] ${m.fact}\n`;
+		const assertion = assertionsById.get(r.id);
+		if (assertion) ctx += `- [${assertion.category}] ${assertion.statement}\n`;
 	}
 	return ctx;
 }

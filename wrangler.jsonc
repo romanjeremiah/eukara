@@ -11,7 +11,11 @@
 		"nodejs_compat"
 	],
 	"vars": {
-		"AI_PROVIDER_MODE": "openai"
+		"AI_PROVIDER_MODE": "openai",
+		"MEMORY_CONSOLIDATION_ENABLED": "false",
+		"GOVERNED_MEMORY_CAPTURE_ENABLED": "true",
+		"GOVERNED_MEMORY_RECALL_ENABLED": "true",
+		"GOVERNED_MEMORY_PROJECTION_ENABLED": "true"
 	},
 	"secrets": {
 		"required": [

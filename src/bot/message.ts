@@ -6,7 +6,7 @@
 // ============================================================
 
 import type { TelegramMessage } from '../types/telegram';
-import type { AIMessage, AIMessagePart, AIProvider, AIResponse, AITool, ModelRoute, ToolContext } from '../types/ai';
+import type { AIMessage, AIMessagePart, AIProvider, AIProviderConfig, AIResponse, AITool, ModelRoute, ToolContext } from '../types/ai';
 import { createProvider, getProvider } from '../ai/router';
 import { evaluateIntent } from '../ai/curator';
 import type { CuratorResult } from '../ai/curator';
@@ -28,6 +28,7 @@ import {
 import { createOpenAISpecialistService } from '../ai/openai-specialists';
 import { getAIProviderMode } from '../ai/provider-factory';
 import * as memory from '../services/memory';
+import * as governedMemory from '../services/governed-memory';
 import * as episode from '../services/episode';
 import * as knowledgeGraph from '../services/knowledge-graph';
 import * as vector from '../services/vector';
@@ -246,7 +247,7 @@ async function attemptStreamingReply(
 	provider: AIProvider,
 	messages: AIMessage[],
 	tools: AITool[],
-	config: { systemInstruction?: string; enableGrounding?: boolean; maxTokens?: number },
+	config: Pick<AIProviderConfig, 'systemInstruction' | 'thinkingLevel' | 'enableGrounding' | 'maxTokens'>,
 	env: Env,
 	chatId: number,
 	threadId: string,
@@ -314,6 +315,27 @@ export async function handleMessage(
 	const isWizardHandled = await handleWizardMessage(msg, env);
 	if (isWizardHandled) return;
 
+	const pendingCorrection = await env.CHAT_KV.get(`memory_correction_pending_${userId}`);
+	if (pendingCorrection && userText.trim()) {
+		const corrected = await governedMemory.correctAssertion(
+			env,
+			userId,
+			pendingCorrection,
+			userText,
+			`telegram_message:${messageId}`,
+		);
+		await env.CHAT_KV.delete(`memory_correction_pending_${userId}`);
+		await telegram.sendMessage(
+			chatId,
+			threadId,
+			corrected
+				? 'Memory corrected. The previous version remains in the audit trail but is no longer recalled.'
+				: 'I could not find that memory to correct. Please reopen /memories and try again.',
+			env,
+		);
+		return;
+	}
+
 	// Track last activity so proactive outreach doesn't double-text:
 	// the cron spontaneous-outreach guard reads last_seen_<userId> and
 	// skips if the user messaged within the last 3 hours. 7-day TTL
@@ -373,10 +395,9 @@ export async function handleMessage(
 	// repeated DB hits for the same value.
 	const userTz = await user.getUserTimezone(env, userId);
 		
-	// Personality traits from subconscious processing
-	const traitsCtx = await memory.getMemoriesByCategory(env, userId, 'personality_trait', 10)
-		.then(mems => mems.map(m => `- ${m.fact}`).join('\n'))
-		.catch(() => '');
+	// Inferred legacy personality traits are intentionally excluded. A trait
+	// re-enters context only after governed-memory confirmation.
+	const traitsCtx = '';
 
 	const isOwner = env.OWNER_ID && String(userId) === String(env.OWNER_ID);
 
@@ -424,8 +445,8 @@ export async function handleMessage(
 		return;
 	}
 
-	// Route to AI provider. Media presence forces Gemini routing
-	// because Workers AI chat models are text-only.
+	// Route to the selected AI provider. Media presence selects its
+	// vision-capable model lane.
 	// `options.forceHeavyLane` is set by the webhook dispatcher when the
 	// sticky-Pro topic classifier decided the conversation should stay
 	// on Pro despite no emotional keywords in this turn.
@@ -450,11 +471,19 @@ export async function handleMessage(
 	// of the chat context on emotional turns (best practice: don't
 	// surface "things I read" while someone is in distress).
 	const isEmotional = /\b(anxious|depressed|panic|overwhelm|scared|lonely|empty|hopeless|angry|frustrated|sad|grief|trigger|manic|racing|numb|crying|breakdown|struggling|worried|stressed)\b/i.test(userText);
+	const governedRecall = env.GOVERNED_MEMORY_RECALL_ENABLED === 'true';
 	const [memCtx, semanticCtx, weather] = await Promise.all([
-		isSubstantive ? memory.getFormattedContext(env, userId, !isEmotional) : Promise.resolve(''),
-		isSubstantive ? vector.getSemanticContext(env, userId, userText) : Promise.resolve(''),
+		isSubstantive && !governedRecall
+			? memory.getFormattedContext(env, userId, !isEmotional)
+			: Promise.resolve(''),
+		isSubstantive
+			? vector.getSemanticContext(env, userId, userText, 5, governedRecall)
+			: Promise.resolve(''),
 		getWeather(env, userId, userTz).catch(() => null),
 	]);
+	const governedCtx = governedRecall && isSubstantive
+		? await governedMemory.getGovernedMemoryContext(env, userId).catch(() => '')
+		: '';
 
 	// CoALA: batch episode + procedural queries
 	let episodeCtx = '';
@@ -505,6 +534,7 @@ export async function handleMessage(
 		telemetryCtx,
 		formatWeatherForContext(weather),
 		memCtx ? `\nMEMORY:\n${memCtx}` : '',
+		governedCtx ? `\nGOVERNED MEMORY:\n${governedCtx}` : '',
 		semanticCtx,
 		episodeCtx ? `\n${episodeCtx}` : '',
 		proceduralCtx ? `\n${proceduralCtx}` : '',
@@ -555,7 +585,7 @@ export async function handleMessage(
 	// The salvage/fallback calls below reuse this clean turn to force a
 	// plain reply without replaying a half-finished tool exchange.
 	const initialMessages: AIMessage[] = messages.slice();
-	const toolContext: ToolContext = { userId, chatId, threadId, messageId };
+	const toolContext: ToolContext = { userId, chatId, threadId, messageId, sourceText: userText };
 	if (
 		env.OWNER_ID
 		&& String(userId) === String(env.OWNER_ID)
@@ -583,7 +613,7 @@ export async function handleMessage(
 		&& route.reason === 'default_casual'
 		&& (
 			(route.provider === 'cloudflare' && route.model === CF_MODELS.chat)
-			|| (route.provider === 'openai' && route.model === OPENAI_MODELS.chat)
+			|| (route.provider === 'openai' && route.model === OPENAI_MODELS.casual)
 		)
 		&& chatId === userId;
 	if (canStream) {
@@ -591,7 +621,11 @@ export async function handleMessage(
 			provider,
 			initialMessages,
 			tools,
-			{ systemInstruction, enableGrounding: false },
+			{
+				systemInstruction,
+				thinkingLevel: route.thinkingLevel,
+				enableGrounding: false,
+			},
 			env, chatId, threadId, userId, messageId,
 		);
 		if (s.delivered && s.text) {
@@ -945,12 +979,24 @@ export async function handleMessage(
 			const obs = await runSubconsciousProcessing(env, observationInput, fullText);
 			if (!obs) return;
 
-			// 1. Knowledge Graph Triples
+			// 1. Knowledge-graph inferences are reviewable candidates. They no
+			// longer enter the authoritative graph as accepted facts.
 			if (obs.triples && Array.isArray(obs.triples)) {
 				for (const t of obs.triples) {
 					const parts = t.split('|').map(s => s.trim());
 					if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
-						await knowledgeGraph.saveTriple(env, userId, parts[0], parts[1], parts[2], null, 'observation');
+						await governedMemory.captureInferredMemory(
+							env,
+							userId,
+							'knowledge_graph',
+							`${parts[0]} | ${parts[1]} | ${parts[2]}`,
+							{
+								sourceType: 'subconscious_observation',
+								sourceId: String(messageId),
+								excerpt: observationInput,
+								extractionConfidence: 0.55,
+							},
+						);
 					}
 				}
 			}
@@ -959,22 +1005,24 @@ export async function handleMessage(
 			if (obs.personality_traits && Array.isArray(obs.personality_traits)) {
 				for (const trait of obs.personality_traits) {
 					if (typeof trait === 'string' && trait.length > 0) {
-						await memory.saveMemory(env, userId, 'personality_trait', trait);
+						await governedMemory.captureInferredMemory(
+							env,
+							userId,
+							'personality_trait',
+							trait,
+							{
+								sourceType: 'subconscious_observation',
+								sourceId: String(messageId),
+								excerpt: observationInput,
+								extractionConfidence: 0.5,
+							},
+						);
 					}
 				}
 			}
 
-			// 3. Mood/Emotion extraction (silent logging if appropriate)
-			if (obs.mood_score !== undefined && obs.emotions && Array.isArray(obs.emotions)) {
-				// We don't want to log mood automatically without user consent, 
-				// but we could store it as an implicit mood entry in memory.
-				await memory.saveMemory(env, userId, 'implicit_mood', `Mood: ${obs.mood_score}, Emotions: ${obs.emotions.join(', ')}`);
-			}
-
-			// 4. Episode Topic Tracking
-			if (obs.episode_topic && typeof obs.episode_topic === 'string') {
-				await memory.saveMemory(env, userId, 'episode_topic', obs.episode_topic);
-			}
+			// Mood estimates and episode topics remain transient. Mood and
+			// episode lifecycles are owned by their dedicated source tables.
 		});
 
 		if (ctx) {

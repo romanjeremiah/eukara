@@ -39,6 +39,7 @@ import {
 	scheduleEmbeddingEvaluation,
 	type MemoryProjectionRow,
 } from '../services/embedding-projection';
+import { processProjectionOutbox } from '../services/governed-memory';
 
 interface QueueTask {
 	type: string;
@@ -61,11 +62,17 @@ interface QueueTask {
 	/**
 	 * Pre-computed intent triage from Curator (Layer A1).
 	 */
-	curatorResult?: { intent: string; isCrisis: boolean };
+	curatorResult?: {
+		intent: string;
+		isCrisis: boolean;
+		complexity: 'simple' | 'substantive';
+		needsCurrentInformation: boolean;
+	};
 	memoryId?: number;
 	category?: string;
 	fact?: string;
 	afterId?: number;
+	outboxId?: string;
 }
 
 const CHECKIN_THREAD_ID = 'default';
@@ -178,6 +185,12 @@ async function processTask(task: QueueTask, env: Env, attempts: number): Promise
 	const { userId, chatId } = task;
 
 	switch (task.type) {
+		case 'project_memory_assertion': {
+			if (!task.outboxId) throw new Error('Invalid project_memory_assertion task');
+			await processProjectionOutbox(env, task.outboxId);
+			break;
+		}
+
 		case 'index_memory_projection': {
 			if (!task.memoryId || !task.category || !task.fact) {
 				throw new Error('Invalid index_memory_projection task');

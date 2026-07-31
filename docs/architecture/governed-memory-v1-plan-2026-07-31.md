@@ -1,7 +1,7 @@
 # Governed Memory v1
 
 Date: 2026-07-31
-Status: Proposed, awaiting lifecycle decisions
+Status: Approved and implemented, pending production release validation
 
 ## Current situation
 
@@ -112,14 +112,16 @@ No proposal can invent a new confirmed assertion without source evidence.
 6. Keep legacy recall available as a rollback path until the observation window
    completes.
 
-## Decisions required before implementation
+## Approved lifecycle decisions
 
-1. Confirmation: automatically confirm explicit first-person facts, or require
-   review for every candidate?
-2. Review surface: expose candidate/confirmed memory with Telegram controls, or
-   keep governance in the background with correction and forget commands?
-3. Legacy migration: retain current rows as `legacy_unverified`, or trust all
-   active legacy rows as confirmed?
+1. Explicit, non-sensitive first-person facts may auto-confirm only when the
+   proposed statement is lexically supported by the recorded source turn.
+2. Sensitive or inferred claims remain candidates until the user confirms
+   them through Telegram memory controls.
+3. Legacy rows enter the governed store as `legacy_unverified` and are not
+   eligible for governed recall or projection until confirmed.
+4. Destructive consolidation is immediately feature-gated and replaced by an
+   evidence-cited, proposal-only Workflow.
 
 ## Recommended baseline
 
@@ -131,3 +133,32 @@ No proposal can invent a new confirmed assertion without source evidence.
 - Import current rows as `legacy_unverified`; progressively confirm only those
   with evidence or user review.
 - Keep mood and episode records in their source tables.
+
+## Implemented release boundary
+
+- `memory_assertions`, `memory_evidence`, `memory_outbox`,
+  `memory_projection_registry` and `memory_consolidation_proposals` are
+  additive D1 tables. The legacy table is retained for rollback.
+- D1 is authoritative. Confirmed, unexpired, evidence-backed assertions are
+  the only governed facts eligible for direct or semantic recall.
+- Exact duplicate automatic captures reuse an active assertion.
+- Queue projection uses assertion versions and deterministic outbox IDs.
+  Failed or stale processing rows are reconciled by cron.
+- Vectorize projection IDs use the `assert_` prefix and `memoryKind=governed`.
+  Governed recall filters before top-K and rehydrates exact assertions from D1.
+- When governed recall is enabled, legacy memory is not injected into live
+  conversation context. The user can progressively confirm legacy rows with
+  `/memories`.
+- Confirm, reject, correct and forget actions update D1 lifecycle state and
+  remove or replace derived vector projections.
+- `MEMORY_CONSOLIDATION_ENABLED` defaults to `false`. Even if enabled later,
+  the Workflow can only store source-cited review proposals and cannot delete
+  or regenerate memory rows.
+
+## Release risk and rollback
+
+The deliberate safety cost is reduced historical continuity immediately after
+cutover: unverified legacy facts stop entering conversation until reviewed.
+This is preferable to silently treating provenance-free model inferences as
+truth. Setting `GOVERNED_MEMORY_RECALL_ENABLED=false` restores the filtered
+legacy recall path without deleting governed records.

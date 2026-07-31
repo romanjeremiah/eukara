@@ -31,6 +31,8 @@ export interface ToolContext {
 	threadId: string;
 	/** Message ID being responded to */
 	messageId?: number;
+	/** Exact current-turn text used as provenance for governed memory capture. */
+	sourceText?: string;
 }
 
 export interface ToolResult {
@@ -162,6 +164,11 @@ export interface AIProviderConfig {
 	 * flag only makes the capability available. Billing is per-query.
 	 */
 	enableGrounding?: boolean;
+	/** Optional strict Responses API JSON Schema for internal classifiers. */
+	responseSchema?: {
+		name: string;
+		schema: Record<string, unknown>;
+	};
 }
 
 // --- The Provider Interface ---

@@ -17,6 +17,7 @@ import {
 	scheduleEmbeddingBackfill,
 	scheduleEmbeddingEvaluation,
 } from '../services/embedding-projection';
+import { enqueuePendingProjectionOutbox } from '../services/governed-memory';
 
 // Per-user spontaneous-outreach behaviour, dialled by
 // persona_config.proactivity_level (2026-06-04). Each entry tunes
@@ -48,6 +49,13 @@ export async function handleCron(env: Env): Promise<void> {
 			msg: (error as Error).message,
 		}),
 	);
+	if (env.GOVERNED_MEMORY_PROJECTION_ENABLED === 'true') {
+		await enqueuePendingProjectionOutbox(env).catch((error) =>
+			log.error('memory_outbox_reconcile_error', {
+				msg: (error as Error).message,
+			}),
+		);
+	}
 
 	// For multi-user: iterate over all active users
 	// For now: single owner
@@ -151,6 +159,7 @@ async function ensureOpenAIEmbeddingEvaluation(env: Env): Promise<void> {
 
 
 async function checkConsolidation(env: Env, userId: number, now: Date): Promise<void> {
+	if (env.MEMORY_CONSOLIDATION_ENABLED !== 'true') return;
 	if (now.getDate() !== 1 || now.getHours() !== 3) return;
 	const month = now.toISOString().split('-').slice(0, 2).join('-');
 	const key = `consolidation_${userId}_${month}`;

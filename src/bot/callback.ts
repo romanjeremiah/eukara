@@ -15,6 +15,7 @@ import { buildChecklistText } from '../tools/checklist-tools';
 import * as user from '../services/user';
 import * as persona from '../services/persona';
 import * as memory from '../services/memory';
+import * as governedMemory from '../services/governed-memory';
 
 export async function handleCallback(
 	query: TelegramCallbackQuery,
@@ -100,14 +101,76 @@ export async function handleCallback(
 		}).catch(() => {});
 		log.info('persona_switched', { userId, newPersona });
 
+	// --- Governed memory review ---
+	} else if (data.startsWith('memory_confirm_')) {
+		const assertionId = data.slice('memory_confirm_'.length);
+		const confirmed = await governedMemory.confirmAssertion(
+			env,
+			query.from.id,
+			assertionId,
+			`telegram_callback:${query.id}`,
+		);
+		await telegram.answerCallbackQuery(query.id, env, {
+			text: confirmed ? 'Memory confirmed' : 'Memory is no longer reviewable',
+		}).catch(() => {});
+		if (confirmed) {
+			await telegram.sendMessage(chatId, threadId, 'Memory confirmed and added to recall.', env);
+		}
+
+	} else if (data.startsWith('memory_reject_')) {
+		const rejected = await governedMemory.rejectAssertion(
+			env,
+			query.from.id,
+			data.slice('memory_reject_'.length),
+		);
+		await telegram.answerCallbackQuery(query.id, env, {
+			text: rejected ? 'Memory removed' : 'Memory was already removed',
+		}).catch(() => {});
+		if (rejected) {
+			await telegram.sendMessage(chatId, threadId, 'Memory removed from recall.', env);
+		}
+
+	} else if (data.startsWith('memory_forget_')) {
+		const forgotten = await governedMemory.forgetAssertion(
+			env,
+			query.from.id,
+			data.slice('memory_forget_'.length),
+		);
+		await telegram.answerCallbackQuery(query.id, env, {
+			text: forgotten ? 'Memory permanently forgotten' : 'Memory was already removed',
+		}).catch(() => {});
+		if (forgotten) {
+			await telegram.sendMessage(chatId, threadId, 'Memory permanently forgotten.', env);
+		}
+
+	} else if (data.startsWith('memory_correct_')) {
+		const assertionId = data.slice('memory_correct_'.length);
+		await env.CHAT_KV.put(
+			`memory_correction_pending_${query.from.id}`,
+			assertionId,
+			{ expirationTtl: 10 * 60 },
+		);
+		await telegram.answerCallbackQuery(query.id, env, { text: 'Send the corrected memory' }).catch(() => {});
+		await telegram.sendMessage(
+			chatId,
+			threadId,
+			'Please send the corrected fact in your next message. I will preserve the old version in the audit trail and replace it in recall.',
+			env,
+		);
+
 	// --- Forget: category-specific deletion ---
 	} else if (data.startsWith('forget_cat_')) {
 		const category = data.replace('forget_cat_', '');
 		const userId = query.from.id;
-		const result = await env.DB.prepare(
-			'DELETE FROM memories WHERE user_id = ? AND category = ?'
-		).bind(userId, category).run();
-		const deleted = result?.meta?.changes ?? 0;
+		const [legacyDeleted, governedDeleted] = await Promise.all([
+			memory.deleteMemoriesByCategory(env, userId, category),
+			governedMemory.forgetAssertionsByCategory(env, userId, category),
+		]);
+		// Every imported legacy row has a governed mirror, so summing both
+		// physical deletions would double-count the user's logical memories.
+		const deleted = env.GOVERNED_MEMORY_CAPTURE_ENABLED === 'true'
+			? governedDeleted
+			: legacyDeleted;
 		await telegram.editMessage(chatId, msgId,
 			`<b>Forgotten.</b>\n\nDeleted <b>${deleted}</b> memories in the <b>${category}</b> category.`,
 			env);
@@ -133,7 +196,10 @@ export async function handleCallback(
 	// --- Forget everything: execute ---
 	} else if (data === 'forget_all_execute') {
 		const userId = query.from.id;
-		await memory.deleteAllMemories(env, userId);
+		await Promise.all([
+			memory.deleteAllMemories(env, userId),
+			governedMemory.forgetAllAssertions(env, userId),
+		]);
 		// Also drop the vector index entries for this user — leaving them
 		// behind would let the vector search still surface "forgotten"
 		// memories in semantic context.

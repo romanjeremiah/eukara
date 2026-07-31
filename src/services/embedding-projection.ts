@@ -18,7 +18,7 @@ export const OPENAI_EMBEDDING_EVAL_KEY = 'openai_embedding_eval:v1';
 export const OPENAI_EMBEDDING_EVAL_STATE_KEY = 'openai_embedding_eval_state:v1';
 
 export interface MemoryProjectionRow {
-	id: number;
+	id: number | string;
 	user_id: number;
 	category: string;
 	fact: string;
@@ -63,6 +63,7 @@ export async function projectOpenAIMemories(
 			category: memory.category,
 			embeddingVersion: OPENAI_EMBEDDING_VERSION,
 			fact: memory.fact.slice(0, 200),
+			memoryKind: String(memory.id).startsWith('assert_') ? 'governed' : 'legacy',
 			preview: memory.fact.slice(0, 100),
 			userId: memory.user_id,
 		},
@@ -103,6 +104,7 @@ export async function projectCloudflareMemories(
 		metadata: {
 			category: memory.category,
 			fact: memory.fact.slice(0, 200),
+			memoryKind: String(memory.id).startsWith('assert_') ? 'governed' : 'legacy',
 			preview: memory.fact.slice(0, 100),
 			userId: memory.user_id,
 		},

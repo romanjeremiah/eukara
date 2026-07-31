@@ -185,6 +185,16 @@ export class OpenAIProvider implements AIProvider {
 			include: config?.enableGrounding
 				? ['web_search_call.action.sources']
 				: undefined,
+			text: config?.responseSchema
+				? {
+					format: {
+						type: 'json_schema',
+						name: config.responseSchema.name,
+						schema: config.responseSchema.schema,
+						strict: true,
+					},
+				}
+				: undefined,
 		};
 	}
 

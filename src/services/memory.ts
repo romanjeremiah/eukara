@@ -14,6 +14,11 @@ const THERAPEUTIC_CATEGORIES = [
 	'growth', 'coping', 'insight', 'homework',
 ] as const;
 
+const LEGACY_INFERRED_CATEGORIES = [
+	'implicit_mood', 'episode_topic', 'personality_trait',
+] as const;
+const LEGACY_INFERRED_SQL = LEGACY_INFERRED_CATEGORIES.map(() => '?').join(',');
+
 export async function saveMemory(
 	env: Env, userId: number, category: string, fact: string, importance = 1
 ): Promise<void> {
@@ -46,8 +51,12 @@ export async function saveMemory(
 
 export async function getMemories(env: Env, userId: number, limit = 30): Promise<MemoryRow[]> {
 	return queryAll<MemoryRow>(env.DB.prepare(
-		'SELECT id, user_id, category, fact, importance_score, created_at, superseded_at FROM memories WHERE user_id = ? AND superseded_at IS NULL ORDER BY importance_score DESC, created_at DESC LIMIT ?'
-	).bind(userId, limit));
+		`SELECT id, user_id, category, fact, importance_score, created_at, superseded_at
+		 FROM memories
+		 WHERE user_id = ? AND superseded_at IS NULL
+		   AND category NOT IN (${LEGACY_INFERRED_SQL})
+		 ORDER BY importance_score DESC, created_at DESC LIMIT ?`
+	).bind(userId, ...LEGACY_INFERRED_CATEGORIES, limit));
 }
 
 export async function getMemoriesByCategory(
@@ -73,6 +82,7 @@ export async function supersedeMemory(
 	await env.DB.prepare(
 		'UPDATE memories SET superseded_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?'
 	).bind(memoryId, userId).run();
+	await deleteLegacyProjection(env, [String(memoryId)]);
 }
 
 export async function getFormattedContext(env: Env, userId: number, includeDiscoveries = true): Promise<string> {
@@ -151,12 +161,53 @@ export async function getMemoriesSince(
 ): Promise<MemoryRow[]> {
 	const since = new Date(Date.now() - days * 86400000).toISOString().split('T')[0]!;
 	return queryAll<MemoryRow>(env.DB.prepare(
-		'SELECT id, user_id, category, fact, importance_score, created_at, superseded_at FROM memories WHERE user_id = ? AND created_at > ? AND superseded_at IS NULL ORDER BY created_at DESC LIMIT ?'
-	).bind(userId, since, limit));
+		`SELECT id, user_id, category, fact, importance_score, created_at, superseded_at
+		 FROM memories
+		 WHERE user_id = ? AND created_at > ? AND superseded_at IS NULL
+		   AND category NOT IN (${LEGACY_INFERRED_SQL})
+		 ORDER BY created_at DESC LIMIT ?`
+	).bind(userId, since, ...LEGACY_INFERRED_CATEGORIES, limit));
 }
 
 export async function deleteAllMemories(env: Env, userId: number): Promise<void> {
+	const rows = await queryAll<{ id: number }>(
+		env.DB.prepare('SELECT id FROM memories WHERE user_id = ?').bind(userId),
+	);
 	await env.DB.prepare('DELETE FROM memories WHERE user_id = ?').bind(userId).run();
+	await deleteLegacyProjection(env, rows.map(row => String(row.id)));
+}
+
+/** Delete one legacy category and its known vector IDs. */
+export async function deleteMemoriesByCategory(
+	env: Env,
+	userId: number,
+	category: string,
+): Promise<number> {
+	const rows = await queryAll<{ id: number }>(
+		env.DB.prepare('SELECT id FROM memories WHERE user_id = ? AND category = ?')
+			.bind(userId, category),
+	);
+	const result = await env.DB.prepare(
+		'DELETE FROM memories WHERE user_id = ? AND category = ?',
+	).bind(userId, category).run();
+	await deleteLegacyProjection(env, rows.map(row => String(row.id)));
+	return result.meta.changes ?? 0;
+}
+
+/** Vectorize is a projection, so projection deletion must never block D1 truth. */
+async function deleteLegacyProjection(env: Env, ids: string[]): Promise<void> {
+	if (!ids.length) return;
+	try {
+		await Promise.all([
+			env.VECTORIZE?.deleteByIds(ids),
+			env.VECTORIZE_OPENAI?.deleteByIds(ids),
+		]);
+	} catch (error) {
+		log.error('legacy_memory_projection_delete_failed', {
+			count: ids.length,
+			msg: (error as Error).message,
+		});
+	}
 }
 
 function getRelativeAge(dateStr: string): string {

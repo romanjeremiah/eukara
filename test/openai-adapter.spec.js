@@ -12,6 +12,7 @@ import {
 } from '../src/ai/openai';
 import { OPENAI_MODELS } from '../src/config/models';
 import { routeMessage } from '../src/ai/router';
+import { hasExplicitCrisisSignal } from '../src/ai/curator';
 
 /**
  * Build a minimal OpenAI client double and retain every outbound request.
@@ -112,6 +113,36 @@ describe('OpenAIProvider Responses API adapter', () => {
 			type: 'function',
 			name: 'set_reminder',
 			strict: false,
+		});
+	});
+
+	it('uses strict Responses structured output for internal classifiers', async () => {
+		const fake = fakeClient({ output_text: '{"intent":"casual"}', output: [] });
+		const provider = new OpenAIProvider('test-key', OPENAI_MODELS.curator, fake.client);
+
+		await provider.chat([{ role: 'user', content: 'hello' }], [], {
+			thinkingLevel: 'MEDIUM',
+			responseSchema: {
+				name: 'route',
+				schema: {
+					type: 'object',
+					properties: { intent: { type: 'string' } },
+					required: ['intent'],
+					additionalProperties: false,
+				},
+			},
+		});
+
+		expect(fake.requests[0]).toMatchObject({
+			model: OPENAI_MODELS.curator,
+			reasoning: { effort: 'medium', context: 'current_turn' },
+			text: {
+				format: {
+					type: 'json_schema',
+					name: 'route',
+					strict: true,
+				},
+			},
 		});
 	});
 
@@ -355,15 +386,61 @@ describe('OpenAI streaming and routing foundation', () => {
 		})).toBeUndefined();
 	});
 
-	it('keeps Cloudflare as default and selects Terra only when requested', () => {
+	it('keeps Cloudflare as default and applies the approved OpenAI lane matrix', () => {
 		expect(routeMessage({ userText: 'hello', isOwner: true }).provider)
 			.toBe('cloudflare');
 		expect(routeMessage(
-			{ userText: 'hello', isOwner: true },
+			{
+				userText: 'hello',
+				isOwner: true,
+				curatorResult: {
+					intent: 'casual',
+					isCrisis: false,
+					complexity: 'simple',
+					needsCurrentInformation: false,
+				},
+			},
 			'openai',
 		)).toMatchObject({
 			provider: 'openai',
-			model: OPENAI_MODELS.chat,
+			model: OPENAI_MODELS.casual,
+			thinkingLevel: 'HIGH',
+			enableGrounding: false,
 		});
+
+		expect(routeMessage({
+			userText: 'Let us think through how I should approach my week.',
+			isOwner: true,
+			curatorResult: {
+				intent: 'casual',
+				isCrisis: false,
+				complexity: 'substantive',
+				needsCurrentInformation: false,
+			},
+		}, 'openai')).toMatchObject({
+			model: OPENAI_MODELS.chat,
+			thinkingLevel: 'MEDIUM',
+			reason: 'substantive_conversation',
+		});
+
+		expect(routeMessage({
+			userText: 'Remind me at 20:00.',
+			isOwner: true,
+			curatorResult: {
+				intent: 'functional',
+				isCrisis: false,
+				complexity: 'simple',
+				needsCurrentInformation: false,
+			},
+		}, 'openai')).toMatchObject({
+			model: OPENAI_MODELS.functional,
+			thinkingLevel: 'MEDIUM',
+			reason: 'simple_tool_action',
+		});
+	});
+
+	it('keeps a narrow deterministic crisis fallback', () => {
+		expect(hasExplicitCrisisSignal('I am planning to hurt myself')).toBe(true);
+		expect(hasExplicitCrisisSignal('We discussed suicide prevention research')).toBe(false);
 	});
 });

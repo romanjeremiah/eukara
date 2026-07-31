@@ -51,11 +51,20 @@ export function routeMessage(
 	const provider = providerMode;
 	const models = providerMode === 'openai'
 		? {
+			casual: OPENAI_MODELS.casual,
 			chat: OPENAI_MODELS.chat,
+			functional: OPENAI_MODELS.functional,
 			code: OPENAI_MODELS.tools,
 			vision: OPENAI_MODELS.vision,
 		}
-		: CF_MODELS;
+		: {
+			casual: CF_MODELS.chat,
+			chat: CF_MODELS.chat,
+			functional: CF_MODELS.code,
+			code: CF_MODELS.code,
+			vision: CF_MODELS.vision,
+		};
+	const needsCurrentInformation = curatorResult?.needsCurrentInformation === true;
 
 	// Sticky Heavy: previous turn was Heavy and the topic classifier said
 	// the new message is still in the same topic.
@@ -64,7 +73,8 @@ export function routeMessage(
 			provider,
 			model: models.chat,
 			reason: 'sticky_heavy_context',
-			enableGrounding: true,
+			thinkingLevel: providerMode === 'openai' ? 'MEDIUM' : undefined,
+			enableGrounding: needsCurrentInformation,
 		};
 	}
 
@@ -74,6 +84,7 @@ export function routeMessage(
 			provider,
 			model: models.vision,
 			reason: 'multimodal_input',
+			thinkingLevel: providerMode === 'openai' ? 'MEDIUM' : undefined,
 			enableGrounding: false, // Vision models usually don't support grounding
 		};
 	}
@@ -86,7 +97,8 @@ export function routeMessage(
 				provider,
 				model: models.chat,
 				reason: 'emotional_content',
-				enableGrounding: true,
+				thinkingLevel: providerMode === 'openai' ? 'MEDIUM' : undefined,
+				enableGrounding: needsCurrentInformation,
 			};
 		}
 
@@ -101,12 +113,23 @@ export function routeMessage(
 		}
 
 		if (curatorResult.intent === 'functional') {
+			const substantive = curatorResult.complexity === 'substantive';
 			return {
 				provider,
-				model: models.code,
-				reason: 'analytical_content',
-				thinkingLevel: 'HIGH',
-				enableGrounding: false,
+				model: substantive ? models.chat : models.functional,
+				reason: substantive ? 'functional_substantive' : 'simple_tool_action',
+				thinkingLevel: providerMode === 'openai' ? 'MEDIUM' : (substantive ? 'HIGH' : 'MEDIUM'),
+				enableGrounding: needsCurrentInformation,
+			};
+		}
+
+		if (curatorResult.intent === 'casual' && curatorResult.complexity === 'substantive') {
+			return {
+				provider,
+				model: models.chat,
+				reason: 'substantive_conversation',
+				thinkingLevel: 'MEDIUM',
+				enableGrounding: needsCurrentInformation,
 			};
 		}
 	}
@@ -125,9 +148,10 @@ export function routeMessage(
 	// Default: the selected provider's main conversation model.
 	return {
 		provider,
-		model: models.chat,
+		model: models.casual,
 		reason: 'default_casual',
-		enableGrounding: true,
+		thinkingLevel: providerMode === 'openai' ? 'HIGH' : undefined,
+		enableGrounding: needsCurrentInformation,
 	};
 }
 
@@ -143,7 +167,12 @@ export function willHitHeavyLane(
 ): boolean {
 	if (hasMedia) return true;
 
-	if (curatorResult && (curatorResult.intent === 'emotional_vent' || curatorResult.intent === 'crisis' || curatorResult.intent === 'code' || curatorResult.intent === 'functional')) return true;
+	if (curatorResult && (
+		curatorResult.intent === 'emotional_vent'
+		|| curatorResult.intent === 'crisis'
+		|| curatorResult.intent === 'code'
+		|| curatorResult.complexity === 'substantive'
+	)) return true;
 	return false;
 }
 

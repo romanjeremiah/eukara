@@ -10,6 +10,7 @@ import type { TelegramMessage, TelegramInlineKeyboardButton } from '../types/tel
 import type { MemoryRow, PersonaConfigRow } from '../types/db';
 import * as telegram from '../lib/telegram';
 import * as memory from '../services/memory';
+import * as governedMemory from '../services/governed-memory';
 import * as user from '../services/user';
 import * as persona from '../services/persona';
 import { PERSONA_PRESETS, type PersonaPreset } from '../config/persona-presets';
@@ -164,6 +165,46 @@ export async function handleCommand(
 		case '/memories': {
 			const userId = msg.from?.id;
 			if (!userId) return true;
+			if (env.GOVERNED_MEMORY_CAPTURE_ENABLED === 'true') {
+				const [reviewable, confirmed] = await Promise.all([
+					governedMemory.listAssertions(env, userId, ['candidate', 'legacy_unverified'], 8),
+					governedMemory.listAssertions(env, userId, ['confirmed'], 8),
+				]);
+				if (reviewable.length || confirmed.length) {
+					const lines = [
+						'<b>Memory review</b>',
+						'',
+						`${confirmed.length} recent confirmed · ${reviewable.length} awaiting review`,
+					];
+					const buttons: TelegramInlineKeyboardButton[][] = [];
+					if (reviewable.length) {
+						lines.push('', '<b>Awaiting review</b>');
+						for (const [index, assertion] of reviewable.entries()) {
+							lines.push(`${index + 1}. [${escapeHtml(assertion.category)}] ${escapeHtml(assertion.statement)}`);
+							buttons.push([
+								{ text: `✅ ${index + 1}`, callback_data: `memory_confirm_${assertion.id}` },
+								{ text: `❌ ${index + 1}`, callback_data: `memory_reject_${assertion.id}` },
+								{ text: `✏️ ${index + 1}`, callback_data: `memory_correct_${assertion.id}` },
+							]);
+						}
+					}
+					if (confirmed.length) {
+						lines.push('', '<b>Recently confirmed</b>');
+						for (const [index, assertion] of confirmed.entries()) {
+							lines.push(`${index + 1}. [${escapeHtml(assertion.category)}] ${escapeHtml(assertion.statement)}`);
+							buttons.push([{
+								text: `🗑️ Forget confirmed ${index + 1}`,
+								callback_data: `memory_forget_${assertion.id}`,
+							}]);
+						}
+					}
+					await telegram.sendMessage(chatId, threadId, lines.join('\n'), env, {
+						markup: buttons.length ? { inline_keyboard: buttons } : undefined,
+					});
+					return true;
+				}
+			}
+
 			const rows = await memory.getMemories(env, userId, 100);
 			if (!rows.length) {
 				await telegram.sendMessage(chatId, threadId,
@@ -179,8 +220,19 @@ export async function handleCommand(
 		case '/forget': {
 			const userId = msg.from?.id;
 			if (!userId) return true;
-			const rows = await memory.getMemories(env, userId, 500);
-			if (!rows.length) {
+			const governedRows = env.GOVERNED_MEMORY_CAPTURE_ENABLED === 'true'
+				? await governedMemory.listAssertions(
+					env,
+					userId,
+					['candidate', 'confirmed', 'legacy_unverified'],
+					500,
+				)
+				: [];
+			const legacyRows = governedRows.length
+				? []
+				: await memory.getMemories(env, userId, 500);
+			const total = governedRows.length || legacyRows.length;
+			if (!total) {
 				await telegram.sendMessage(chatId, threadId,
 					"Nothing to forget — I haven't saved anything about you yet.",
 					env);
@@ -188,7 +240,9 @@ export async function handleCommand(
 			}
 			// Group by category so the buttons can target whole groups.
 			const counts = new Map<string, number>();
-			for (const m of rows) counts.set(m.category, (counts.get(m.category) ?? 0) + 1);
+			for (const row of [...governedRows, ...legacyRows]) {
+				counts.set(row.category, (counts.get(row.category) ?? 0) + 1);
+			}
 
 			const buttons: TelegramInlineKeyboardButton[][] = [];
 			// One button per category, two per row for readability.
@@ -209,7 +263,7 @@ export async function handleCommand(
 			buttons.push([{ text: '✖️ Cancel', callback_data: 'forget_cancel' }]);
 
 			await telegram.sendMessage(chatId, threadId,
-				`<b>What should I forget?</b>\n\nI currently have <b>${rows.length}</b> memories across ${entries.length} categories. Tap a category to wipe just that group, or use the red button to wipe everything.\n\n<i>Deletions are permanent.</i>`,
+				`<b>What should I forget?</b>\n\nI currently have <b>${total}</b> memories across ${entries.length} categories. Tap a category to wipe just that group, or use the red button to wipe everything.\n\n<i>Deletions are permanent.</i>`,
 				env, { markup: { inline_keyboard: buttons } });
 			return true;
 		}

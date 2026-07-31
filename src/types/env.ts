@@ -17,6 +17,10 @@ declare global {
 		GITHUB_TOKEN?: string;
 		GCP_TTS_API_KEY?: string;
 		AI_PROVIDER_MODE: 'cloudflare' | 'openai';
+		MEMORY_CONSOLIDATION_ENABLED: 'true' | 'false';
+		GOVERNED_MEMORY_CAPTURE_ENABLED: 'true' | 'false';
+		GOVERNED_MEMORY_RECALL_ENABLED: 'true' | 'false';
+		GOVERNED_MEMORY_PROJECTION_ENABLED: 'true' | 'false';
 
 		// Workflow bindings (auto-generated types may lag behind wrangler.jsonc)
 		MEMORY_WORKFLOW: Workflow;

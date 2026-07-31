@@ -668,3 +668,85 @@ pending the embedding cutover.
   `docs/architecture/governed-memory-v1-plan-2026-07-31.md`.
 - Current OpenAI and Cloudflare D1, Queues and Vectorize guidance checked on
   2026-07-31.
+
+## 2026-07-31: Approved OpenAI Routing and Governed Memory Implementation
+
+### Change Log
+
+- Implemented the approved OpenAI routing matrix: Luna High for short casual
+  conversation, Luna Medium for curator and simple tool actions, Terra Medium
+  for substantive and emotional conversation, Terra High for code, and Sol
+  High for research and architecture.
+- Added strict Responses API structured output for the curator, explicit
+  grounding decisions and a narrow deterministic crisis fallback.
+- Added additive governed-memory assertion, evidence, outbox, projection and
+  consolidation-proposal schemas plus a `legacy_unverified` import.
+- Added evidence-supported capture policy, Telegram review controls,
+  correction and forgetting, confirmed-only recall, idempotent Queue
+  projection, stale-outbox recovery and vector tombstoning.
+- Removed inferred mood, episode-topic and personality-trait promotion into
+  active generic memory. Legacy rows remain preserved but do not enter live
+  conversation when governed recall is enabled.
+- Disabled consolidation by default and replaced its delete-and-reinsert path
+  with a Sol Medium, source-cited, proposal-only Workflow.
+- Added `memoryKind` metadata-index creation requests to the OpenAI and
+  Cloudflare Vectorize projections for pre-top-K governed recall filtering.
+
+### Decision Register
+
+- Owner-approved final routing changes: curator Luna Medium and casual
+  conversation Luna High. Previously approved substantive Terra Medium lanes
+  remain unchanged.
+- Owner approved all four governed-memory boundaries: evidence-backed explicit
+  standard facts may auto-confirm; sensitive or inferred claims remain
+  candidates; Telegram review controls are required; legacy rows are
+  `legacy_unverified`; destructive consolidation is feature-gated immediately.
+- D1 remains authoritative and Vectorize remains a disposable projection.
+
+### Impact Assessment
+
+- The routing change favours conversational quality on short social turns but
+  Luna High may use more reasoning tokens than Luna Medium or Terra Low. Route
+  telemetry and representative evaluations are required before optimisation.
+- Governed recall intentionally removes unverified legacy facts from live
+  context. Historical continuity will return progressively as the user reviews
+  `/memories`; rollback is the recall feature flag, not a data rewrite.
+- Schema changes are additive. Production imported 108 preserved legacy rows
+  as `legacy_unverified`; no row was confirmed, rewritten or deleted.
+- Vectorize metadata-index creation is additive and asynchronous. Deployment
+  remains gated until both indexes report ready.
+
+### Validation
+
+- `npm run typecheck`: passed.
+- `npm run test:unit`: 3 files and 19 tests passed.
+- `npm run test:run`: 9 files and 52 tests passed. Vitest delayed shutdown
+  after completion, but no assertion failed.
+- Fresh local D1 migration and idempotent re-application: passed with a clean
+  foreign-key check.
+- Final `npm run deploy:dry-run`: passed at 1,714.63 KiB raw and
+  277.50 KiB gzip.
+- `git diff --check`: passed.
+
+### Deployment
+
+- Added and verified the `memoryKind` String metadata index on both active
+  Vectorize projections.
+- Recorded pre-migration D1 Time Travel bookmark
+  `0000020b-00000008-000050b9-965eb4b63825d9f79dc7198e8b46ffb5`.
+- Applied migration 0004. Production contains 108 `legacy_unverified`
+  imports, no pending migration and no foreign-key violation.
+- Deployed Worker version `4be59b4d-70ee-4400-8894-2008140751ad` with 9 ms
+  startup time and confirmed `Eukara is running` from the health endpoint.
+- Confirmed the deployed consolidation flag is `false`; capture, governed
+  recall and governed projection flags are `true`.
+
+### Traceability
+
+- Owner instruction: curator Luna Medium, casual Luna High, approve all four
+  governed-memory boundaries and immediately gate destructive consolidation.
+- Architecture records:
+  `docs/architecture/openai-model-routing-v1-2026-07-31.md` and
+  `docs/architecture/governed-memory-v1-plan-2026-07-31.md`.
+- Migration record: `docs/migrations/0004-governed-memory-v1.md`.
+- Current OpenAI and Cloudflare official guidance checked on 2026-07-31.

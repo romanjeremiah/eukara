@@ -9,6 +9,7 @@
     "dev": "wrangler dev",
     "test": "node node_modules/vitest/vitest.mjs",
     "test:run": "node node_modules/vitest/vitest.mjs --run",
+    "test:unit": "node node_modules/vitest/vitest.mjs --run --config vitest.unit.config.ts",
     "typecheck": "node node_modules/typescript/bin/tsc --noEmit",
     "cf-types": "wrangler types"
   },
