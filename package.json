@@ -9,10 +9,12 @@
     "dev": "wrangler dev",
     "test": "node node_modules/vitest/vitest.mjs",
     "test:run": "node node_modules/vitest/vitest.mjs --run",
-    "test:unit": "node node_modules/vitest/vitest.mjs --run --config vitest.unit.config.ts",
-    "typecheck": "node node_modules/typescript/bin/tsc --noEmit",
-    "cf-types": "wrangler types"
-  },
+		"test:unit": "node node_modules/vitest/vitest.mjs --run --config vitest.unit.config.ts",
+		"typecheck": "node node_modules/typescript/bin/tsc --noEmit",
+		"cf-types": "wrangler types",
+		"telegram:setup": "node --env-file-if-exists=.dev.vars scripts/telegram-admin.mjs setup",
+		"telegram:status": "node --env-file-if-exists=.dev.vars scripts/telegram-admin.mjs status"
+	},
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.16.10",
     "@google/genai": "^2.15.0",

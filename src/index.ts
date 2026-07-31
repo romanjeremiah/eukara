@@ -32,6 +32,7 @@ import * as telegram from './lib/telegram';
 import { allTools } from './tools';
 import type { TelegramUpdate, TelegramMessage } from './types/telegram';
 import type { AITool } from './types/ai';
+import { isTelegramWebhookAuthorised } from './lib/security';
 
 // Export Workflow classes (required by Cloudflare Workers)
 export { MemoryConsolidationWorkflow } from './workflows/consolidation';
@@ -54,12 +55,22 @@ export default {
 		const url = new URL(request.url);
 
 		// --- API Routes ---
-		if (url.pathname === '/setup-webhook') return handleSetupWebhook(env);
-		if (url.pathname === '/register-commands') return handleRegisterCommands(env);
 		if (url.pathname === '/health') return new Response('OK');
+		if (url.pathname === '/setup-webhook' || url.pathname === '/register-commands') {
+			return new Response('Not found', { status: 404 });
+		}
 
 		// --- Telegram Webhook ---
 		if (request.method === 'POST' && url.pathname === '/') {
+			if (!env.TELEGRAM_WEBHOOK_SECRET) {
+				log.error('telegram_webhook_secret_missing');
+				return new Response('Service unavailable', { status: 503 });
+			}
+			if (!await isTelegramWebhookAuthorised(request, env.TELEGRAM_WEBHOOK_SECRET)) {
+				log.warn('telegram_webhook_unauthorised');
+				return new Response('Unauthorized', { status: 401 });
+			}
+
 			try {
 				const update = await request.json<TelegramUpdate>();
 
@@ -312,55 +323,6 @@ function routeUpdate(update: TelegramUpdate, env: Env): Promise<void> | null {
 
 	return null;
 }
-
-
-// --- Setup Handlers ---
-
-async function handleSetupWebhook(env: Env): Promise<Response> {
-	const token = env.TELEGRAM_TOKEN;
-	if (!token) return new Response('TELEGRAM_TOKEN not set', { status: 500 });
-
-	const webhookUrl = 'https://eukara.roman-jeremiah.workers.dev/';
-	const allowedUpdates = JSON.stringify([
-		'message', 'edited_message', 'callback_query',
-		'inline_query', 'message_reaction', 'poll_answer',
-	]);
-
-	const res = await fetch(
-		`https://api.telegram.org/bot${token}/setWebhook?url=${webhookUrl}&allowed_updates=${allowedUpdates}&drop_pending_updates=true`
-	);
-	const data = await res.json();
-	return Response.json(data);
-}
-
-async function handleRegisterCommands(env: Env): Promise<Response> {
-	const token = env.TELEGRAM_TOKEN;
-	if (!token) return new Response('TELEGRAM_TOKEN not set', { status: 500 });
-
-	const commands = [
-		{ command: 'mood', description: 'Start a guided mood and sleep check-in' },
-		{ command: 'listen', description: 'Start a brain dump session' },
-		{ command: 'done', description: 'End listening / brain dump' },
-		{ command: 'architect', description: 'Run an innovation review' },
-		{ command: 'memories', description: 'Show what I remember about you' },
-		{ command: 'forget', description: 'Delete memories (category or all)' },
-		{ command: 'timezone', description: 'Set your local timezone' },
-		{ command: 'clear', description: 'Clear conversation context' },
-		{ command: 'start', description: 'Welcome message' },
-	];
-
-	const res = await fetch(
-		`https://api.telegram.org/bot${token}/setMyCommands`,
-		{
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ commands }),
-		}
-	);
-	const data = await res.json();
-	return Response.json(data);
-}
-
 // ============================================================
 // End
 // ============================================================

@@ -931,3 +931,67 @@ pending the embedding cutover.
 - Official guidance checked on 2026-07-31: OpenAI GPT-5.6 model prompting,
   Cloudflare Workers best practices, Telegram Bot API `setMyCommands` and NHS
   urgent mental-health support routes.
+
+## 2026-07-31: Telegram Webhook Authentication Implemented
+
+### Change Log
+
+- Added pre-parse authentication for Telegram webhook POST requests using the
+  official `X-Telegram-Bot-Api-Secret-Token` header.
+- Added fixed-length SHA-256 hashing and Workers' constant-time comparison for
+  the supplied and configured secret values.
+- Removed the executable public `/setup-webhook` and `/register-commands`
+  handlers. Both legacy paths now return HTTP 404.
+- Added a local Telegram administration script for secure webhook registration,
+  command-menu registration and non-secret configuration status.
+- Set `drop_pending_updates` to `false` in the new registration path.
+- Declared `TELEGRAM_WEBHOOK_SECRET` as a required Cloudflare secret and
+  regenerated Worker binding types.
+- Replaced the outdated setup guide and added architecture, raw test evidence
+  and test conclusions for the authenticated webhook flow.
+
+### Decision Register
+
+- The owner approved Option A: a Telegram webhook secret, no public maintenance
+  endpoints, and local terminal-owned webhook and command registration.
+- Authentication must precede JSON parsing and owner-ID authorisation because
+  the Telegram user ID inside an unauthenticated body is not trustworthy.
+- The production rollout uses a zero-gap order: store the secret, configure
+  Telegram to send it, deploy the validating Worker, then verify status.
+- Secret creation and production mutation remain owner-operated. The assistant
+  did not generate, store, register, commit or deploy a production secret.
+
+### Impact Assessment
+
+- Forged webhook requests can no longer reach message dispatch, queues, model
+  calls, memory writes or owner-only tools without the independent secret.
+- Legitimate requests add only two bounded SHA-256 operations and a constant-time
+  comparison.
+- A missing Worker secret fails closed with HTTP 503. An incorrect or missing
+  request header returns HTTP 401 without parsing the request body.
+- No database or storage migration is required. Existing pending Telegram
+  updates are preserved during registration.
+
+### Validation
+
+- `npm run cf-types`: passed and generated the new secret binding.
+- `npm run typecheck`: passed.
+- `npm run test:unit`: 4 files and 26 tests passed.
+- `npm run test:run`: 10 files and 63 tests passed. Vitest emitted its existing
+  delayed-close warning after all assertions passed.
+- `npm run deploy:dry-run`: passed at 1,695.05 KiB raw and 268.90 KiB gzip.
+- `node --check scripts/telegram-admin.mjs`: passed.
+- `git diff --check`: passed.
+- The Workers-runtime tests cover missing and matching secret headers plus both
+  retired public administration paths.
+
+### Traceability
+
+- Owner approval: "I agree with the option A."
+- Architecture record:
+  `docs/architecture/telegram-webhook-authentication-2026-07-31.md`.
+- Test evidence:
+  `docs/tests/results/2026-07-31-telegram-webhook-authentication.txt` and
+  `docs/tests/conclusions/2026-07-31-telegram-webhook-authentication.md`.
+- Official guidance checked on 2026-07-31: Telegram Bot API `setWebhook`,
+  Cloudflare Workers secrets, Web Crypto and Worker best practices.

@@ -10,6 +10,7 @@ declare global {
 	interface Env {
 		// Secrets (set via `wrangler secret put`)
 		TELEGRAM_TOKEN: string;
+		TELEGRAM_WEBHOOK_SECRET: string;
 		GEMINI_API_KEY: string;
 		OPENAI_API_KEY?: string;
 		OWNER_ID: string;

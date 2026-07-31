@@ -1,73 +1,113 @@
-# my-ai-bot Setup Guide
+# Eukara setup guide
 
-## Project Complete: Phases 1-7
+## Prerequisites
 
-| Phase | Status | What |
-|---|---|---|
-| 1 | ✅ | TypeScript scaffold, types, D1 schema, infrastructure |
-| 2 | ✅ | AI providers (Cloudflare + Gemini), model router |
-| 3 | ✅ | Core services (memory, episodes, knowledge graph, vector) |
-| 4 | ✅ | Telegram client, message handling, streaming, callbacks |
-| 5 | ✅ | 26 tools in OpenAI format |
-| 6 | ✅ | 3 Workflows (architect, research, consolidation) |
-| 7 | ✅ | Cron + Queue (health check-ins, reminders, outreach) |
-| 8 | ⬜ | Secrets + testing (this guide) |
+- Node.js 22 or later
+- Wrangler 4
+- an authenticated Cloudflare account
+- a Telegram bot token from BotFather
+- an OpenAI API key
+- your numeric Telegram user ID
 
----
+Install the repository dependencies with `npm install`.
 
-## Step 1: Create a New Telegram Bot
+## Local development secrets
 
-Since my-ai-bot runs in parallel with gemini-bot, it needs its own bot:
+Create `.dev.vars` in the project root. It is ignored by Git.
 
-1. Open Telegram, message @BotFather
-2. Send `/newbot`
-3. Name: `MyAIBot` (or similar)
-4. Username: `my_ai_bot_roman` (must be unique, end with `bot`)
-5. Copy the token BotFather gives you
-
-## Step 2: Set Secrets
-
-From the my-ai-bot directory:
-
-```bash
-cd ~/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/my-ai-bot
-
-# Required
-npx wrangler secret put TELEGRAM_TOKEN    # Paste the new bot token
-npx wrangler secret put GEMINI_API_KEY    # Same key as gemini-bot
-npx wrangler secret put OWNER_ID          # Your Telegram user ID: 62047005
-
-# Optional
-npx wrangler secret put TAVILY_API_KEY    # For web search (free tier)
-npx wrangler secret put GITHUB_TOKEN      # For GitHub tools
+```dotenv
+OPENAI_API_KEY=your-openai-key
+TELEGRAM_TOKEN=your-botfather-token
+OWNER_ID=your-numeric-telegram-user-id
+TELEGRAM_WEBHOOK_SECRET=your-generated-webhook-secret
 ```
 
-## Step 3: Register Webhook
+Generate the webhook secret with cryptographically secure random bytes:
 
 ```bash
-curl "https://my-ai-bot.roman-jeremiah.workers.dev/setup-webhook"
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
 ```
 
-Verify:
+Copy the generated value into `.dev.vars`. Do not paste it into source code,
+`wrangler.jsonc`, Git history or chat.
+
+## Production secrets
+
+Set each required secret interactively. Wrangler stores them encrypted and does
+not print their values afterwards.
+
 ```bash
-curl "https://api.telegram.org/bot<YOUR_TOKEN>/getWebhookInfo"
+npx wrangler secret put OPENAI_API_KEY
+npx wrangler secret put TELEGRAM_TOKEN
+npx wrangler secret put OWNER_ID
+npx wrangler secret put TELEGRAM_WEBHOOK_SECRET
 ```
 
-## Step 4: Register Commands
+Use the same `TELEGRAM_WEBHOOK_SECRET` value in Cloudflare and `.dev.vars`.
+
+## Secure Telegram webhook registration
+
+The Worker has no public setup or command-registration endpoints. Registration
+runs only from the local administration script.
+
+For a zero-gap security cutover, use this order:
+
+1. Add `TELEGRAM_WEBHOOK_SECRET` to `.dev.vars`.
+2. Run `npx wrangler secret put TELEGRAM_WEBHOOK_SECRET` and paste the same value.
+3. While the previous Worker version is still live, run:
+
+   ```bash
+   npm run telegram:setup
+   ```
+
+   This registers the production URL, the secret token, allowed update types and
+   the current command menu. It explicitly preserves pending updates.
+
+4. Deploy the authenticated Worker:
+
+   ```bash
+   npm run deploy
+   ```
+
+5. Verify the resulting Telegram configuration:
+
+   ```bash
+   npm run telegram:status
+   ```
+
+The status output must show:
+
+- URL `https://eukara.roman-jeremiah.workers.dev/`;
+- no `last_error_message`;
+- the expected allowed update types;
+- nine current bot commands and no `/persona` command.
+
+Telegram sends `TELEGRAM_WEBHOOK_SECRET` in the
+`X-Telegram-Bot-Api-Secret-Token` header. Eukara rejects a missing or incorrect
+header before parsing the Telegram update.
+
+## Validation
 
 ```bash
-curl "https://my-ai-bot.roman-jeremiah.workers.dev/register-commands"
+npm run typecheck
+npm run test:unit
+npm run test:run
+npm run deploy:dry-run
 ```
 
-## Step 5: Test Basic Conversation
+Check the deployed Worker:
 
-Send a message to your new bot. Check logs:
 ```bash
+curl -fsS https://eukara.roman-jeremiah.workers.dev/health
 npx wrangler tail --format pretty
 ```
 
-## Step 6: Add Mood Journal Table
+## Optional secrets
+
+Set these only for enabled integrations:
 
 ```bash
-npx wrangler d1 execute my-db --remote --command="CREATE TABLE IF NOT EXISTS mood_journal (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER NOT NULL, date TEXT NOT NULL, entry_type TEXT NOT NULL DEFAULT 'evening', mood_score INTEGER, emotions TEXT, sleep_hours REAL, sleep_quality TEXT, medication_taken INTEGER DEFAULT 0, medication_time TEXT, medication_notes TEXT, activities TEXT, note TEXT, ai_observation TEXT, photo_r2_key TEXT, clinical_tags TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
+npx wrangler secret put TAVILY_API_KEY
+npx wrangler secret put GITHUB_TOKEN
+npx wrangler secret put GCP_TTS_API_KEY
 ```

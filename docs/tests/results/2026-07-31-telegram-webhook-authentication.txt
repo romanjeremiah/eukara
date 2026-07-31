@@ -1,0 +1,33 @@
+Telegram webhook authentication validation
+Date: 2026-07-31
+
+npm run cf-types
+Result: PASS
+Generated binding: TELEGRAM_WEBHOOK_SECRET: string
+
+npm run typecheck
+Result: PASS
+
+npm run test:unit
+Test Files: 4 passed (4)
+Tests: 26 passed (26)
+Result: PASS
+
+npm run test:run
+Test Files: 10 passed (10)
+Tests: 63 passed (63)
+Result: PASS
+Notes:
+- Workers-runtime authentication tests passed.
+- Vitest emitted its existing delayed-close warning after all assertions passed.
+- Local warnings correctly reported that TELEGRAM_WEBHOOK_SECRET is not yet in .dev.vars.
+
+npm run deploy:dry-run
+Total Upload: 1695.05 KiB / gzip: 268.90 KiB
+Result: PASS
+
+node --check scripts/telegram-admin.mjs
+Result: PASS
+
+git diff --check
+Result: PASS
