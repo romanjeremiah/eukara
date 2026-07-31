@@ -35,8 +35,8 @@ const DEFAULT_TIMEOUT_MS = 55_000;
 
 /**
  * Raised when a generic inline-data part cannot safely be represented in the
- * current Responses API adapter. Specialist audio and document ingestion is
- * introduced in a later migration stage.
+ * current Responses API adapter. Specialist audio is transcribed before it
+ * reaches this boundary; video remains unsupported.
  */
 export class UnsupportedOpenAIMediaError extends Error {
 	constructor(mimeType: string) {
@@ -242,14 +242,24 @@ export class OpenAIProvider implements AIProvider {
 				if (part.type === 'text') {
 					return { type: 'input_text' as const, text: part.text };
 				}
-				if (!part.mimeType.startsWith('image/')) {
-					throw new UnsupportedOpenAIMediaError(part.mimeType);
+				if (part.mimeType.startsWith('image/')) {
+					return {
+						type: 'input_image' as const,
+						detail: 'auto' as const,
+						image_url: `data:${part.mimeType};base64,${part.data}`,
+					};
 				}
-				return {
-					type: 'input_image' as const,
-					detail: 'auto' as const,
-					image_url: `data:${part.mimeType};base64,${part.data}`,
-				};
+				if (isOpenAIFileInput(part.mimeType)) {
+					return {
+						type: 'input_file' as const,
+						detail: part.mimeType === 'application/pdf'
+							? 'auto' as const
+							: undefined,
+						file_data: `data:${part.mimeType};base64,${part.data}`,
+						filename: part.filename || defaultFilename(part.mimeType),
+					};
+				}
+				throw new UnsupportedOpenAIMediaError(part.mimeType);
 			}),
 		};
 	}
@@ -315,6 +325,26 @@ export class OpenAIProvider implements AIProvider {
 			_openaiRawOutput: toolCalls.length ? response.output : undefined,
 		};
 	}
+}
+
+/**
+ * Limit inline file handling to the formats accepted at Telegram ingress.
+ */
+function isOpenAIFileInput(mimeType: string): boolean {
+	return mimeType === 'application/pdf' || mimeType.startsWith('text/');
+}
+
+/**
+ * Supply the extension OpenAI uses to select its file parser.
+ */
+function defaultFilename(mimeType: string): string {
+	if (mimeType === 'application/pdf') return 'telegram-document.pdf';
+	const extension = mimeType === 'text/markdown'
+		? 'md'
+		: mimeType === 'text/html'
+			? 'html'
+			: 'txt';
+	return `telegram-document.${extension}`;
 }
 
 /**

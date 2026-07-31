@@ -11,7 +11,7 @@
 		"nodejs_compat"
 	],
 	"vars": {
-		"AI_PROVIDER_MODE": "cloudflare"
+		"AI_PROVIDER_MODE": "openai"
 	},
 	"secrets": {
 		"required": [

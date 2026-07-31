@@ -13,6 +13,7 @@ import type { TelegramMessage } from '../types/telegram';
 export interface MediaRef {
 	fileId: string;
 	mimeType: string;
+	filename?: string;
 	fileSize?: number;
 	/** Short label for history placeholder / logs, e.g. "photo", "voice note". */
 	kind: MediaKind;
@@ -107,6 +108,7 @@ export function extractMediaFromMessage(msg: TelegramMessage): MediaRef | null {
 			return {
 				fileId: msg.document.file_id,
 				mimeType: remapAudioMime(mime) ?? mime,
+				filename: msg.document.file_name,
 				fileSize: msg.document.file_size,
 				kind: 'document',
 			};
@@ -199,6 +201,7 @@ export async function persistTelegramMedia(
 		acceptedAt,
 		key,
 		mimeType: media.mimeType,
+		filename: media.filename ?? '',
 		state: 'accepted' satisfies MediaLifecycleState,
 		userId: owner.userId,
 	}), { expirationTtl: 30 * 24 * 60 * 60 });

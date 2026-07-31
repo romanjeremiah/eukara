@@ -470,3 +470,60 @@ pending the embedding cutover.
   documentation checked on 2026-07-31.
 - Live evidence:
   `docs/tests/results/2026-07-31T10-33-51Z/openai-stage4-smoke.json`.
+
+## 2026-07-31: OpenAI Production Cutover Preparation
+
+### Change Log
+
+- Completed blue-green production coverage: 108 active D1 memories, 108 blue
+  vectors and 108 OpenAI green vectors.
+- Recorded the private-data-free recall gate: both projections returned 10/10
+  top-1 and 10/10 top-3 exact-memory self-recall.
+- Added stateless PDF and text-file inputs using inline Responses API
+  `input_file` data. Telegram filenames are preserved and accepted bytes remain
+  authoritative in R2.
+- Added a live PDF fixture using a 13,264-byte public test document; Terra
+  returned the expected document title.
+- Added a central server-side owner boundary for every mutating model tool.
+  Read-only tools remain available under their existing user-scoped policies.
+- Added a five-minute, message-bound `CONFIRM REPO CHANGE` record for GitHub
+  writes. Repository mutation now requires both owner identity and explicit
+  per-request confirmation.
+- Changed the configured production target from `cloudflare` to `openai` and
+  updated Eukara's self-description. Old bindings remain for rollback.
+
+### Decision Register
+
+- The embedding gate is accepted because green coverage equals active D1
+  coverage and green recall is not worse than blue on the recorded sample.
+- Direct OpenAI becomes the production inference path. The old provider and
+  index remain temporarily bound but are not selected by normal model routing.
+- Video inference remains a transparent unsupported case. Telegram video bytes
+  are saved before the user is told that direct processing is not enabled.
+
+### Impact Assessment
+
+- The next deployment changes live chat, classification, tools, vision,
+  transcription, document, speech, image, research, consolidation, embedding
+  reads and reranking to direct OpenAI.
+- Cloudflare remains the application and durability platform. Blue projection
+  dual writes continue only for the rollback observation window.
+- The provider switch is reversible by restoring
+  `AI_PROVIDER_MODE = "cloudflare"` and redeploying; no D1 or R2 data rollback
+  is required.
+
+### Validation
+
+- TypeScript validation passed.
+- The complete automated suite passed: 7 files and 43 tests.
+- Live OpenAI checks passed for Luna, Terra, Sol, embeddings, PDF input, OGG
+  transcription, MP3 speech and PNG image generation.
+- Production embedding coverage and recall gates passed as recorded in
+  `docs/tests/results/2026-07-31T10-47-48Z/openai-cutover-smoke.json`.
+
+### Traceability
+
+- Owner approval: “Approve recommended baseline”.
+- Owner instruction: “All set up is done, continue with the development.”
+- Official OpenAI file-input guidance and Cloudflare Vectorize guidance checked
+  on 2026-07-31.

@@ -45,6 +45,11 @@ export const patchRepoFile = defineTool(
 		if (!env.OWNER_ID || String(ctx.userId) !== String(env.OWNER_ID)) {
 			return err('Only the configured owner may modify repository files.');
 		}
+		if (!ctx.messageId) return err('Repository changes require a request-bound confirmation.');
+		const confirmationKey = `tool_confirmation:${ctx.userId}:${ctx.messageId}:patch_repo_file`;
+		if (await env.CHAT_KV.get(confirmationKey) !== 'confirmed') {
+			return err('Reply “CONFIRM REPO CHANGE” to authorise this repository mutation for one request.');
+		}
 		if (!env.GITHUB_TOKEN) return err('GitHub token not configured.');
 		const repo = (args.repo as string) || 'romanjeremiah/eukara';
 		const path = args.path as string;
@@ -79,6 +84,7 @@ export const patchRepoFile = defineTool(
 
 			if (!res.ok) return err(`GitHub ${res.status}`);
 			const result = await res.json() as { commit?: { html_url?: string } };
+			await env.CHAT_KV.delete(confirmationKey);
 			return ok({ path, commit_url: result.commit?.html_url });
 		} catch (e) {
 			return err((e as Error).message);

@@ -7,6 +7,7 @@ import { readFile } from 'node:fs/promises';
 import OpenAI from 'openai';
 
 const SAMPLE_OGG_URL = 'https://commons.wikimedia.org/wiki/Special:Redirect/file/En-us-hello.ogg';
+const SAMPLE_PDF_URL = 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
 
 /**
  * Read one local development secret without exposing its value.
@@ -90,6 +91,33 @@ checks.push(await check('embedding-1536', async () => {
 		throw new Error(`Expected 1536 embedding dimensions, received ${dimensions}`);
 	}
 	return { model: OPENAI_MODELS.embedding, dimensions };
+}));
+
+const pdfResponse = await fetch(SAMPLE_PDF_URL);
+if (!pdfResponse.ok) throw new Error(`Could not fetch PDF fixture: ${pdfResponse.status}`);
+const pdf = await pdfResponse.arrayBuffer();
+checks.push(await check('responses-pdf-input', async () => {
+	const response = await client.responses.create({
+		model: OPENAI_MODELS.chat,
+		input: [{
+			role: 'user',
+			content: [
+				{
+					type: 'input_file',
+					filename: 'dummy.pdf',
+					file_data: `data:application/pdf;base64,${Buffer.from(pdf).toString('base64')}`,
+					detail: 'low',
+				},
+				{ type: 'input_text', text: 'Reply with only the document title.' },
+			],
+		}],
+		max_output_tokens: 64,
+		store: false,
+	});
+	if (!response.output_text.toLowerCase().includes('dummy pdf')) {
+		throw new Error('PDF response did not contain the expected fixture title');
+	}
+	return { model: OPENAI_MODELS.chat, inputBytes: pdf.byteLength };
 }));
 
 const audioResponse = await fetch(SAMPLE_OGG_URL);

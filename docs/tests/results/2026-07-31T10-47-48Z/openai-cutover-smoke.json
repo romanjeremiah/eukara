@@ -1,0 +1,27 @@
+{
+  "timestamp": "2026-07-31T10:47:48.351Z",
+  "status": "passed",
+  "checks": [
+    { "name": "responses-luna", "status": "passed", "durationMs": 1121, "model": "gpt-5.6-luna" },
+    { "name": "responses-terra", "status": "passed", "durationMs": 959, "model": "gpt-5.6-terra" },
+    { "name": "responses-sol", "status": "passed", "durationMs": 2204, "model": "gpt-5.6-sol" },
+    { "name": "embedding-1536", "status": "passed", "durationMs": 1427, "model": "text-embedding-3-small", "dimensions": 1536 },
+    { "name": "responses-pdf-input", "status": "passed", "durationMs": 1135, "model": "gpt-5.6-terra", "inputBytes": 13264 },
+    { "name": "transcription-ogg", "status": "passed", "durationMs": 607, "model": "gpt-transcribe", "inputBytes": 9036 },
+    { "name": "speech-mp3", "status": "passed", "durationMs": 2054, "model": "tts-1", "outputBytes": 32640 },
+    { "name": "image-png", "status": "passed", "durationMs": 42143, "model": "gpt-image-2", "outputBytes": 801710 }
+  ],
+  "embeddingRecall": {
+    "sampleSize": 10,
+    "cloudflareTop1": 10,
+    "cloudflareTop3": 10,
+    "openaiTop1": 10,
+    "openaiTop3": 10,
+    "evaluatedAt": "2026-07-31T10:44:11.470Z"
+  },
+  "projectionCoverage": {
+    "activeD1Memories": 108,
+    "cloudflareVectors": 108,
+    "openaiVectors": 108
+  }
+}

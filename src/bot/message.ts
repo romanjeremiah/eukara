@@ -35,6 +35,17 @@ import * as user from '../services/user';
 import * as persona from '../services/persona';
 import { getWeather, formatWeatherForContext } from '../services/weather';
 
+const READ_ONLY_TOOL_NAMES = new Set([
+	'get_mood_history',
+	'list_reminders',
+	'get_therapeutic_notes',
+	'read_webpage',
+	'web_search_tavily',
+	'read_repo_file',
+	'search_research',
+	'lookup_custom_emoji',
+]);
+
 // ============================================================
 // AI chat with conditional-retry fallback
 //
@@ -545,6 +556,17 @@ export async function handleMessage(
 	// plain reply without replaying a half-finished tool exchange.
 	const initialMessages: AIMessage[] = messages.slice();
 	const toolContext: ToolContext = { userId, chatId, threadId, messageId };
+	if (
+		env.OWNER_ID
+		&& String(userId) === String(env.OWNER_ID)
+		&& /^confirm repo change\b/i.test(userText.trim())
+	) {
+		await env.CHAT_KV.put(
+			repoConfirmationKey(userId, messageId),
+			'confirmed',
+			{ expirationTtl: 5 * 60 },
+		);
+	}
 	const maxToolRounds = 5;
 
 	// --- Optimistic streaming (casual inline lane, gpt-oss) ---
@@ -641,7 +663,12 @@ export async function handleMessage(
 					const tool = tools.find(t => t.schema.function.name === tc.name);
 					if (!tool) continue;
 					try {
-						const result = await tool.execute(tc.args, env, toolContext);
+						const result = isToolExecutionAuthorised(tc.name, env, toolContext)
+							? await tool.execute(tc.args, env, toolContext)
+							: {
+								status: 'error' as const,
+								message: 'This mutating tool is restricted to the configured owner.',
+							};
 						if (usePreservedParts) {
 							userParts.push({
 								functionResponse: {
@@ -1027,6 +1054,25 @@ export async function handleMessage(
  * a short default prompt so the model always has something to respond
  * to ("Describe this image", "Transcribe this voice note", etc).
  */
+/**
+ * Enforce the single-owner mutation boundary before any tool implementation.
+ */
+export function isToolExecutionAuthorised(
+	toolName: string,
+	env: Pick<Env, 'OWNER_ID'>,
+	context: ToolContext,
+): boolean {
+	if (READ_ONLY_TOOL_NAMES.has(toolName)) return true;
+	return !!env.OWNER_ID && String(context.userId) === String(env.OWNER_ID);
+}
+
+/**
+ * Scope external repository consent to one Telegram request for five minutes.
+ */
+function repoConfirmationKey(userId: number, messageId: number): string {
+	return `tool_confirmation:${userId}:${messageId}:patch_repo_file`;
+}
+
 interface BuiltUserTurn {
 	content: string | AIMessagePart[];
 	storedMedia?: StoredMediaRef;
@@ -1123,7 +1169,13 @@ async function buildUserTurnContent(
 		}
 	}
 
-	if (providerMode === 'openai' && !media.mimeType.startsWith('image/')) {
+	const isOpenAIFile = media.mimeType === 'application/pdf'
+		|| media.mimeType.startsWith('text/');
+	if (
+		providerMode === 'openai'
+		&& !media.mimeType.startsWith('image/')
+		&& !isOpenAIFile
+	) {
 		await updateStoredMediaState(
 			env,
 			storedMedia,
@@ -1145,7 +1197,12 @@ async function buildUserTurnContent(
 	return {
 		content: [
 			{ type: 'text', text: promptText },
-			{ type: 'inline_data', mimeType: media.mimeType, data: base64 },
+			{
+				type: 'inline_data',
+				mimeType: media.mimeType,
+				data: base64,
+				filename: media.filename,
+			},
 		],
 		storedMedia,
 	};

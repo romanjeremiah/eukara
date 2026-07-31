@@ -9,6 +9,7 @@ import {
 } from '../src/ai/provider-factory';
 import { OPENAI_MODELS } from '../src/config/models';
 import { patchRepoFile, readRepoFile } from '../src/tools/github-tools';
+import { isToolExecutionAuthorised } from '../src/bot/message';
 
 describe('Stage 2 provider selection', () => {
 	it('fails unknown modes safely to Cloudflare', () => {
@@ -70,5 +71,37 @@ describe('GitHub tool authorisation', () => {
 			status: 'error',
 			message: 'GitHub token not configured.',
 		});
+	});
+
+	it('requires request-bound confirmation even for the configured owner', async () => {
+		const result = await patchRepoFile.execute(
+			args,
+			{
+				OWNER_ID: '123',
+				GITHUB_TOKEN: 'test-token',
+				CHAT_KV: { get: async () => null },
+			},
+			{ userId: 123, chatId: 123, threadId: 'default', messageId: 9 },
+		);
+
+		expect(result).toMatchObject({
+			status: 'error',
+			message: expect.stringContaining('CONFIRM REPO CHANGE'),
+		});
+	});
+});
+
+describe('central tool mutation boundary', () => {
+	it('allows read-only tools but blocks mutations for non-owners', () => {
+		const env = { OWNER_ID: '123' };
+		const outsider = { userId: 999, chatId: 999, threadId: 'default' };
+
+		expect(isToolExecutionAuthorised('read_repo_file', env, outsider)).toBe(true);
+		expect(isToolExecutionAuthorised('set_reminder', env, outsider)).toBe(false);
+		expect(isToolExecutionAuthorised('send_message_effect', env, outsider)).toBe(false);
+		expect(isToolExecutionAuthorised('set_reminder', env, {
+			...outsider,
+			userId: 123,
+		})).toBe(true);
 	});
 });

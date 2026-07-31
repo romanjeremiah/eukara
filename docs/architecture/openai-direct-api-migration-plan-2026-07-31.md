@@ -1,7 +1,7 @@
 # Direct OpenAI API Migration Plan
 
 Date: 2026-07-31
-Status: Stages 1 to 3 deployed; Stage 4 blue-green projection ready for backfill
+Status: Stages 1 to 4 complete; OpenAI production cutover ready to deploy
 Owner instruction: Replace Eukara's model routing and AI-provider architecture with the direct OpenAI API.
 
 ## 1. Current situation
@@ -182,8 +182,10 @@ cutover gates have passed.
   backfill batches;
 - [x] route OpenAI-mode semantic search and Luna reranking to the green
   projection while retaining Cloudflare-mode reads from the blue index;
-- [ ] complete the production backfill and aggregate recall comparison;
-- [ ] cut over reads with an explicit rollback window.
+- [x] complete 108/108 production coverage in both indexes and record a 10/10
+  top-1 and top-3 recall comparison for both projections;
+- [x] prepare OpenAI read cutover while retaining the old index and provider
+  bindings for the rollback observation window.
 
 ### Stage 5: removal and production rollout
 

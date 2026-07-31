@@ -59,7 +59,7 @@ export interface AITool {
  */
 export type AIMessagePart =
 	| { type: 'text'; text: string }
-	| { type: 'inline_data'; mimeType: string; data: string }; // data = base64
+	| { type: 'inline_data'; mimeType: string; data: string; filename?: string }; // data = base64
 
 export type AIMessageContent =
 	| string

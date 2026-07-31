@@ -228,6 +228,44 @@ describe('OpenAIProvider Responses API adapter', () => {
 		expect(fake.requests).toHaveLength(0);
 	});
 
+	it('sends PDF and text documents as stateless inline file inputs', async () => {
+		const fake = fakeClient({ output_text: 'Document read.', output: [] });
+		const provider = new OpenAIProvider('test-key', undefined, fake.client);
+
+		await provider.chat([{
+			role: 'user',
+			content: [
+				{ type: 'text', text: 'Summarise these.' },
+				{
+					type: 'inline_data',
+					mimeType: 'application/pdf',
+					data: 'cGRm',
+					filename: 'notes.pdf',
+				},
+				{
+					type: 'inline_data',
+					mimeType: 'text/plain',
+					data: 'dGV4dA==',
+				},
+			],
+		}]);
+
+		expect(fake.requests[0].input[0].content.slice(1)).toEqual([
+			{
+				type: 'input_file',
+				detail: 'auto',
+				file_data: 'data:application/pdf;base64,cGRm',
+				filename: 'notes.pdf',
+			},
+			{
+				type: 'input_file',
+				detail: undefined,
+				file_data: 'data:text/plain;base64,dGV4dA==',
+				filename: 'telegram-document.txt',
+			},
+		]);
+	});
+
 	it('normalises OpenAI URL citations to Eukara annotation shape', async () => {
 		const fake = fakeClient({
 			output_text: 'Sourced answer.',
