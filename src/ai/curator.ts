@@ -1,5 +1,5 @@
-import { CF_MODELS } from '../config/models';
-import { runAI } from '../lib/ai-gateway';
+import { CF_MODELS, OPENAI_MODELS } from '../config/models';
+import { createConfiguredProvider } from './provider-factory';
 import { log } from '../lib/logger';
 
 export interface CuratorResult {
@@ -31,21 +31,22 @@ User message:
 `;
 
 	try {
-		const response = await runAI<{ response: string } | { choices: Array<{ message: { content: string } }> }>(
-			env.AI,
-			CF_MODELS.observation as unknown as keyof AiModels,
+		const provider = createConfiguredProvider(env, {
+			openai: OPENAI_MODELS.curator,
+			cloudflare: CF_MODELS.observation,
+		});
+		const response = await provider.chat(
+			[{ role: 'user', content: prompt }],
+			[],
 			{
-				messages: [{ role: 'user', content: prompt }],
-				max_tokens: 150
-			}
+				systemInstruction: 'Return only the requested routing JSON.',
+				thinkingLevel: 'LOW',
+				maxTokens: 150,
+				enableGrounding: false,
+			},
 		);
 
-		let resultStr = '';
-		if ('response' in response) {
-			resultStr = String(response.response || '');
-		} else if ('choices' in response && response.choices?.length > 0) {
-			resultStr = String(response.choices[0]?.message?.content || '');
-		}
+		const resultStr = response.text ?? '';
 
 		const jsonStart = resultStr.indexOf('{');
 		const jsonEnd = resultStr.lastIndexOf('}');
@@ -53,8 +54,13 @@ User message:
 		if (jsonStart !== -1 && jsonEnd !== -1) {
 			const jsonStr = resultStr.slice(jsonStart, jsonEnd + 1);
 			const parsed = JSON.parse(jsonStr) as Partial<CuratorResult>;
+			const intents: CuratorResult['intent'][] = [
+				'casual', 'emotional_vent', 'crisis', 'code', 'functional',
+			];
 			return {
-				intent: (parsed.intent as CuratorResult['intent']) || 'casual',
+				intent: intents.includes(parsed.intent as CuratorResult['intent'])
+					? parsed.intent as CuratorResult['intent']
+					: 'casual',
 				isCrisis: parsed.isCrisis === true
 			};
 		}

@@ -1,7 +1,7 @@
 # Direct OpenAI API Migration Plan
 
-Date: 2026-07-31  
-Status: Recommended baseline approved; Stage 1 foundation implemented locally  
+Date: 2026-07-31
+Status: Recommended baseline approved; Stages 1 and 2 implemented locally
 Owner instruction: Replace Eukara's model routing and AI-provider architecture with the direct OpenAI API.
 
 ## 1. Current situation

@@ -55,7 +55,7 @@ export class MemoryConsolidationWorkflow extends WorkflowEntrypoint<Env, Consoli
 		}, async () => {
 			try {
 				const { deduplicateMemories } = await import('../ai/background');
-				return await deduplicateMemories(this.env.AI, allMemories);
+				return await deduplicateMemories(this.env, allMemories);
 			} catch {
 				return { groups: [], duplicates: [] };
 			}

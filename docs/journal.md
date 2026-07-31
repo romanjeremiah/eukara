@@ -157,10 +157,74 @@ This session focused on fixing an infinite-loop bug that caused the AI to become
 - `npm audit --omit=dev` reported zero production dependency
   vulnerabilities. The install-time warning refers to development or optional
   packages outside this implementation scope.
-- No live OpenAI call was attempted because `OPENAI_API_KEY` is not configured.
+- No live OpenAI call was attempted during Stage 1 because the secret had not
+  yet been configured.
 
 ### Traceability
 
 - Approved baseline and staged implementation:
   `docs/architecture/openai-direct-api-migration-plan-2026-07-31.md`.
 - Owner approval: “Approve recommended baseline”.
+
+## 2026-07-31: Stage 2 OpenAI Runtime Integration
+
+### Change Log
+
+- Added a central provider factory so services no longer construct OpenAI or
+  Cloudflare clients independently.
+- Added OpenAI selection for the curator, topic-shift classifier, subconscious
+  extraction, mood tagging, memory deduplication, autonomous research,
+  proactive check-ins and weekly synthesis.
+- Made Telegram draft streaming consume the provider-neutral streaming
+  interface.
+- Added OpenAI-only primary-to-fallback and no-silence salvage routing when
+  OpenAI mode is selected. The existing Cloudflare cascade remains intact in
+  Cloudflare mode.
+- Propagated the router's configured reasoning level into the main tool loop.
+- Preserved complete OpenAI Responses output items across stateless tool-loop
+  continuations, including reasoning and function-call items.
+- Added a server-enforced owner check to `patch_repo_file`; prompt wording is no
+  longer its only identity boundary.
+- Added regression tests for provider-mode fail-safe behaviour, missing-secret
+  failure and the GitHub mutation owner boundary.
+- Replaced the stale `Hello World!` snapshots with assertions against Eukara's
+  real TypeScript entrypoint. The unit test now imports `src/index.ts`
+  explicitly rather than resolving the obsolete `src/index.js` sibling.
+- Updated the architecture plan status to record local completion of Stages 1
+  and 2.
+
+### Decision Register
+
+- The provider switch remains `cloudflare` until the remaining specialist
+  Workflows, media services, embeddings and authorisation gates are migrated.
+- OpenAI fallback uses Luna and never silently crosses to Workers AI.
+- Complete model output replay is required before corresponding
+  `function_call_output` items in stateless Responses tool loops.
+- Weekly synthesis does not enable web search on OpenAI because its evidence is
+  the supplied private Eukara data, not public web content.
+- The configured `OPENAI_API_KEY` was verified by secret name only. Its value
+  was not read, logged or written to disk.
+
+### Impact Assessment
+
+- Current production behaviour remains unchanged while
+  `AI_PROVIDER_MODE = "cloudflare"`.
+- OpenAI mode now consistently covers the Stage 2 routing paths changed here,
+  including error recovery and streaming.
+- Live OpenAI validation cannot run directly from the local shell because the
+  key exists as a write-only Wrangler secret rather than a local environment
+  variable. A Worker-context smoke test remains pending.
+
+### Validation
+
+- Direct TypeScript validation passed.
+- The complete suite passed: 4 files and 27 tests.
+- Wrangler dry-run passed: 1,459.17 KiB raw and 246.89 KiB gzip. No deployment
+  occurred.
+- Wrangler confirmed that `OPENAI_API_KEY` exists as a secret binding.
+
+### Traceability
+
+- Owner instruction: “Continue. I set OPENAI_API_KEY, so we can freely use it.”
+- Approved migration plan:
+  `docs/architecture/openai-direct-api-migration-plan-2026-07-31.md`.

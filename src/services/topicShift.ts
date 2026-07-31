@@ -24,7 +24,11 @@
 // ============================================================
 
 import { log } from '../lib/logger';
-import { runAI } from '../lib/ai-gateway';
+import { OPENAI_MODELS } from '../config/models';
+import {
+	createConfiguredProvider,
+	getAIProviderMode,
+} from '../ai/provider-factory';
 
 const CLASSIFIER_MODEL = '@cf/meta/llama-3.2-3b-instruct' as const;
 const CLASSIFIER_TIMEOUT_MS = 2_000;
@@ -79,16 +83,18 @@ A "different topic" shift is when the user clearly changes subject — e.g. asks
 Respond with EXACTLY one word: SAME or DIFFERENT.`;
 
 	try {
-		const callPromise = runAI<{ response?: string }>(
-			env.AI,
-			CLASSIFIER_MODEL as unknown as keyof AiModels,
+		const provider = createConfiguredProvider(env, {
+			openai: OPENAI_MODELS.background,
+			cloudflare: CLASSIFIER_MODEL,
+		});
+		const callPromise = provider.chat(
+			[{ role: 'user', content: prompt }],
+			[],
 			{
-				messages: [
-					{ role: 'system', content: 'You output exactly one word: SAME or DIFFERENT. No other text.' },
-					{ role: 'user', content: prompt },
-				],
-				max_tokens: 8,
-				temperature: 0.0,
+				systemInstruction: 'Output exactly one word: SAME or DIFFERENT.',
+				thinkingLevel: 'LOW',
+				maxTokens: 8,
+				enableGrounding: false,
 			},
 		);
 
@@ -97,13 +103,13 @@ Respond with EXACTLY one word: SAME or DIFFERENT.`;
 		const timeoutPromise = new Promise<never>((_, reject) => {
 			setTimeout(
 				() => reject(new Error('topic_shift_classifier_timeout')),
-				CLASSIFIER_TIMEOUT_MS,
+				getAIProviderMode(env) === 'openai' ? 5_000 : CLASSIFIER_TIMEOUT_MS,
 			);
 		});
 
 		const result = await Promise.race([callPromise, timeoutPromise]);
 
-		const raw = String((result as { response?: string }).response ?? '').trim().toUpperCase();
+		const raw = result.text.trim().toUpperCase();
 		// Match on prefix to be tolerant of the model adding punctuation
 		// or short trailing words. The system prompt strongly nudges
 		// one-word output but we don't trust it 100%.

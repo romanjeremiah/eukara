@@ -41,7 +41,10 @@ export const patchRepoFile = defineTool(
 		repo: { type: 'string', description: 'Repo in owner/name format' },
 	},
 	['path', 'content', 'message'],
-	async (args, env) => {
+	async (args, env, ctx) => {
+		if (!env.OWNER_ID || String(ctx.userId) !== String(env.OWNER_ID)) {
+			return err('Only the configured owner may modify repository files.');
+		}
 		if (!env.GITHUB_TOKEN) return err('GitHub token not configured.');
 		const repo = (args.repo as string) || 'romanjeremiah/eukara';
 		const path = args.path as string;

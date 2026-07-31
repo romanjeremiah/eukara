@@ -6,12 +6,11 @@
 // ============================================================
 
 import type { TelegramMessage } from '../types/telegram';
-import type { AIMessage, AIMessagePart, AIResponse, AITool, ModelRoute, ToolContext } from '../types/ai';
-import { getProvider } from '../ai/router';
+import type { AIMessage, AIMessagePart, AIProvider, AIResponse, AITool, ModelRoute, ToolContext } from '../types/ai';
+import { createProvider, getProvider } from '../ai/router';
 import { evaluateIntent } from '../ai/curator';
 import type { CuratorResult } from '../ai/curator';
-import { CloudflareProvider } from '../ai/cloudflare';
-import { CF_MODELS } from '../config/models';
+import { CF_MODELS, OPENAI_MODELS } from '../config/models';
 import * as telegram from '../lib/telegram';
 import { handleWizardMessage } from './mood-wizard';
 import { stripLeakedThoughts, splitMessage, normaliseMarkdown, enforceTagNesting } from '../lib/formatting';
@@ -92,12 +91,6 @@ type ChatArgs = {
 	enableGrounding: boolean;
 };
 
-type ProviderChat = (
-	m: AIMessage[],
-	t: AITool[],
-	c: { systemInstruction?: string; thinkingLevel?: 'LOW' | 'MEDIUM' | 'HIGH'; enableGrounding?: boolean }
-) => Promise<AIResponse>;
-
 /**
  * Single-provider call with one conditional retry (formerly Casual Lane).
  * Since we now only use Cloudflare AI, all calls go through this path.
@@ -114,10 +107,50 @@ type ProviderChat = (
  */
 async function chatWithFallback(
 	route: ModelRoute,
-	provider: { chat: ProviderChat },
+	provider: AIProvider,
 	args: ChatArgs,
 	env: Env,
 ): Promise<{ response: AIResponse; tierUsed: string }> {
+	if (route.provider === 'openai') {
+		try {
+			const response = await withTimeout(
+				provider.chat(args.messages, args.tools, {
+					systemInstruction: args.systemInstruction,
+					thinkingLevel: args.thinkingLevel,
+					enableGrounding: args.enableGrounding,
+				}),
+				60_000,
+				'openai_primary',
+			);
+			return { response, tierUsed: 'openai_primary' };
+		} catch (error) {
+			const err = error as Error;
+			log.warn('openai_primary_failed', {
+				model: route.model,
+				msg: err.message,
+			});
+		}
+
+		const fallbackRoute: ModelRoute = {
+			provider: 'openai',
+			model: OPENAI_MODELS.fallback,
+			reason: 'openai_fallback',
+			thinkingLevel: 'LOW',
+			enableGrounding: false,
+		};
+		const fallbackProvider = createProvider(fallbackRoute, env);
+		const response = await withTimeout(
+			fallbackProvider.chat(args.messages, args.tools, {
+				systemInstruction: args.systemInstruction,
+				thinkingLevel: fallbackRoute.thinkingLevel,
+				enableGrounding: false,
+			}),
+			45_000,
+			'openai_fallback',
+		);
+		return { response, tierUsed: 'openai_fallback' };
+	}
+
 	for (let cascadeAttempt = 1; cascadeAttempt <= 2; cascadeAttempt++) {
 		// Attempt 1: as configured. 60s gives CF models room for grounding
 		// latency without being unbounded.
@@ -194,7 +227,7 @@ async function chatWithFallback(
  *   accumulated model output for the caller to format, persist and store.
  */
 async function attemptStreamingReply(
-	provider: CloudflareProvider,
+	provider: AIProvider,
 	messages: AIMessage[],
 	tools: AITool[],
 	config: { systemInstruction?: string; enableGrounding?: boolean; maxTokens?: number },
@@ -209,11 +242,13 @@ async function attemptStreamingReply(
 	let sawTool = false;
 	let lastDraftAt = 0;
 
+	if (!provider.chatStream) return { delivered: false };
+
 	try {
-		for await (const chunk of provider.streamChat(messages, tools, config)) {
-			if (chunk.sawToolCall) { sawTool = true; break; }
-			if (chunk.delta) {
-				acc += chunk.delta;
+		for await (const chunk of provider.chatStream(messages, tools, config)) {
+			if (chunk.type === 'tool_call') { sawTool = true; break; }
+			if (chunk.type === 'text' && chunk.text) {
+				acc += chunk.text;
 				const now = Date.now();
 				if (acc.trim() && now - lastDraftAt >= 1200) {
 					lastDraftAt = now;
@@ -510,11 +545,14 @@ export async function handleMessage(
 	const canStream = !!ctx
 		&& !media
 		&& route.reason === 'default_casual'
-		&& route.model === CF_MODELS.chat
+		&& (
+			(route.provider === 'cloudflare' && route.model === CF_MODELS.chat)
+			|| (route.provider === 'openai' && route.model === OPENAI_MODELS.chat)
+		)
 		&& chatId === userId;
 	if (canStream) {
 		const s = await attemptStreamingReply(
-			provider as unknown as CloudflareProvider,
+			provider,
 			initialMessages,
 			tools,
 			{ systemInstruction, enableGrounding: false },
@@ -532,6 +570,7 @@ export async function handleMessage(
 			const { response, tierUsed } = await chatWithFallback(route, provider, {
 				messages,
 				tools,
+				thinkingLevel: route.thinkingLevel,
 				enableGrounding: route.enableGrounding ?? false,
 			}, env);
 
@@ -564,9 +603,18 @@ export async function handleMessage(
 				// stringifies for legacy providers.
 				const rawContent = response._geminiRawContent as { parts?: unknown[] } | undefined;
 				const usePreservedParts = route.provider === 'gemini' && rawContent?.parts && Array.isArray(rawContent.parts);
+				const useOpenAIOutput = route.provider === 'openai'
+					&& Array.isArray(response._openaiRawOutput)
+					&& response._openaiRawOutput.length > 0;
 
 				if (usePreservedParts) {
 					messages.push({ role: 'model', content: '', _rawProviderParts: rawContent!.parts });
+				} else if (useOpenAIOutput) {
+					messages.push({
+						role: 'model',
+						content: '',
+						_openaiInputItems: response._openaiRawOutput,
+					});
 				} else {
 					for (const tc of response.toolCalls) {
 						messages.push({ role: 'model', content: { type: 'tool_use', name: tc.name, args: tc.args, id: tc.id } });
@@ -652,16 +700,28 @@ export async function handleMessage(
 		// grounded fallback (Gemma); otherwise we retry the primary tool-free
 		// first, then fall back. Grounding is enabled only on the Gemma model.
 		if (!fullText.trim()) {
-			const salvageModels = aiError
-				? [CF_MODELS.fallbackPro]
-				: [route.model, CF_MODELS.fallbackPro];
-			for (const salvageModel of salvageModels) {
+			const salvageRoutes: ModelRoute[] = route.provider === 'openai'
+				? (aiError
+					? [{ provider: 'openai', model: OPENAI_MODELS.fallback, reason: 'salvage_fallback' }]
+					: [
+						{ ...route, reason: 'salvage_primary' },
+						{ provider: 'openai', model: OPENAI_MODELS.fallback, reason: 'salvage_fallback' },
+					])
+				: (aiError
+					? [{ provider: 'cloudflare', model: CF_MODELS.fallbackPro, reason: 'salvage_fallback' }]
+					: [
+						{ ...route, reason: 'salvage_primary' },
+						{ provider: 'cloudflare', model: CF_MODELS.fallbackPro, reason: 'salvage_fallback' },
+					]);
+			for (const salvageRoute of salvageRoutes) {
 				try {
-					const salvageProvider = new CloudflareProvider(env.AI, salvageModel);
+					const salvageProvider = createProvider(salvageRoute, env);
 					const salvage = await withTimeout(
 						salvageProvider.chat(initialMessages, [], {
 							systemInstruction,
-							enableGrounding: salvageModel === CF_MODELS.fallbackPro,
+							thinkingLevel: salvageRoute.thinkingLevel,
+							enableGrounding: salvageRoute.provider === 'cloudflare'
+								&& salvageRoute.model === CF_MODELS.fallbackPro,
 						}),
 						40_000,
 						'cf_salvage',
@@ -669,11 +729,11 @@ export async function handleMessage(
 					if (salvage.text?.trim()) {
 						fullText = salvage.text;
 						if (salvage._annotations) lastAnnotations = salvage._annotations;
-						log.warn('ai_salvage_recovered', { model: salvageModel, afterError: !!aiError });
+						log.warn('ai_salvage_recovered', { model: salvageRoute.model, afterError: !!aiError });
 						break;
 					}
 				} catch (salvageErr) {
-					log.warn('ai_salvage_failed', { model: salvageModel, msg: (salvageErr as Error).message });
+					log.warn('ai_salvage_failed', { model: salvageRoute.model, msg: (salvageErr as Error).message });
 				}
 			}
 		}
@@ -841,7 +901,7 @@ export async function handleMessage(
 	const observationInput = userText || (media ? mediaPlaceholder(media.kind) : '');
 	if (sent && observationInput.length > 20 && fullText.length > 20) {
 		const bgTask = import('../ai/background').then(async ({ runSubconsciousProcessing }) => {
-			const obs = await runSubconsciousProcessing(env.AI, observationInput, fullText);
+			const obs = await runSubconsciousProcessing(env, observationInput, fullText);
 			if (!obs) return;
 
 			// 1. Knowledge Graph Triples

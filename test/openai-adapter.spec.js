@@ -160,6 +160,51 @@ describe('OpenAIProvider Responses API adapter', () => {
 		});
 	});
 
+	it('replays complete Responses output before tool results', async () => {
+		const rawOutput = [
+			{ type: 'reasoning', id: 'reason_1', content: [], summary: [] },
+			{
+				type: 'function_call',
+				id: 'fc_1',
+				call_id: 'call_1',
+				name: 'lookup',
+				arguments: '{"query":"weather"}',
+			},
+		];
+		const first = fakeClient({ output_text: '', output: rawOutput });
+		const firstProvider = new OpenAIProvider('test-key', undefined, first.client);
+		const firstResponse = await firstProvider.chat([
+			{ role: 'user', content: 'What is the weather?' },
+		]);
+
+		expect(firstResponse._openaiRawOutput).toEqual(rawOutput);
+
+		const second = fakeClient({ output_text: 'It is mild.', output: [] });
+		const secondProvider = new OpenAIProvider('test-key', undefined, second.client);
+		await secondProvider.chat([
+			{
+				role: 'model',
+				content: '',
+				_openaiInputItems: firstResponse._openaiRawOutput,
+			},
+			{
+				role: 'tool',
+				content: {
+					type: 'tool_result',
+					toolCallId: 'call_1',
+					content: '{"temperature":18}',
+				},
+			},
+		]);
+
+		expect(second.requests[0].input.slice(0, 2)).toEqual(rawOutput);
+		expect(second.requests[0].input[2]).toEqual({
+			type: 'function_call_output',
+			call_id: 'call_1',
+			output: '{"temperature":18}',
+		});
+	});
+
 	it('rejects unsupported inline media rather than silently dropping it', async () => {
 		const fake = fakeClient({ output_text: '', output: [] });
 		const provider = new OpenAIProvider('test-key', undefined, fake.client);

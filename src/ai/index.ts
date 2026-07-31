@@ -9,6 +9,13 @@
 
 export { CloudflareProvider } from './cloudflare';
 export { OpenAIProvider, UnsupportedOpenAIMediaError } from './openai';
+export {
+	createConfiguredProvider,
+	createOpenAIProvider,
+	createRouteProvider,
+	getAIProviderMode,
+} from './provider-factory';
 export { routeMessage, createProvider, getProvider } from './router';
-export type { AIProviderMode, RouterContext } from './router';
+export type { AIProviderMode } from './provider-factory';
+export type { RouterContext } from './router';
 export * as background from './background';

@@ -81,6 +81,12 @@ export interface AIMessage {
 	 * single user message's tool loop; not persisted to KV history.
 	 */
 	_rawProviderParts?: unknown[];
+	/**
+	 * OpenAI Responses output items replayed during a stateless tool loop.
+	 * This preserves reasoning and function-call items exactly as returned by
+	 * the API. It is in-turn state only and is never persisted to history.
+	 */
+	_openaiInputItems?: unknown[];
 }
 
 export interface AIToolCall {
@@ -107,6 +113,12 @@ export interface AIResponse {
 	 * output.
 	 */
 	_groundingMetadata?: unknown;
+	/**
+	 * OpenAI Responses output items required for stateless tool continuation.
+	 * The message loop replays these unchanged before function_call_output
+	 * items. This field is not persisted.
+	 */
+	_openaiRawOutput?: unknown[];
 	/**
 	 * Cloudflare-only (Gemma 4 with `web_search_options`):
 	 * `choices[0].message.annotations[]` from the response. Each entry

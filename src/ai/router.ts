@@ -16,11 +16,14 @@
 import type { AIProvider, ModelRoute } from '../types/ai';
 import { CF_MODELS, OPENAI_MODELS } from '../config/models';
 import type { CuratorResult } from './curator';
-import { CloudflareProvider } from './cloudflare';
-import { OpenAIProvider } from './openai';
+import {
+	createRouteProvider,
+	getAIProviderMode,
+	type AIProviderMode,
+} from './provider-factory';
 import { log } from '../lib/logger';
 
-export type AIProviderMode = 'cloudflare' | 'openai';
+export type { AIProviderMode } from './provider-factory';
 
 export interface RouterContext {
 	userText: string;
@@ -148,23 +151,14 @@ export function willHitHeavyLane(
  * Create the appropriate AI provider based on the route.
  */
 export function createProvider(route: ModelRoute, env: Env): AIProvider {
-	if (route.provider === 'openai') {
-		if (!env.OPENAI_API_KEY) {
-			throw new Error(
-				'OPENAI_API_KEY is required when AI_PROVIDER_MODE is "openai"',
-			);
-		}
-		return new OpenAIProvider(env.OPENAI_API_KEY, route.model);
-	}
-	return new CloudflareProvider(env.AI, route.model);
+	return createRouteProvider(route, env);
 }
 
 /**
  * Convenience: route + create in one call.
  */
 export function getProvider(ctx: RouterContext, env: Env): { provider: AIProvider; route: ModelRoute } {
-	const providerMode: AIProviderMode =
-		env.AI_PROVIDER_MODE === 'openai' ? 'openai' : 'cloudflare';
+	const providerMode = getAIProviderMode(env);
 	const route = routeMessage(ctx, providerMode);
 	const provider = createProvider(route, env);
 

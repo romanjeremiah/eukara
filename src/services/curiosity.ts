@@ -27,8 +27,8 @@
 // ============================================================
 
 import { log } from '../lib/logger';
-import { CloudflareProvider } from '../ai/cloudflare';
-import { CF_MODELS } from '../config/models';
+import { createConfiguredProvider } from '../ai/provider-factory';
+import { CF_MODELS, OPENAI_MODELS } from '../config/models';
 import * as memory from './memory';
 
 // Days (0=Sun) and local hour the research producer runs.
@@ -74,7 +74,10 @@ export async function maybeRunResearch(env: Env, userId: number, localTime: Date
 		// "research" would be ungrounded model recall — stale and repetitive,
 		// which is what made spontaneous outreach send near-identical items.
 		// Gemma accepts web_search_options, so enableGrounding below is real.
-		const provider = new CloudflareProvider(env.AI, CF_MODELS.grounded);
+		const provider = createConfiguredProvider(env, {
+			openai: OPENAI_MODELS.research,
+			cloudflare: CF_MODELS.grounded,
+		});
 
 		const prompt = `Find ONE concrete, genuinely interesting development from the last 7 days that someone with these interests would care about:
 

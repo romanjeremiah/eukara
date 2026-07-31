@@ -13,8 +13,11 @@
 // ============================================================
 
 import { log } from '../lib/logger';
-import { CF_MODELS } from '../config/models';
-import { CloudflareProvider } from '../ai/cloudflare';
+import { CF_MODELS, OPENAI_MODELS } from '../config/models';
+import {
+	createConfiguredProvider,
+	getAIProviderMode,
+} from '../ai/provider-factory';
 import { BASE_INSTRUCTION, MENTAL_HEALTH_DIRECTIVE, FORMATTING_RULES } from '../config/personas';
 import * as telegram from '../lib/telegram';
 import * as mood from '../services/mood';
@@ -344,7 +347,10 @@ async function generateCheckinMessage(
 		// the generic "caring AI companion" stub on the edge model.
 		// Infrequent (a few per week) so model cost is negligible and the
 		// voice consistency is worth it.
-		const provider = new CloudflareProvider(env.AI, CF_MODELS.chat);
+		const provider = createConfiguredProvider(env, {
+			openai: OPENAI_MODELS.chat,
+			cloudflare: CF_MODELS.chat,
+		});
 		const response = await provider.chat(
 			[{ role: 'user', content: generationPrompt }],
 			undefined,
@@ -444,14 +450,17 @@ Tone: warm, observant, personal. You know this person. Use their mood data as ev
 		// It sets enableGrounding:true, and only Gemma honours
 		// web_search_options; gpt-oss (the new CF_MODELS.chat) has no native
 		// grounding, so keeping this on chat would silently drop sourcing.
-		const provider = new CloudflareProvider(env.AI, CF_MODELS.grounded);
+		const provider = createConfiguredProvider(env, {
+			openai: OPENAI_MODELS.chat,
+			cloudflare: CF_MODELS.grounded,
+		});
 		const response = await provider.chat(
 			[{ role: 'user', content: prompt }],
 			[],
 			{
 				systemInstruction: `${BASE_INSTRUCTION}\n\n${MENTAL_HEALTH_DIRECTIVE}\n\n${FORMATTING_RULES}`,
 				thinkingLevel: 'HIGH',
-				enableGrounding: true,
+				enableGrounding: getAIProviderMode(env) === 'cloudflare',
 			}
 		);
 		text = response.text || '';

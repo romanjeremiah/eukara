@@ -180,7 +180,12 @@ export class OpenAIProvider implements AIProvider {
 	 * items, including tool-loop continuation.
 	 */
 	private convertMessages(messages: AIMessage[]): ResponseInputItem[] {
-		return messages.map((message) => this.convertMessage(message));
+		return messages.flatMap((message) => {
+			if (message._openaiInputItems?.length) {
+				return message._openaiInputItems as ResponseInputItem[];
+			}
+			return [this.convertMessage(message)];
+		});
 	}
 
 	/**
@@ -294,6 +299,7 @@ export class OpenAIProvider implements AIProvider {
 			text: response.output_text,
 			toolCalls: toolCalls.length ? toolCalls : undefined,
 			_annotations: annotations.length ? annotations : undefined,
+			_openaiRawOutput: toolCalls.length ? response.output : undefined,
 		};
 	}
 }
