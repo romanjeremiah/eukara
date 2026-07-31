@@ -9,6 +9,7 @@ import {
 	evaluateEmbeddingRecall,
 	projectOpenAIMemories,
 	scheduleEmbeddingBackfill,
+	scheduleEmbeddingEvaluation,
 } from '../src/services/embedding-projection';
 import { orderResultsByIds } from '../src/services/vector';
 
@@ -110,6 +111,26 @@ describe('Embedding backfill control', () => {
 			openaiTop3: 2,
 		});
 		expect(JSON.stringify(result)).not.toContain('Private');
+	});
+
+	it('recovers evaluation independently after backfill completion', async () => {
+		const state = new Map([['openai_embedding_backfill:v1', 'complete']]);
+		const messages = [];
+		const env = {
+			TASK_QUEUE: { send: async (message) => messages.push(message) },
+			CHAT_KV: {
+				get: async (key) => state.get(key) ?? null,
+				put: async (key, value) => state.set(key, value),
+			},
+		};
+
+		await expect(scheduleEmbeddingEvaluation(env)).resolves.toBe(true);
+		await expect(scheduleEmbeddingEvaluation(env)).resolves.toBe(false);
+		expect(messages).toEqual([{
+			type: 'evaluate_embedding_recall',
+			userId: 0,
+			chatId: 0,
+		}]);
 	});
 });
 

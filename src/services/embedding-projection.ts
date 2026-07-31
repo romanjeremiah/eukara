@@ -15,6 +15,7 @@ export const OPENAI_EMBEDDING_DIMENSIONS = 1_536;
 export const CLOUDFLARE_EMBEDDING_DIMENSIONS = 1_024;
 export const OPENAI_BACKFILL_STATE_KEY = 'openai_embedding_backfill:v1';
 export const OPENAI_EMBEDDING_EVAL_KEY = 'openai_embedding_eval:v1';
+export const OPENAI_EMBEDDING_EVAL_STATE_KEY = 'openai_embedding_eval_state:v1';
 
 export interface MemoryProjectionRow {
 	id: number;
@@ -150,6 +151,27 @@ export async function scheduleEmbeddingBackfill(
 	});
 	await env.CHAT_KV.put(OPENAI_BACKFILL_STATE_KEY, 'queued', {
 		expirationTtl: 60 * 60,
+	});
+	return true;
+}
+
+/**
+ * Independently recover recall evaluation after Vectorize convergence or a
+ * transient Queue failure without repeating the full backfill.
+ */
+export async function scheduleEmbeddingEvaluation(env: Env): Promise<boolean> {
+	if (!env.TASK_QUEUE) return false;
+	if (await env.CHAT_KV.get(OPENAI_BACKFILL_STATE_KEY) !== 'complete') return false;
+	if (await env.CHAT_KV.get(OPENAI_EMBEDDING_EVAL_KEY)) return false;
+	if (await env.CHAT_KV.get(OPENAI_EMBEDDING_EVAL_STATE_KEY) === 'queued') return false;
+
+	await env.TASK_QUEUE.send({
+		type: 'evaluate_embedding_recall',
+		userId: 0,
+		chatId: 0,
+	});
+	await env.CHAT_KV.put(OPENAI_EMBEDDING_EVAL_STATE_KEY, 'queued', {
+		expirationTtl: 5 * 60,
 	});
 	return true;
 }

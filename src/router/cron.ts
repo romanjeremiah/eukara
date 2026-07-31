@@ -13,7 +13,10 @@ import * as persona from '../services/persona';
 import * as reminders from '../services/reminders';
 import type { ReminderMetadata } from '../services/reminders';
 import * as curiosity from '../services/curiosity';
-import { scheduleEmbeddingBackfill } from '../services/embedding-projection';
+import {
+	scheduleEmbeddingBackfill,
+	scheduleEmbeddingEvaluation,
+} from '../services/embedding-projection';
 
 // Per-user spontaneous-outreach behaviour, dialled by
 // persona_config.proactivity_level (2026-06-04). Each entry tunes
@@ -37,6 +40,11 @@ export async function handleCron(env: Env): Promise<void> {
 	if (!env.OWNER_ID) return;
 	await ensureOpenAIEmbeddingBackfill(env).catch((error) =>
 		log.error('openai_embedding_backfill_schedule_error', {
+			msg: (error as Error).message,
+		}),
+	);
+	await ensureOpenAIEmbeddingEvaluation(env).catch((error) =>
+		log.error('openai_embedding_evaluation_schedule_error', {
 			msg: (error as Error).message,
 		}),
 	);
@@ -128,6 +136,15 @@ export async function handleCron(env: Env): Promise<void> {
 async function ensureOpenAIEmbeddingBackfill(env: Env): Promise<void> {
 	if (await scheduleEmbeddingBackfill(env)) {
 		log.info('openai_embedding_backfill_scheduled', { version: 'v1' });
+	}
+}
+
+/**
+ * Recover evaluation independently once the green projection is complete.
+ */
+async function ensureOpenAIEmbeddingEvaluation(env: Env): Promise<void> {
+	if (await scheduleEmbeddingEvaluation(env)) {
+		log.info('openai_embedding_evaluation_scheduled', { version: 'v1' });
 	}
 }
 

@@ -423,6 +423,9 @@ pending the embedding cutover.
 - Added an aggregate recall evaluator that stores only counts, never private
   memory text, and blocks readiness unless every sampled memory appears in the
   OpenAI top three.
+- After the first production evaluation attempt did not persist a result, added
+  an independently expiring evaluation lock. Cron now recovers evaluation
+  without repeating a completed backfill.
 
 ### Decision Register
 
@@ -455,8 +458,8 @@ pending the embedding cutover.
 - Vectorize reported the green index at 1,536 dimensions, zero vectors, and
   both metadata indexes active before deployment.
 - TypeScript validation passed.
-- The complete automated suite passed: 7 files and 39 tests.
-- Wrangler dry-run passed: 1,485.79 KiB raw and 253.56 KiB gzip, with both
+- The complete automated suite passed: 7 files and 40 tests.
+- Wrangler dry-run passed: 1,486.87 KiB raw and 253.70 KiB gzip, with both
   Vectorize bindings resolved.
 
 ### Traceability

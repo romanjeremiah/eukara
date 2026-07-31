@@ -33,8 +33,10 @@ import {
 	evaluateEmbeddingRecall,
 	OPENAI_BACKFILL_STATE_KEY,
 	OPENAI_EMBEDDING_EVAL_KEY,
+	OPENAI_EMBEDDING_EVAL_STATE_KEY,
 	projectMemoryForRollback,
 	projectMemoriesForRollback,
+	scheduleEmbeddingEvaluation,
 	type MemoryProjectionRow,
 } from '../services/embedding-projection';
 
@@ -211,11 +213,7 @@ async function processTask(task: QueueTask, env: Env, attempts: number): Promise
 				});
 			} else {
 				await env.CHAT_KV.put(OPENAI_BACKFILL_STATE_KEY, 'complete');
-				await env.TASK_QUEUE.send({
-					type: 'evaluate_embedding_recall',
-					userId: 0,
-					chatId: 0,
-				});
+				await scheduleEmbeddingEvaluation(env);
 			}
 			log.info('openai_embedding_backfill_batch', {
 				afterId,
@@ -246,6 +244,7 @@ async function processTask(task: QueueTask, env: Env, attempts: number): Promise
 					evaluatedAt: new Date().toISOString(),
 				}),
 			);
+			await env.CHAT_KV.put(OPENAI_EMBEDDING_EVAL_STATE_KEY, 'complete');
 			log.info('embedding_recall_evaluated', { ...evaluation });
 			break;
 		}
