@@ -808,3 +808,126 @@ pending the embedding cutover.
   `https://developers.openai.com/api/docs/guides/latest-model`.
 - Architecture record:
   `docs/architecture/openai-model-routing-v1-2026-07-31.md`.
+
+## 2026-07-31: Persona Parity Audit and Authorised GitHub Push
+
+### Change Log
+
+- Pushed the owner-authorised commit `317328b` on branch
+  `feat/a1-persona-instructions` to the configured GitHub origin.
+- Completed a read-only comparison of the live persona composition paths in
+  Eukara and Xaridotis. No runtime persona code or production state was changed.
+- Confirmed that Eukara still exposes Base Eukara, Luna, Socrates and Nova as
+  selectable persona identities, while Xaridotis now uses one fixed identity
+  with adaptive internal register and clinical layers.
+
+### Decision Register
+
+- Persona implementation is paused at an architectural boundary pending the
+  owner's choice between exact single-persona parity and retaining Eukara's
+  user-selectable personas.
+- Recommended direction: preserve the Eukara name and OpenAI model stack, but
+  adopt Xaridotis's one-persona architecture, current immutable core, warm-only
+  clinical directive and evolving style-card layer.
+- The disabled Xaridotis governed persona-directive feature is excluded from
+  the proposed port until its evidence, review and activation gates are ready.
+
+### Impact Assessment
+
+- Eukara's prompt text is based on the older 2026-06-06 cross-product port and
+  has since drifted from Xaridotis's 2026-07-10 persona architecture.
+- The Eukara `style_card` column exists but is not parsed or injected by the
+  current system-prompt builder, so its documented evolving layer is inactive.
+- Eukara's exported casual-register directive is not wired into prompt
+  composition. Route reasons currently select only the Luna clinical overlay
+  and Socrates code overlay when no manual persona override exists.
+- Removing selectable personas would change `/persona`, callback handling and
+  existing `active_persona_*` KV behaviour. This requires an explicit migration
+  and compatibility decision rather than a prompt-only edit.
+
+### Traceability
+
+- Owner instruction: push commit `317328b`, compare Xaridotis and Eukara again,
+  and align Eukara's persona instructions and logic with Xaridotis.
+- Current OpenAI prompt guidance and Cloudflare Workers best practices were
+  checked on 2026-07-31.
+- Compared Eukara `src/config/personas.ts`, `src/services/persona.ts`, command
+  and callback paths against Xaridotis `src/config/persona/*`,
+  `src/services/persona.js`, `src/services/personaStore.js` and the live message
+  composition path.
+
+## 2026-07-31: OpenAI-native Adaptive Eukara Persona Implemented
+
+### Change Log
+
+- Replaced the selectable Base, Luna, Socrates and Nova identity system with one
+  immutable Eukara identity and four current-turn registers: casual, warm,
+  technical and urgent.
+- Split the persona source into immutable core and conditional clinical modules,
+  while retaining `src/config/personas.ts` as a compatibility export.
+- Extended the OpenAI curator structured-output contract with `register` and up
+  to five length-bounded `activeConstraints` values. Added deterministic
+  normalisation for crisis, emotional and code intent conflicts.
+- Added strict style-card parsing. Existing scalar delivery controls remain
+  compatible, but free-text legacy notes, inferred traits and interests no
+  longer enter the system prompt.
+- Escaped current user text, profile name, dynamic context and active constraints
+  before placing them inside prompt XML structures.
+- Retired the persona selector from Telegram's registered command list. The
+  `/persona` compatibility command and old callback buttons clear only the
+  requesting user's obsolete KV override and explain adaptive behaviour.
+- Replaced the old crisis copy with a deterministic UK support response covering
+  NHS 111, Samaritans 116 123, SHOUT to 85258 and 999 or A&E.
+- Corrected the registered `/mood` description to match the live guided 1-5
+  check-in rather than the obsolete 0-10 wording.
+- Added architecture, test evidence and conclusion records under the required
+  `docs/architecture` and `docs/tests` structure.
+
+### Decision Register
+
+- The owner approved Option 1: one adaptive Eukara identity, with Luna, Terra and
+  Sol reserved for OpenAI model routing rather than user-facing personas.
+- Eukara preserves its own name, direct OpenAI routing, actual tool set, compact
+  Telegram formatting and live 1-5 mood scale while adopting Xaridotis's fixed
+  core, conditional clinical layer, manipulation boundaries, literal-first
+  discipline and closed-loop interaction logic.
+- Historical `active_persona_*` KV values remain inert for rollback and are not
+  bulk-deleted. Governed persona directives remain disabled.
+- Durable personal claims may enter the prompt only through governed memory.
+  Legacy inferred persona text remains stored but has no instruction authority.
+
+### Impact Assessment
+
+- User-visible identity is now consistent across casual, emotional, technical
+  and crisis conversations. Register changes happen internally without persona
+  announcements.
+- Prompt latency loses one KV read and gains no additional model call. Curator
+  output is slightly larger but bounded.
+- The clinical prompt cannot leak into casual or technical turns through a
+  manual persona override. Emotional and crisis classifications deterministically
+  force compatible registers after structured-output parsing.
+- No D1 schema, Worker binding, queue ownership, model-routing tier or production
+  state changed. Existing scalar proactivity behaviour used by cron is preserved.
+
+### Validation
+
+- `npm run typecheck`: passed.
+- `npm run test:unit`: 4 files and 26 tests passed.
+- `npm run test:run`: 10 files and 59 tests passed. Vitest emitted its known
+  delayed-close warning after every assertion passed.
+- `npm run deploy:dry-run`: passed at 1,695.77 KiB raw and 269.03 KiB gzip.
+- `git diff --check`: passed.
+- The complete implementation diff was reviewed. The user's unrelated tracked
+  `.DS_Store` deletions remain untouched and outside the implementation scope.
+
+### Traceability
+
+- Owner approval: "Yes, proceed with option 1, please."
+- Architecture record:
+  `docs/architecture/openai-native-persona-alignment-2026-07-31.md`.
+- Test evidence:
+  `docs/tests/results/2026-07-31-persona-alignment.txt` and
+  `docs/tests/conclusions/2026-07-31-openai-native-persona-alignment.md`.
+- Official guidance checked on 2026-07-31: OpenAI GPT-5.6 model prompting,
+  Cloudflare Workers best practices, Telegram Bot API `setMyCommands` and NHS
+  urgent mental-health support routes.

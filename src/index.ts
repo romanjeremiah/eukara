@@ -338,11 +338,10 @@ async function handleRegisterCommands(env: Env): Promise<Response> {
 	if (!token) return new Response('TELEGRAM_TOKEN not set', { status: 500 });
 
 	const commands = [
-		{ command: 'mood', description: 'Log your mood (0-10 scale with emotions)' },
+		{ command: 'mood', description: 'Start a guided mood and sleep check-in' },
 		{ command: 'listen', description: 'Start a brain dump session' },
 		{ command: 'done', description: 'End listening / brain dump' },
 		{ command: 'architect', description: 'Run an innovation review' },
-		{ command: 'persona', description: 'Change conversational mode' },
 		{ command: 'memories', description: 'Show what I remember about you' },
 		{ command: 'forget', description: 'Delete memories (category or all)' },
 		{ command: 'timezone', description: 'Set your local timezone' },

@@ -7,13 +7,11 @@
 // ============================================================
 
 import type { TelegramMessage, TelegramInlineKeyboardButton } from '../types/telegram';
-import type { MemoryRow, PersonaConfigRow } from '../types/db';
+import type { MemoryRow } from '../types/db';
 import * as telegram from '../lib/telegram';
 import * as memory from '../services/memory';
 import * as governedMemory from '../services/governed-memory';
 import * as user from '../services/user';
-import * as persona from '../services/persona';
-import { PERSONA_PRESETS, type PersonaPreset } from '../config/persona-presets';
 import { TIMEZONE_PRESETS, findPresetByTz, isValidTimezone } from '../config/timezone-presets';
 import { clearHistory } from '../lib/history';
 import { escapeHtml, formatTime } from '../lib/formatting';
@@ -143,22 +141,13 @@ export async function handleCommand(
 			const userId = msg.from?.id;
 			if (!userId) return true;
 			await user.ensureUser(env, userId, msg.from?.first_name, msg.from?.username, msg.from?.language_code);
-			
-			const kvPersona = await env.CHAT_KV.get(`active_persona_${userId}`);
-			const current = kvPersona || 'base';
-
-			const header = `<b>Pick a conversational persona</b>\n\nChoose the personality you want to interact with. If you choose Base Eukara, the system will dynamically route you based on your input intent.`;
-
-			const rows = [
-				[{ text: `🟢 Base Eukara (Dynamic)${current === 'base' ? ' ✓' : ''}`, callback_data: `persona_switch_base` }],
-				[{ text: `🌙 Luna (Mindfulness)${current === 'luna' ? ' ✓' : ''}`, callback_data: `persona_switch_luna` }],
-				[{ text: `🏛 Socrates (Analytical)${current === 'socrates' ? ' ✓' : ''}`, callback_data: `persona_switch_socrates` }],
-				[{ text: `✨ Nova (Creative)${current === 'nova' ? ' ✓' : ''}`, callback_data: `persona_switch_nova` }]
-			];
-
-			await telegram.sendMessage(chatId, threadId, header, env, {
-				markup: { inline_keyboard: rows },
-			});
+			await env.CHAT_KV.delete(`active_persona_${userId}`);
+			await telegram.sendMessage(
+				chatId,
+				threadId,
+				'<b>Eukara now adapts automatically</b>\n\nThere is one consistent Eukara identity. The conversational register changes from turn to turn based on your current intent, while your delivery preferences remain in effect. Luna, Terra and Sol are model routes, not personas.',
+				env,
+			);
 			return true;
 		}
 
@@ -334,22 +323,6 @@ export async function handleCommand(
 // ============================================================
 // Command helpers
 // ============================================================
-
-/**
- * Guess which preset the user's current persona_config matches.
- * Returns the preset if all five knobs match exactly, else undefined.
- * We ignore communication_notes, topics_of_interest, evolved_traits —
- * those drift through observation and don't define the preset.
- */
-function inferCurrentPreset(config: PersonaConfigRow): PersonaPreset | undefined {
-	return PERSONA_PRESETS.find(p =>
-		p.tone === config.tone &&
-		p.formality === config.formality &&
-		p.humour_level === config.humour_level &&
-		p.emoji_style === config.emoji_style &&
-		p.therapeutic_approach === config.therapeutic_approach
-	);
-}
 
 /**
  * Format the full list of memories grouped by category.

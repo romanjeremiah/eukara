@@ -13,7 +13,6 @@ import { findPresetByTz } from '../config/timezone-presets';
 import { handleWizardCallback } from './mood-wizard';
 import { buildChecklistText } from '../tools/checklist-tools';
 import * as user from '../services/user';
-import * as persona from '../services/persona';
 import * as memory from '../services/memory';
 import * as governedMemory from '../services/governed-memory';
 
@@ -75,31 +74,17 @@ export async function handleCallback(
 			'⚙️ <b>Architecture review cancelled.</b> Run /architect to start fresh.', env);
 		await telegram.answerCallbackQuery(query.id, env, { text: 'Cancelled.' }).catch(() => {});
 
-	// --- Persona preset / mode selection ---
+	// --- Retired persona buttons retained for old Telegram messages ---
 	} else if (data.startsWith('persona_switch_')) {
-		const newPersona = data.replace('persona_switch_', '');
 		const userId = query.from.id;
-		
-		if (newPersona === 'base') {
-			await env.CHAT_KV.delete(`active_persona_${userId}`);
-		} else {
-			await env.CHAT_KV.put(`active_persona_${userId}`, newPersona);
-		}
-
-		const names: Record<string, string> = {
-			base: '🟢 Base Eukara (Dynamic)',
-			luna: '🌙 Luna (Mindfulness)',
-			socrates: '🏛 Socrates (Analytical)',
-			nova: '✨ Nova (Creative)'
-		};
-
+		await env.CHAT_KV.delete(`active_persona_${userId}`);
 		await telegram.editMessage(chatId, msgId,
-			`<b>Persona set: ${names[newPersona] || newPersona}</b>\n\n<i>You'll feel the shift in the next message.</i>`,
+			'<b>Eukara now adapts automatically</b>\n\nThe old persona selector has been retired. Eukara keeps one identity and selects the appropriate conversational register for each turn.',
 			env);
 		await telegram.answerCallbackQuery(query.id, env, {
-			text: `✓ ${newPersona}`,
+			text: 'Adaptive Eukara enabled',
 		}).catch(() => {});
-		log.info('persona_switched', { userId, newPersona });
+		log.info('legacy_persona_override_cleared', { userId });
 
 	// --- Governed memory review ---
 	} else if (data.startsWith('memory_confirm_')) {

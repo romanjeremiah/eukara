@@ -29,6 +29,7 @@ import { handleMessage } from '../bot/message';
 import { allTools } from '../tools';
 import type { AIMessage } from '../types/ai';
 import type { TelegramMessage } from '../types/telegram';
+import type { CuratorResult } from '../ai/curator';
 import {
 	evaluateEmbeddingRecall,
 	OPENAI_BACKFILL_STATE_KEY,
@@ -62,12 +63,7 @@ interface QueueTask {
 	/**
 	 * Pre-computed intent triage from Curator (Layer A1).
 	 */
-	curatorResult?: {
-		intent: string;
-		isCrisis: boolean;
-		complexity: 'simple' | 'substantive';
-		needsCurrentInformation: boolean;
-	};
+	curatorResult?: CuratorResult;
 	memoryId?: number;
 	category?: string;
 	fact?: string;
@@ -384,7 +380,7 @@ async function processTask(task: QueueTask, env: Env, attempts: number): Promise
 			try {
 				await handleMessage(task.message, env, allTools, {
 					forceHeavyLane: task.forceHeavyLane,
-					curatorResult: task.curatorResult as any,
+					curatorResult: task.curatorResult,
 				});
 				log.info('queue_user_message_done', { userId, chatId: qChatId });
 			} catch (hmErr) {

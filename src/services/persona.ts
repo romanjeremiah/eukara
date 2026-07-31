@@ -1,33 +1,20 @@
 // ============================================================
-// Personas Service
-//
-// Owns everything to do with the persona_config table plus the
-// composition of Eukara's system prompt for a given user.
-//
-// Phase 2 (2026-06-03). Renamed from personas.ts to match the
-// rest of the Eukara service-file naming convention (singular
-// domain noun: memory.ts, episode.ts, mood.ts, weather.ts).
-// Dependency direction: persona.ts imports from user.ts. user.ts
-// does not import from here.
-//
-// Conversational modes (balanced / warm / direct / playful /
-// minimal) are templates defined in src/config/persona-presets.ts.
-// /persona writes the chosen mode's slider values into persona_config
-// via updatePersonaConfig() below. buildSystemInstruction reads
-// those slider values back at every turn.
+// Eukara persona service
+// ============================================================
+// Eukara has one immutable identity. The curator chooses a temporary
+// conversational register for each turn; validated user settings only
+// calibrate delivery and cannot replace safety or authorisation rules.
 // ============================================================
 
 import type { PersonaConfigRow } from '../types/db';
+import type { CuratorConstraint, CuratorResult } from '../ai/curator';
 import {
 	BASE_INSTRUCTION,
 	MENTAL_HEALTH_DIRECTIVE,
 	FORMATTING_RULES,
-	SECOND_BRAIN_DIRECTIVE,
-	LUNA_PERSONA,
-	SOCRATES_PERSONA,
-	NOVA_PERSONA,
 } from '../config/personas';
 import { getProfile } from './user';
+import { parseStyleCard, validateStyleCard, type StyleCard } from './style-card';
 
 const DEFAULT_PERSONA: PersonaConfigRow = {
 	user_id: 0,
@@ -45,10 +32,8 @@ const DEFAULT_PERSONA: PersonaConfigRow = {
 };
 
 /**
- * Read the user's persona_config row.
- * Falls back to DEFAULT_PERSONA when the row is missing, so callers
- * don't have to null-check every slider. The defaults match the
- * 'balanced' preset.
+ * Read the user's legacy scalar delivery controls. Proactivity remains a
+ * runtime setting used by cron and is never emitted into the model prompt.
  */
 export async function getPersonaConfig(env: Env, userId: number): Promise<PersonaConfigRow> {
 	const config = await env.DB.prepare(
@@ -83,30 +68,110 @@ export async function updatePersonaConfig(
 }
 
 /**
- * Build the full system instruction for a specific user.
- *
- * Composition order (important: earlier layers set the frame,
- * later layers refine):
- *   1. BASE_INSTRUCTION             identity, voice, therapeutic frameworks
- *   2. USER CONTEXT + PERSONA OVERLAY  who the user is, how Eukara speaks to them
- *   3. MENTAL_HEALTH_DIRECTIVE      clinical protocol
- *   4. FORMATTING_RULES             typography and HTML rules
- *   5. SECOND_BRAIN_DIRECTIVE       accountability, note-taking, actions
- *   6. DYNAMIC CONTEXT              per-turn memory, time, episodes, etc.
- *
- * The persona overlay block is the per-user calibration: tone /
- * formality / humour / emoji / therapeutic_approach plus any
- * accumulated evolved_traits, communication_notes, and stated
- * topics_of_interest. These come from /persona presets or from
- * the daily evolution cron (Phase 4).
+ * Escape untrusted values before placing them inside prompt XML blocks.
+ */
+function escapePromptXml(value: string): string {
+	return value
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&apos;');
+}
+
+/** Return a known scalar setting or a safe fallback. */
+function allowedValue(value: string, allowed: readonly string[], fallback: string): string {
+	return allowed.includes(value) ? value : fallback;
+}
+
+/**
+ * Use a validated structured style card when present. Otherwise translate the
+ * existing scalar controls so an upgrade does not unexpectedly change delivery.
+ */
+function resolveStyleCard(raw: string | null | undefined, config: PersonaConfigRow): StyleCard {
+	if (raw) return parseStyleCard(raw);
+
+	const humourMap: Record<string, StyleCard['humour']> = {
+		low: 'dry',
+		moderate: 'moderate',
+		high: 'high',
+		none: 'none',
+		dry: 'dry',
+	};
+	const densityMap: Record<string, StyleCard['formatting_density']> = {
+		terse: 'sparse',
+		standard: 'balanced',
+		detailed: 'rich',
+	};
+
+	return validateStyleCard({
+		tone: config.tone,
+		humour: humourMap[config.humour_level],
+		emoji_pattern: config.emoji_style,
+		formatting_density: densityMap[config.verbosity],
+		register_override: null,
+	});
+}
+
+/** Build the immutable, validated per-user delivery block. */
+export function buildDeliveryContext(
+	style: StyleCard,
+	config: PersonaConfigRow,
+): string {
+	const formality = allowedValue(config.formality, ['casual', 'neutral', 'formal'], 'casual');
+	const therapeuticApproach = allowedValue(
+		config.therapeutic_approach,
+		['supportive', 'gentle', 'challenging', 'neutral'],
+		'supportive',
+	);
+	const registerPreference = style.register_override ?? 'none';
+
+	return `<style_card>
+Tone: ${style.tone}
+Humour: ${style.humour}
+Emoji pattern: ${style.emoji_pattern}
+Formatting density: ${style.formatting_density}
+Preferred register: ${registerPreference}
+Formality: ${formality}
+Reflective delivery: ${therapeuticApproach}
+These settings calibrate delivery only. The curator's current mode wins whenever they conflict.
+</style_card>`;
+}
+
+/** Build a narrow current-turn mode selected by the curator. */
+export function buildCurrentMode(register: CuratorResult['register']): string {
+	const guidance: Record<CuratorResult['register'], string> = {
+		casual: 'Use ordinary, light and concise conversation. Do not introduce therapeutic framing.',
+		warm: 'Be emotionally present and plain-spoken. Match the user\'s weight without forcing depth.',
+		technical: 'Be direct, evidence-led and structurally precise. State trade-offs and assumptions.',
+		urgent: 'Use the safety register. Stay calm, direct and focused on connection to human support.',
+	};
+	return `<current_mode register="${register}">${guidance[register]}</current_mode>`;
+}
+
+/** Build current-message constraints after curator schema validation. */
+export function buildActiveConstraints(constraints: CuratorConstraint[]): string {
+	if (!constraints.length) return '<active_user_constraints>None.</active_user_constraints>';
+	const lines = constraints.map(constraint =>
+		`<constraint category="${constraint.category}">${escapePromptXml(constraint.text)}</constraint>`,
+	);
+	return `<active_user_constraints>\n${lines.join('\n')}\n</active_user_constraints>`;
+}
+
+/**
+ * Build the full system instruction for one user and one curated turn.
+ * Historical free-text traits remain stored but are deliberately excluded:
+ * only governed memory context may introduce durable personal claims.
  */
 export async function buildSystemInstruction(
-	env: Env, userId: number, dynamicContext: string, routeReason?: string
+	env: Env,
+	userId: number,
+	dynamicContext: string,
+	curator?: Pick<CuratorResult, 'register' | 'activeConstraints'>,
 ): Promise<string> {
-	const [profile, personaConfig, kvPersona] = await Promise.all([
+	const [profile, personaConfig] = await Promise.all([
 		getProfile(env, userId),
 		getPersonaConfig(env, userId),
-		env.CHAT_KV.get(`active_persona_${userId}`),
 	]);
 
 	const userName = profile?.first_name ?? 'there';
@@ -114,61 +179,24 @@ export async function buildSystemInstruction(
 		? Math.floor((Date.now() - new Date(profile.first_seen_at + 'Z').getTime()) / 86400000)
 		: 0;
 
-	// Per-user persona overlay: tone, formality, humour, verbosity,
-	// evolved traits. proactivity_level is NOT included — it's a runtime
-	// gate for the cron outreach loop, not a tone instruction; surfacing
-	// it as text would invite the model to interpret it as a verbal
-	// instruction ("act high-proactivity") which isn't what it means.
-	const personaOverlay = [
-		`Tone: ${personaConfig.tone}`,
-		`Formality: ${personaConfig.formality}`,
-		`Humour: ${personaConfig.humour_level}`,
-		`Emoji usage: ${personaConfig.emoji_style}`,
-		`Therapeutic approach: ${personaConfig.therapeutic_approach}`,
-		`Verbosity: ${personaConfig.verbosity}`,
-		personaConfig.communication_notes ? `Communication notes: ${personaConfig.communication_notes}` : '',
-		personaConfig.evolved_traits ? `Evolved personality traits (learned from this user): ${personaConfig.evolved_traits}` : '',
-		personaConfig.topics_of_interest ? `User's stated interests: ${personaConfig.topics_of_interest}` : '',
-	].filter(Boolean).join('\n');
-
-	// Stable profile facts worth knowing every turn.
-	const userContext = [
-		profile?.known_hobbies ? `Known hobbies: ${profile.known_hobbies}` : '',
-		profile?.core_traits ? `Core traits: ${profile.core_traits}` : '',
-		profile?.communication_preference ? `Preferred style: ${profile.communication_preference}` : '',
-	].filter(Boolean).join('\n');
-
-	const userBlock = `
-<context>
-CURRENT USER: ${userName} (known for ${daysKnown} days)
-${userContext}
-
-YOUR PERSONALITY CALIBRATION FOR THIS USER:
-${personaOverlay}
-</context>
-`.trim();
-
-	let activePersonaBlock = '';
-	let includeMentalHealth = false;
-
-	const activePersona = kvPersona || 'base';
-
-	if (activePersona === 'luna' || (!kvPersona && (routeReason === 'emotional_content' || routeReason === 'active_health_checkin'))) {
-		activePersonaBlock = LUNA_PERSONA;
-		includeMentalHealth = true;
-	} else if (activePersona === 'socrates' || (!kvPersona && routeReason === 'code_content')) {
-		activePersonaBlock = SOCRATES_PERSONA;
-	} else if (activePersona === 'nova') {
-		activePersonaBlock = NOVA_PERSONA;
-	}
+	const register = curator?.register ?? 'casual';
+	const constraints = curator?.activeConstraints ?? [];
+	const style = resolveStyleCard(profile?.style_card, personaConfig);
+	const userBlock = `<user_context>
+Name: ${escapePromptXml(userName)}
+Known for: ${daysKnown} days
+Durable personal claims are supplied only through governed memory context.
+</user_context>`;
+	const includeMentalHealth = register === 'warm' || register === 'urgent';
 
 	return [
 		BASE_INSTRUCTION,
 		userBlock,
-		activePersonaBlock,
+		buildDeliveryContext(style, personaConfig),
+		buildCurrentMode(register),
+		buildActiveConstraints(constraints),
 		includeMentalHealth ? MENTAL_HEALTH_DIRECTIVE : '',
 		FORMATTING_RULES,
-		SECOND_BRAIN_DIRECTIVE,
-		dynamicContext,
+		`<turn_context>\n${escapePromptXml(dynamicContext)}\n</turn_context>`,
 	].filter(Boolean).join('\n\n');
 }

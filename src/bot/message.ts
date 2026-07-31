@@ -422,7 +422,7 @@ export async function handleMessage(
 	// Layer A1: Clinical Safety Firewall (Hard Cut)
 	if (curatorResult.isCrisis) {
 		log.warn('clinical_safety_firewall_triggered', { userId, textPreview: userText.slice(0, 50) });
-		const crisisResponse = 'I hear you, and I want you to know you are not alone right now. If things feel unmanageable, Samaritans are on 116 123 and SHOUT take texts on 85258. What has been the heaviest part today?';
+		const crisisResponse = '<b>This sounds like an immediate safety concern.</b> I cannot keep you safe on my own, so please connect with human support now.\n\n• Call <b>NHS 111</b> and select the mental health option.\n• Call <b>Samaritans on 116 123</b>.\n• Text <b>SHOUT to 85258</b>.\n• If you or someone else is in immediate danger, call <b>999</b> or go to A&amp;E.\n\nIf you can, contact one of them now and stay with someone you trust while you do.';
 		
 		const crisisBtns = {
 			inline_keyboard: [[
@@ -543,7 +543,7 @@ export async function handleMessage(
 	].filter(Boolean).join('\n');
 
 	// Build per-user system instruction (persona evolves per user)
-	const systemInstruction = await persona.buildSystemInstruction(env, userId, dynamicContext, route.reason);
+	const systemInstruction = await persona.buildSystemInstruction(env, userId, dynamicContext, curatorResult);
 
 	// Load prior conversation history — sanitised on load, tool-loop
 	// entries stripped. History is always text-only; the current turn

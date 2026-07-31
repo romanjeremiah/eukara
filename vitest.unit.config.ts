@@ -10,6 +10,7 @@ export default defineConfig({
 		include: [
 			'test/governed-memory.spec.js',
 			'test/openai-adapter.spec.js',
+			'test/persona.spec.js',
 			'test/telegram-formatting.spec.js',
 		],
 	},
