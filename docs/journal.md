@@ -613,6 +613,17 @@ pending the embedding cutover.
   returned malformed responses and HTTP 522 errors; no test assertion failed.
 - `git diff --check`: passed.
 
+### Deployment
+
+- Release commit: `a4007ad fix(telegram): restore classic conversation
+  rendering`.
+- Two deployment attempts stopped before upload because Cloudflare's service
+  endpoint returned HTTP 525 and HTTP 521 malformed responses. Production was
+  not changed by either attempt.
+- The last confirmed production version remains
+  `cc80dcb3-d3a9-4702-9d93-81682e4e9706`; the immediate rollback version
+  remains `277ce8ac-82d6-4bab-afac-1ec965390bee`.
+
 ### Traceability
 
 - Owner instruction: “I agree with your proposal, please implement”.
