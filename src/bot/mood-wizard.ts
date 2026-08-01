@@ -4,6 +4,7 @@ import { log } from '../lib/logger';
 import { loadHistory } from '../lib/history';
 import { createConfiguredProvider } from '../ai/provider-factory';
 import { CF_MODELS, OPENAI_MODELS } from '../config/models';
+import * as persona from '../services/persona';
 import {
 	arrayBufferToBase64,
 	persistTelegramMedia,
@@ -239,23 +240,25 @@ async function finishWizard(
 
 	const history = await getFormattedHistory(env, chatId, threadId, 10);
 	
-	const prompt = `
-You are a highly perceptive, concise friend. Review the following mood check-in data and recent chat history to write an extremely concise, natural summary of how the user is doing.
-
-Rules:
-1. Be extremely concise (1-2 sentences max).
-2. Sound like a friend's observation, not a clinical assessment. Do not use medical or psychological terminology.
-3. Automatically allocate suitable emojis based on their sleep and mood.
-4. Incorporate context from the recent chat history and the photo (if analyzed) to make the summary insightful.
-
-Mood Check Data:
+	const systemInstruction = await persona.buildSystemInstruction(
+		env,
+		userId,
+		`Completed guided mood check-in:
 - Sleep: ${state.data.sleepHours} hours
 - Mood Level: ${state.data.moodLevel}
 - Photo Analysis: ${visionContext || 'None'}
 
 Recent Chat History:
-${history}
-`;
+${history}`,
+		{
+			register: 'warm',
+			activeConstraints: [
+				{ category: 'task', text: 'Reply in one or two sentences.' },
+				{ category: 'tone', text: 'Offer a natural, observant reflection rather than a clinical assessment.' },
+				{ category: 'boundary', text: 'Do not use medical or psychological terminology.' },
+			],
+		},
+	);
 
 	const provider = createConfiguredProvider(env, {
 		cloudflare: CF_MODELS.chat,
@@ -263,10 +266,16 @@ ${history}
 	});
 	
 	try {
-		const aiResponse = await provider.chat([
-			{ role: 'system', content: 'You are a concise, observant friend.' },
-			{ role: 'user', content: prompt }
-		]);
+		const aiResponse = await provider.chat(
+			[{ role: 'user', content: 'Reflect this check-in back to me naturally.' }],
+			[],
+			{
+				systemInstruction,
+				thinkingLevel: 'LOW',
+				maxTokens: 300,
+				enableGrounding: false,
+			},
+		);
 		
 		await telegram.sendMessage(chatId, threadId, aiResponse.text || "Got it, your mood has been logged.", env);
 

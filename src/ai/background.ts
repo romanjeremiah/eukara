@@ -46,8 +46,8 @@ async function generate(
 
 /**
  * Subconscious Processing (Domain 3 Layer G & F3).
- * Single JSON pass to extract memory, mood, personality evolution, and episode tracking.
- * We use the faster, cheaper 3b reasoning model for this background task.
+ * Single JSON pass to extract reviewable relationship and delivery candidates.
+ * Dedicated domain flows retain ownership of mood and episode data.
  */
 export async function runSubconsciousProcessing(
 	env: Env,
@@ -55,10 +55,7 @@ export async function runSubconsciousProcessing(
 	botResponse: string
 ): Promise<{
 	triples?: string[],
-	mood_score?: number,
-	emotions?: string[],
-	personality_traits?: string[],
-	episode_topic?: string
+	personality_traits?: string[]
 } | null> {
 	const result = await generate(env, {
 		openai: OPENAI_MODELS.background,
@@ -71,10 +68,7 @@ BOT: ${botResponse.slice(0, 300)}
 Perform subconscious analysis and return ONLY a valid JSON object matching this schema:
 {
   "triples": ["Subject | Predicate | Object"], // Any NEW factual relational knowledge learned about the user
-  "mood_score": 5, // Estimated 1-10 mood of the user based on text (1=crisis, 10=ecstatic)
-  "emotions": ["anxious", "tired"], // 1-3 emotions detected in user
-  "personality_traits": ["User prefers direct answers", "User uses dark humor"], // How the BOT should evolve its personality to match user preferences (ONLY if a shift is detected)
-  "episode_topic": "Debugging code" // The current micro-topic
+  "personality_traits": ["User prefers direct answers", "User uses dry humour"] // Possible delivery preferences (ONLY if directly supported by the exchange)
 }
 
 Return ONLY raw JSON. No markdown fences.`,
@@ -106,7 +100,7 @@ export async function tagMoodEntry(
 		openai: OPENAI_MODELS.background,
 		cloudflare: CF_MODELS.tagging,
 	},
-		`Mood score: ${score}/10. Emotions: ${emotions.join(', ')}. Note: ${(note ?? 'none').slice(0, 200)}.
+		`Mood score: ${score}/5. Emotions: ${emotions.join(', ')}. Note: ${(note ?? 'none').slice(0, 200)}.
 
 Tag this entry with 1-3 clinical categories from this list:
 depressive_episode, anxiety_state, hypomanic_signs, stable_baseline, mixed_state, crisis_risk, productive_phase, social_withdrawal, sleep_disruption, medication_response

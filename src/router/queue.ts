@@ -18,11 +18,11 @@ import {
 	createConfiguredProvider,
 	getAIProviderMode,
 } from '../ai/provider-factory';
-import { BASE_INSTRUCTION, MENTAL_HEALTH_DIRECTIVE, FORMATTING_RULES } from '../config/personas';
 import * as telegram from '../lib/telegram';
 import * as mood from '../services/mood';
 import * as memory from '../services/memory';
 import * as episode from '../services/episode';
+import * as persona from '../services/persona';
 import { normaliseMarkdown, enforceTagNesting } from '../lib/formatting';
 import { loadHistory, saveHistory } from '../lib/history';
 import { handleMessage } from '../bot/message';
@@ -412,9 +412,9 @@ async function processTask(task: QueueTask, env: Env, attempts: number): Promise
  * sendTelegram with no history write, so the user's reply loaded stale
  * history (potentially days old) and the model confabulated.
  *
- * Routes through CloudflareProvider so it uses max_completion_tokens
- * (F4) and gets the same chat_template treatment as user-initiated
- * turns.
+ * Routes through the configured provider and adaptive Eukara persona so it
+ * receives the same identity and validated delivery settings as
+ * user-initiated turns.
  *
  * `userPromptForHistory` is a short synthetic marker like
  * "[automatic morning check-in trigger]" that goes into history as the
@@ -435,11 +435,18 @@ async function generateCheckinMessage(
 	let greeting = fallbackMessage;
 
 	try {
-		// Tone fix (2026-06-03): proactive messages now generate through
-		// Eukara's real persona voice (BASE + FORMATTING) on Gemini, not
-		// the generic "caring AI companion" stub on the edge model.
-		// Infrequent (a few per week) so model cost is negligible and the
-		// voice consistency is worth it.
+		const systemInstruction = await persona.buildSystemInstruction(
+			env,
+			userId,
+			'Automated spontaneous outreach based on one selected, non-clinical memory.',
+			{
+				register: 'casual',
+				activeConstraints: [
+					{ category: 'task', text: 'Write one or two short sentences.' },
+					{ category: 'boundary', text: 'Do not offer help or turn the message into a check-in.' },
+				],
+			},
+		);
 		const provider = createConfiguredProvider(env, {
 			openai: OPENAI_MODELS.chat,
 			cloudflare: CF_MODELS.chat,
@@ -448,7 +455,7 @@ async function generateCheckinMessage(
 			[{ role: 'user', content: generationPrompt }],
 			undefined,
 			{
-				systemInstruction: `${BASE_INSTRUCTION}\n\n${FORMATTING_RULES}`,
+				systemInstruction,
 				thinkingLevel: 'LOW',
 				enableGrounding: false,
 			},
@@ -480,7 +487,7 @@ async function generateCheckinMessage(
 
 /**
  * Weekly report generator. Pulls the past 7 days of data and asks
- * Gemini Pro for a synthesis. Structure prioritises warm prose over
+ * the configured reflective model for a synthesis. Structure prioritises warm prose over
  * dashboard-style metrics.
  *
  * Falls back gracefully if there's too little data to report on —
@@ -509,14 +516,14 @@ async function generateAndSendWeeklyReport(
 
 	// Build the data context for the prompt.
 	const moodSummary = moodHistory.length
-		? moodHistory.map(e => `${e.date}: ${e.mood_score ?? '?'}/10${e.emotions ? ` (${safeJsonArray(e.emotions).slice(0, 3).join(', ')})` : ''}`).join('\n')
+		? moodHistory.map(e => `${e.date}: ${e.mood_score ?? '?'}/5${e.emotions ? ` (${safeJsonArray(e.emotions).slice(0, 3).join(', ')})` : ''}`).join('\n')
 		: '(no mood check-ins this week)';
 	const memoriesSummary = recentMemories.length
 		? recentMemories.slice(0, 15).map(m => `- [${m.category}] ${m.fact}`).join('\n')
 		: '(no new memories saved this week)';
 	const episodesSummary = episode.formatEpisodesForContext(recentEpisodes) || '(no notable episodes logged)';
 
-	const prompt = `Generate a warm, personal weekly summary. The user has just finished a week and you're reflecting it back to them.
+	const prompt = `Reflect the user's week back to them using the supplied data as evidence.
 
 CHECK-INS THIS WEEK: ${checkinCount}/7
 
@@ -529,20 +536,29 @@ ${memoriesSummary}
 NOTABLE EPISODES:
 ${episodesSummary}
 
-YOUR RESPONSE (3-5 short paragraphs, natural prose — never bullet points):
-1. Open with how this week FELT, based on the mood data. Don't just list scores — characterise the shape (steady, turbulent, upward, depleted).
-2. Highlight one or two themes from the memories or episodes. What seemed to matter to them this week?
-3. If you notice a pattern (recurring emotions, a triggering situation, a coping strategy that worked), name it gently — but only if it's genuinely visible in the data.
-4. End with one forward-looking observation or a single open question about the week ahead.
-
-Tone: warm, observant, personal. You know this person. Use their mood data as evidence, not as metrics to parade. Never use headers or bullet lists — this is a letter, not a dashboard. Do not mention the word "report" or "summary" in your response. Do NOT use emoji.`;
+Characterise the shape of the week rather than listing scores. Highlight one or
+two supported themes. Name a pattern only when it is genuinely visible, then end
+with one forward-looking observation or one open question.`;
 
 	let text: string;
 	try {
-		// 2026-07-01: weekly report stays on the grounded model (Gemma).
-		// It sets enableGrounding:true, and only Gemma honours
+		// The Cloudflare fallback stays on the grounded model. It sets
+		// enableGrounding:true, and only that route honours
 		// web_search_options; gpt-oss (the new CF_MODELS.chat) has no native
 		// grounding, so keeping this on chat would silently drop sourcing.
+		const systemInstruction = await persona.buildSystemInstruction(
+			env,
+			userId,
+			'Automated weekly reflection over user-owned mood, memory and episode records.',
+			{
+				register: 'warm',
+				activeConstraints: [
+					{ category: 'task', text: 'Write three to five short paragraphs of natural prose.' },
+					{ category: 'tone', text: 'Use no headings, bullet lists or emoji.' },
+					{ category: 'boundary', text: 'Do not call the response a report or summary.' },
+				],
+			},
+		);
 		const provider = createConfiguredProvider(env, {
 			openai: OPENAI_MODELS.chat,
 			cloudflare: CF_MODELS.grounded,
@@ -551,7 +567,7 @@ Tone: warm, observant, personal. You know this person. Use their mood data as ev
 			[{ role: 'user', content: prompt }],
 			[],
 			{
-				systemInstruction: `${BASE_INSTRUCTION}\n\n${MENTAL_HEALTH_DIRECTIVE}\n\n${FORMATTING_RULES}`,
+				systemInstruction,
 				thinkingLevel: 'HIGH',
 				enableGrounding: getAIProviderMode(env) === 'cloudflare',
 			}

@@ -43,8 +43,9 @@ export async function getPersonaConfig(env: Env, userId: number): Promise<Person
 }
 
 /**
- * Patch persona_config fields. Pass any subset of the eight
- * editable columns; updated_at is bumped automatically.
+ * Patch the validated scalar persona controls; updated_at is bumped
+ * automatically. Historical free-text columns remain stored but cannot gain
+ * instruction authority through this writer.
  *
  * Unknown keys are silently dropped via the allow-list. This is
  * intentional: callers (including tools that the model invokes)
@@ -55,8 +56,7 @@ export async function updatePersonaConfig(
 	env: Env, userId: number, updates: Partial<PersonaConfigRow>
 ): Promise<void> {
 	const allowed = ['tone', 'formality', 'humour_level', 'emoji_style',
-		'therapeutic_approach', 'verbosity', 'proactivity_level',
-		'topics_of_interest', 'communication_notes', 'evolved_traits'];
+		'therapeutic_approach', 'verbosity', 'proactivity_level'];
 	const fields = Object.entries(updates).filter(([k]) => allowed.includes(k));
 	if (!fields.length) return;
 

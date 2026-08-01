@@ -995,3 +995,79 @@ pending the embedding cutover.
   `docs/tests/conclusions/2026-07-31-telegram-webhook-authentication.md`.
 - Official guidance checked on 2026-07-31: Telegram Bot API `setWebhook`,
   Cloudflare Workers secrets, Web Crypto and Worker best practices.
+
+## 2026-08-01: Adaptive Eukara Persona Finalised
+
+### Change Log
+
+- Routed spontaneous outreach, weekly reflections and guided mood-check-in
+  synthesis through the canonical adaptive persona composer.
+- Assigned the casual register to non-clinical spontaneous outreach and the
+  warm register to weekly and mood reflections, with bounded task, tone and
+  boundary constraints for each flow.
+- Removed duplicated generic-friend and partial base-persona prompts from those
+  secondary generation paths.
+- Restricted persona-config updates to validated scalar delivery controls.
+  Historical free-text interests, notes and inferred traits remain stored but
+  cannot be updated through this service or gain prompt authority.
+- Removed unused mood and episode inference fields from background observation
+  output while preserving reviewable knowledge-graph and personality-trait
+  candidates behind governed-memory capture.
+- Corrected remaining generated mood context from a 1-10 label to the live 1-5
+  product scale.
+- Deleted the inactive `src/index.js` legacy Worker, which contained the retired
+  KVN persona and an embedded Telegram bot token. Wrangler continues to execute
+  `src/index.ts`.
+- Added architecture, unit-test, raw validation and conclusion records under
+  the required `docs` structure.
+
+### Decision Register
+
+- The owner's instruction to "finish persona adjustments for Eukara" completes
+  the already approved one-identity adaptive-persona architecture. It does not
+  authorise automatic style evolution, governed persona-directive activation,
+  a new model-routing tier or a database migration.
+- Product-specific tasks express their narrow response requirements through
+  active constraints. Identity, formatting and clinical rules retain one
+  canonical source.
+- The inactive credential-bearing file must not remain in the current tree.
+  Deletion does not remediate Git history, so the Telegram bot token requires
+  owner-operated revocation and replacement.
+- Git-history rewriting and production deployment remain outside this change.
+
+### Impact Assessment
+
+- All user-visible model-generated conversation now inherits Eukara's immutable
+  identity, validated style card, current register and formatting rules.
+- Casual outreach cannot acquire clinical framing. Reflective flows receive the
+  clinical layer without turning into diagnoses or generic therapy scripts.
+- No D1 schema, binding, queue contract, model route, reasoning tier, Telegram
+  API or production state changed.
+- Secondary generation adds no model call. The persona composer adds a parallel
+  profile and persona-config read where those paths previously used static text.
+- The current tracked-file credential scan is clean, but the historical bot
+  token remains a security risk until rotation is complete.
+
+### Validation
+
+- `npm run typecheck`: passed.
+- `npm run test:unit`: 4 files and 28 tests passed.
+- `npm run test:run`: 10 files and 65 tests passed. The Workers harness emitted
+  its existing missing legacy-secret, remote-binding and delayed-close warnings
+  after all assertions passed.
+- `npm run deploy:dry-run`: passed at 1,694.96 KiB raw and 268.57 KiB gzip.
+- `git diff --check`: passed.
+- A tracked-file Telegram token-shape scan returned no matches.
+- The user's seven unrelated tracked `.DS_Store` deletions remain untouched and
+  outside the implementation scope.
+
+### Traceability
+
+- Owner instruction: "Can you now finish persona adjustments for Eukara?"
+- Architecture record: `docs/architecture/persona-finalisation-2026-08-01.md`.
+- Test evidence: `docs/tests/results/2026-08-01-persona-finalisation.txt`.
+- Test conclusion:
+  `docs/tests/conclusions/2026-08-01-persona-finalisation.md`.
+- Official guidance checked on 2026-08-01: OpenAI GPT-5.6 prompting best
+  practices, Cloudflare Workers best practices and Telegram bot-token security
+  guidance.

@@ -173,7 +173,7 @@ export async function getHistory(
 
 /**
  * Summarise the user's recent mood history as a compact string,
- * suitable for injection into Gemini context. Keeps the last N
+ * suitable for injection into model context. Keeps the last N
  * entries with score + emotions only — heavy fields (notes, tags)
  * are left out so the context stays lean.
  */
@@ -183,7 +183,7 @@ export function formatHistoryForContext(entries: MoodJournalRow[], limit = 10): 
 	const summaries = entries.slice(0, limit).map(e => {
 		const emotionsLabel = e.emotions ? safeJsonArray(e.emotions).join(', ') : 'none';
 		const scoreLabel = e.mood_score ?? '?';
-		return `${e.date} (${e.entry_type}): score ${scoreLabel}/10, emotions: ${emotionsLabel}`;
+		return `${e.date} (${e.entry_type}): score ${scoreLabel}/5, emotions: ${emotionsLabel}`;
 	});
 
 	return `Recent check-ins: ${summaries.join(' | ')}`;

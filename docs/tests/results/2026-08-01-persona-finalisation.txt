@@ -1,0 +1,36 @@
+Persona finalisation validation
+Date: 2026-08-01
+
+1. npm run typecheck
+   PASS
+
+2. npm run test:unit
+   PASS
+   Test files: 4 passed
+   Tests: 28 passed
+
+3. npm run test:run
+   PASS
+   Test files: 10 passed
+   Tests: 65 passed
+   Notes: the Workers harness emitted its existing warnings for absent legacy
+   GEMINI_API_KEY and OWNER_ID test secrets, remote AI/Vectorize bindings, and
+   Vitest's delayed-close timeout. All assertions completed successfully.
+
+4. npm run deploy:dry-run
+   PASS
+   Wrangler: 4.107.0
+   Upload: 1,694.96 KiB raw, 268.57 KiB gzip
+   AI_PROVIDER_MODE: openai
+
+5. git diff --check
+   PASS
+
+6. Tracked-file Telegram token-shape scan
+   PASS
+   No credential-shaped Telegram bot token remains in the working tree.
+
+7. Scope review
+   PASS
+   The seven pre-existing tracked .DS_Store deletions remain untouched and are
+   not part of the persona implementation.
