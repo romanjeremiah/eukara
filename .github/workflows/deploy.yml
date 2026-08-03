@@ -1,0 +1,73 @@
+name: Validate and deploy Eukara
+
+on:
+    pull_request:
+        branches:
+            - main
+    push:
+        branches:
+            - main
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    validate:
+        name: Validate
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v7
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v7
+              with:
+                  node-version: 24
+                  cache: npm
+
+            - name: Install dependencies
+              run: npm ci
+
+            - name: Type-check
+              run: npm run typecheck
+
+            - name: Run unit tests
+              run: npm run test:unit
+
+            - name: Validate Cloudflare deployment
+              run: npm run deploy:dry-run
+
+    deploy:
+        name: Deploy to Cloudflare
+        needs: validate
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        environment: production
+
+        concurrency:
+            group: eukara-production
+            cancel-in-progress: false
+
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v7
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v7
+              with:
+                  node-version: 24
+                  cache: npm
+
+            - name: Install locked dependencies
+              run: npm ci
+
+            - name: Deploy Eukara
+              uses: cloudflare/wrangler-action@v4
+              with:
+                  apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+                  command: deploy
