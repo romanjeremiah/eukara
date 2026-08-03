@@ -1208,8 +1208,11 @@ pending the embedding cutover.
 - Preserved the existing generated-type policy: `worker-configuration.d.ts`
   remains ignored and is regenerated from `wrangler.jsonc` in each clean CI
   runner.
-- Left the deployment job, production environment gate, Cloudflare credentials,
+- Left the deployment job, production environment gate, Cloudflare API token,
   application code and runtime resources unchanged.
+- Corrected the GitHub `production` environment's `CLOUDFLARE_ACCOUNT_ID` after
+  Cloudflare error 7003 proved that its previous value did not identify the
+  Worker's account.
 
 ### Decision Register
 
@@ -1221,6 +1224,9 @@ pending the embedding cutover.
 - Committing the generated declaration file or replacing Wrangler-generated
   runtime types with manually maintained Cloudflare types was rejected as
   unnecessary scope and a greater drift risk.
+- The corrected account identifier exposed a separate Cloudflare 10000
+  authentication error. Replacing or rotating `CLOUDFLARE_API_TOKEN` remains an
+  explicit owner approval gate, so no API-token change was made.
 
 ### Impact Assessment
 
@@ -1228,8 +1234,10 @@ pending the embedding cutover.
   binding-specific `Env` definitions before TypeScript validation.
 - Pull requests and pushes to `main` remain blocked when type generation,
   type-checking, unit tests or the Wrangler dry-run fails.
-- No production deployment, secret update, schema change, Cloudflare-resource
+- No production deployment, API-token update, schema change, Cloudflare-resource
   mutation or application behaviour change is introduced by this repair.
+- The account-identifier correction changes only GitHub deployment metadata;
+  it does not grant access or change the Cloudflare account itself.
 - The user's seven unrelated tracked `.DS_Store` deletions remain untouched.
 
 ### Validation
@@ -1242,11 +1250,18 @@ pending the embedding cutover.
 - `npm run test:unit`: 4 files and 33 tests passed.
 - `npm run deploy:dry-run`: passed at 1,696.11 KiB raw and 268.87 KiB gzip.
 - `git diff --check`: passed.
+- GitHub Actions run `30807424611` attempt 1 passed type generation,
+  type-checking, 33 unit tests and deployment dry-run, then failed deployment
+  with Cloudflare error 7003 due to the incorrect account identifier.
+- After correcting only `CLOUDFLARE_ACCOUNT_ID`, attempt 2 reached the correct
+  account route and failed with Cloudflare error 10000, proving the remaining
+  blocker is the environment API token or its permissions.
 
 ### Traceability
 
 - Owner instruction: "Can you check files yourself and make required changes?"
 - Failed GitHub Actions revision: `88b9949`.
+- Repair revision: `a32fd99`.
 - Failure cause: the generated `worker-configuration.d.ts` was present locally
   but absent from GitHub's clean checkout.
 - Official guidance checked on 2026-08-03: Cloudflare Workers TypeScript
