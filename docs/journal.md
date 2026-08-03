@@ -1198,3 +1198,57 @@ pending the embedding cutover.
 - Source branch: `feat/a1-persona-instructions` at `5d3ac98`.
 - Previous main: `c61a23b`.
 - Promotion method: fast-forward only, with no rewritten history.
+
+## 2026-08-03: GitHub Actions Cloudflare Type Generation Repaired
+
+### Change Log
+
+- Updated `.github/workflows/deploy.yml` so the validation job runs
+  `npm run cf-types` after `npm ci` and before `npm run typecheck`.
+- Preserved the existing generated-type policy: `worker-configuration.d.ts`
+  remains ignored and is regenerated from `wrangler.jsonc` in each clean CI
+  runner.
+- Left the deployment job, production environment gate, Cloudflare credentials,
+  application code and runtime resources unchanged.
+
+### Decision Register
+
+- The owner instructed Codex to inspect the files and make the required repair
+  after the first GitHub Actions run failed during type-checking.
+- Generating types in CI is the minimal correction because `tsconfig.json`
+  includes `worker-configuration.d.ts` while `.gitignore` intentionally excludes
+  it from Git.
+- Committing the generated declaration file or replacing Wrangler-generated
+  runtime types with manually maintained Cloudflare types was rejected as
+  unnecessary scope and a greater drift risk.
+
+### Impact Assessment
+
+- Clean GitHub runners now receive the `Ai`, `AiModels`, `ExecutionContext` and
+  binding-specific `Env` definitions before TypeScript validation.
+- Pull requests and pushes to `main` remain blocked when type generation,
+  type-checking, unit tests or the Wrangler dry-run fails.
+- No production deployment, secret update, schema change, Cloudflare-resource
+  mutation or application behaviour change is introduced by this repair.
+- The user's seven unrelated tracked `.DS_Store` deletions remain untouched.
+
+### Validation
+
+- A clean clone without `worker-configuration.d.ts` passed `npm ci`,
+  `npm run cf-types`, `npm run typecheck`, `npm run test:unit` and
+  `npm run deploy:dry-run`.
+- Current checkout `npm run cf-types`: passed with Wrangler 4.107.0.
+- `npm run typecheck`: passed.
+- `npm run test:unit`: 4 files and 33 tests passed.
+- `npm run deploy:dry-run`: passed at 1,696.11 KiB raw and 268.87 KiB gzip.
+- `git diff --check`: passed.
+
+### Traceability
+
+- Owner instruction: "Can you check files yourself and make required changes?"
+- Failed GitHub Actions revision: `88b9949`.
+- Failure cause: the generated `worker-configuration.d.ts` was present locally
+  but absent from GitHub's clean checkout.
+- Official guidance checked on 2026-08-03: Cloudflare Workers TypeScript
+  documentation recommends running `wrangler types` before CI tasks that rely
+  on TypeScript.
