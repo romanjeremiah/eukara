@@ -1132,3 +1132,69 @@ pending the embedding cutover.
 - Official guidance checked on 2026-08-03: Telegram Bot API HTML formatting,
   Cloudflare Workers best practices and latest Workers type definitions
   (`@cloudflare/workers-types` 5.20260801.1).
+
+## 2026-08-03: Feature History Promoted to Main
+
+### Change Log
+
+- Fetched the latest `origin/main` and
+  `origin/feat/a1-persona-instructions` references before changing branch
+  history.
+- Confirmed that `origin/main` at `c61a23b` was the merge base and direct
+  ancestor of `feat/a1-persona-instructions` at `5d3ac98`. The feature branch
+  was 63 commits ahead and zero commits behind.
+- Temporarily stashed only seven pre-existing tracked `.DS_Store` deletions,
+  leaving all application and documentation commits unchanged.
+- Fast-forwarded local `main` from `c61a23b` to `5d3ac98`, preserving all 63
+  commit hashes and creating no merge commit.
+- Pushed the fast-forward to `origin/main` without force. GitHub accepted the
+  push through its redirect from the former `my-ai-bot.git` repository URL to
+  `eukara.git`.
+- Restored all seven `.DS_Store` deletions as unstaged user-owned changes and
+  dropped the temporary stash after successful restoration.
+- Moved OneDrive's malformed duplicate Git ref into the recoverable local
+  backup directory `.git/codex-ref-backups/2026-08-03/`, allowing fetch and
+  reference enumeration to work normally.
+
+### Decision Register
+
+- The owner explicitly directed that `main` receive all 63 commits from
+  `feat/a1-persona-instructions`.
+- A rebase was rejected as unnecessary because `main` was already an ancestor
+  of the feature branch. A fast-forward was the minimal operation that moved
+  `main` to the approved history without rewriting commits.
+- No force-push, rebase, squash, cherry-pick, merge commit, credential change,
+  production-data mutation or deployment was performed.
+- The remote URL redirect was reported but the configured `origin` URL was not
+  changed as part of this branch-history correction.
+
+### Impact Assessment
+
+- Remote `main` now contains the complete tested OpenAI migration, governed
+  memory, model routing, persona, webhook-authentication and Telegram-formatting
+  history previously held only on the feature branch.
+- Existing commit identities and ancestry are preserved, so deployed revisions
+  and historical audit references remain traceable.
+- The feature branch remains intact locally and remotely at `5d3ac98`.
+- The working tree retains the same seven unrelated deletions it had before the
+  operation.
+
+### Validation
+
+- Remote fetch completed after the malformed ref was backed up.
+- `git merge-base --is-ancestor origin/main HEAD`: passed before promotion.
+- Divergence before promotion: 63 commits ahead, zero behind.
+- `git merge --ff-only feat/a1-persona-instructions`: passed.
+- `npm run typecheck`: passed on promoted `main`.
+- `npm run test:unit`: 4 files and 33 tests passed on promoted `main`.
+- `npm run deploy:dry-run`: passed at 1,696.11 KiB raw and 268.87 KiB gzip.
+- `git push origin main`: passed, advancing remote `main` from `c61a23b` to
+  `5d3ac98`.
+
+### Traceability
+
+- Owner decision: "main should receive all 63 commits from
+  feat/a1-persona-instructions".
+- Source branch: `feat/a1-persona-instructions` at `5d3ac98`.
+- Previous main: `c61a23b`.
+- Promotion method: fast-forward only, with no rewritten history.
