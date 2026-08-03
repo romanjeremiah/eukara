@@ -150,9 +150,9 @@ export function splitMessage(text: string, maxLen = SAFE_SPLIT_LENGTH): string[]
  * those as formatting.
  *
  * Order matters: code blocks FIRST (so their contents aren't
- * mangled by later substitutions), then headers, then emphasis,
- * then bullets. Fenced code blocks are converted to <pre>; inline
- * backticks to <code>.
+ * mangled by later substitutions), then links, headers, emphasis,
+ * and bullets. Code and links are stashed while later passes run so
+ * URL underscores cannot be mistaken for italic delimiters.
  */
 export function normaliseMarkdown(text: string): string {
 	if (!text) return text;
@@ -173,6 +173,12 @@ export function normaliseMarkdown(text: string): string {
 		// placeholder token that nothing else in this function will touch.
 		return `\x00STASH${idx}\x00`;
 	};
+	const stashedLinks: string[] = [];
+	const stashLink = (html: string): string => {
+		const idx = stashedLinks.length;
+		stashedLinks.push(html);
+		return `\x00LINK${idx}\x00`;
+	};
 
 	// 1. Fenced code blocks ```lang\n...\n``` → <pre>...</pre>, stashed.
 	out = out.replace(/```(?:[a-z]*\n)?([\s\S]*?)```/gi, (_, code) => {
@@ -185,7 +191,22 @@ export function normaliseMarkdown(text: string): string {
 		return stash(`<code>${code}</code>`);
 	});
 
-	// 3. Markdown headers (###, ##, #) → normal paragraph text.
+	// 3. Markdown links [label](https://example.com) → Telegram HTML.
+	//    Web-grounded OpenAI responses can return this syntax even though the
+	//    system prompt requests HTML. Stash complete anchors so URL underscores
+	//    and query strings remain opaque to the emphasis passes below.
+	out = out.replace(
+		/\[([^\]\n]+)\]\(((?:https?:\/\/)(?:[^()\s]|\([^()\s]*\))+)\)/gi,
+		(match, label: string, rawUrl: string) => {
+			const html = markdownLinkToTelegramHtml(label, rawUrl);
+			return html ? stashLink(html) : match;
+		},
+	);
+	// Models often wrap a Markdown citation in a second pair of parentheses,
+	// as in `([label](url))`. The anchor already supplies visual separation.
+	out = out.replace(/\(\x00LINK(\d+)\x00\)/g, '\x00LINK$1\x00');
+
+	// 4. Markdown headers (###, ##, #) → normal paragraph text.
 	//    Persistent conversation uses Telegram's classic HTML renderer. A model
 	//    heading should not silently become heavier or appear larger than the
 	//    surrounding companion reply.
@@ -194,29 +215,29 @@ export function normaliseMarkdown(text: string): string {
 	//    preceding the header.
 	out = out.replace(/^[ \t]*#{1,6}\s+(.+)$/gm, '$1');
 
-	// 4. Bold **text** or __text__ → <b>text</b>
+	// 5. Bold **text** or __text__ → <b>text</b>
 	//    Non-greedy to avoid swallowing multiple paragraphs.
 	out = out.replace(/\*\*([^*\n]+?)\*\*/g, '<b>$1</b>');
 	out = out.replace(/__([^_\n]+?)__/g, '<b>$1</b>');
 
-	// 5. Italic *text* or _text_ → <i>text</i>
+	// 6. Italic *text* or _text_ → <i>text</i>
 	//    Guard against matching bullets (* at start of line) and
 	//    intra-word underscores (snake_case). The negative lookbehind
 	//    and lookahead exclude word characters.
 	out = out.replace(/(?<![*\w])\*([^*\n]+?)\*(?!\w)/g, '<i>$1</i>');
 	out = out.replace(/(?<![_\w])_([^_\n]+?)_(?!\w)/g, '<i>$1</i>');
 
-	// 6. Bullet lists: lines starting with `* ` or `- ` → `• `.
+	// 7. Bullet lists: lines starting with `* ` or `- ` → `• `.
 	//    Telegram HTML doesn't render <ul>/<li>, so convert to the
 	//    bullet character the FORMATTING_RULES tells the model to use.
 	out = out.replace(/^(\s*)[*\-]\s+/gm, '$1• ');
 
-	// 7. Horizontal rules (---, ***, ___) → blank line.
+	// 8. Horizontal rules (---, ***, ___) → blank line.
 	//    Telegram has no <hr> equivalent. The rule was separating
 	//    sections; a blank line does the same job visually.
 	out = out.replace(/^[ \t]*([-*_])\1{2,}[ \t]*$/gm, '');
 
-	// 8. Pipe tables → bullet rows. Telegram HTML has NO table support,
+	// 9. Pipe tables → bullet rows. Telegram HTML has NO table support,
 	//    so the cleanest fallback is to flatten each data row into a
 	//    single bullet line with pipe separators. The header row and
 	//    the separator row (|:---|) are dropped; data rows are kept.
@@ -226,15 +247,43 @@ export function normaliseMarkdown(text: string): string {
 	//      | val | val |
 	out = convertPipeTables(out);
 
-	// 9. Final whitespace pass — collapse runs of 3+ blank lines that
+	// 10. Final whitespace pass — collapse runs of 3+ blank lines that
 	//    the substitutions above may have introduced.
 	out = out.replace(/\n{3,}/g, '\n\n');
 
-	// 10. Restore stashed code blocks. Do this LAST so every other
-	//     transformation has run on the non-code text.
+	// 11. Restore stashed links and code blocks. Do this LAST so every other
+	//     transformation has run only on ordinary prose.
+	out = out.replace(/\x00LINK(\d+)\x00/g, (_, idx) => stashedLinks[Number(idx)] ?? '');
 	out = out.replace(/\x00STASH(\d+)\x00/g, (_, idx) => stashed[Number(idx)] ?? '');
 
 	return out;
+}
+
+/**
+ * Convert one Markdown web link into Telegram-safe HTML.
+ * Only HTTP(S) destinations are accepted and the attribute is escaped after
+ * URL validation. Returning null leaves malformed input visible rather than
+ * silently linking it to an unintended destination.
+ */
+function markdownLinkToTelegramHtml(label: string, rawUrl: string): string | null {
+	const url = rawUrl.replace(/&amp;/gi, '&');
+	try {
+		const parsed = new URL(url);
+		if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
+	} catch {
+		return null;
+	}
+
+	return `<a href="${escapeHtmlAttribute(url)}">${escapeHtml(label)}</a>`;
+}
+
+/** Escape a validated URL for use inside a quoted Telegram HTML attribute. */
+function escapeHtmlAttribute(value: string): string {
+	return value
+		.replace(/&/g, '&amp;')
+		.replace(/"/g, '&quot;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;');
 }
 
 /**

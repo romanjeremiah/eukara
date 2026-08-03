@@ -1071,3 +1071,64 @@ pending the embedding cutover.
 - Official guidance checked on 2026-08-01: OpenAI GPT-5.6 prompting best
   practices, Cloudflare Workers best practices and Telegram bot-token security
   guidance.
+
+## 2026-08-03: Telegram Inline-Link Formatting Repaired
+
+### Change Log
+
+- Extended the shared `normaliseMarkdown()` pipeline to convert model-emitted
+  Markdown web links into compact Telegram HTML anchors.
+- Added URL validation for HTTP and HTTPS destinations and escaped both the
+  quoted URL attribute and uncontrolled link label.
+- Stashed converted anchors until other Markdown passes complete, preventing
+  underscores in paths and OpenAI tracking query parameters from becoming
+  accidental italic markup.
+- Removed redundant outer parentheses from the citation shape shown in the
+  owner's screenshot.
+- Preserved Markdown-looking links inside code spans and existing Telegram HTML
+  anchors.
+- Added architecture, regression-test, raw-result and conclusion records.
+
+### Decision Register
+
+- The repair belongs in the existing shared rendering boundary rather than a
+  provider-specific OpenAI or Telegram-send branch.
+- The dedicated grounding-source block remains unchanged because it already
+  emits correct Telegram HTML.
+- Malformed and unsupported destinations remain visible instead of being
+  silently converted to a different target.
+
+### Impact Assessment
+
+- Inline sourced links now display as one readable clickable label rather than
+  the label followed by a full tracking URL.
+- The fix applies consistently to normal replies, proactive outreach and weekly
+  reflections that use the shared normaliser.
+- Runtime work remains a bounded linear text transformation. No prompt, model
+  route, API, binding, database, queue or production state changed.
+- The user's seven unrelated `.DS_Store` deletions remain untouched.
+
+### Validation
+
+- `npm run typecheck`: passed.
+- `npm run test:unit`: 4 files and 33 tests passed.
+- `npm run test:run`: 10 files and 70 tests passed. The existing Workers test
+  harness warnings appeared after all assertions completed successfully.
+- `npm run deploy:dry-run`: passed at 1,696.11 KiB raw and 268.87 KiB gzip.
+- `git diff --check`: passed.
+- Regression coverage includes the screenshot's parenthesised OpenAI link,
+  query separators, URL underscores, unsafe label characters, code spans and
+  existing HTML anchors.
+
+### Traceability
+
+- Owner instruction: "Can you retry to fix the issue?"
+- Architecture record:
+  `docs/architecture/telegram-inline-link-formatting-2026-08-03.md`.
+- Test evidence:
+  `docs/tests/results/2026-08-03-telegram-inline-link-formatting.txt`.
+- Test conclusion:
+  `docs/tests/conclusions/2026-08-03-telegram-inline-link-formatting.md`.
+- Official guidance checked on 2026-08-03: Telegram Bot API HTML formatting,
+  Cloudflare Workers best practices and latest Workers type definitions
+  (`@cloudflare/workers-types` 5.20260801.1).

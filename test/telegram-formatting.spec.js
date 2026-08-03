@@ -65,4 +65,42 @@ describe('classic Telegram conversation rendering', () => {
 	it('normalises leaked Markdown headings to normal paragraph text', () => {
 		expect(normaliseMarkdown('# First\n\n### Second')).toBe('First\n\nSecond');
 	});
+
+	it('renders grounded Markdown links as compact Telegram HTML anchors', () => {
+		const input = '• <b>Margate Carnival Parade</b> ([margatecarnival.org](https://www.margatecarnival.org/?utm_source=openai))';
+		const output = normaliseMarkdown(input);
+
+		expect(output).toBe(
+			'• <b>Margate Carnival Parade</b> <a href="https://www.margatecarnival.org/?utm_source=openai">margatecarnival.org</a>',
+		);
+		expect(output).not.toContain('](');
+	});
+
+	it('escapes query separators and protects URL underscores from emphasis conversion', () => {
+		const output = normaliseMarkdown(
+			'[Event details](https://example.com/event_name?utm_source=openai&day=sunday)',
+		);
+
+		expect(output).toBe(
+			'<a href="https://example.com/event_name?utm_source=openai&amp;day=sunday">Event details</a>',
+		);
+		expect(output).not.toContain('<i>');
+	});
+
+	it('escapes uncontrolled Markdown link labels before creating HTML', () => {
+		expect(normaliseMarkdown('[A & B <guide>](https://example.com)')).toBe(
+			'<a href="https://example.com">A &amp; B &lt;guide&gt;</a>',
+		);
+	});
+
+	it('keeps Markdown-looking links literal inside code spans', () => {
+		expect(normaliseMarkdown('`[label](https://example.com)`')).toBe(
+			'<code>[label](https://example.com)</code>',
+		);
+	});
+
+	it('preserves existing Telegram HTML links', () => {
+		const html = '<a href="https://example.com/?a=1&amp;b=2">Existing link</a>';
+		expect(normaliseMarkdown(html)).toBe(html);
+	});
 });

@@ -1,0 +1,39 @@
+Telegram inline-link formatting validation
+Date: 2026-08-03
+
+1. Screenshot reproduction
+   PASS
+   Input shape:
+   ([margatecarnival.org](https://www.margatecarnival.org/?utm_source=openai))
+   Output shape:
+   <a href="https://www.margatecarnival.org/?utm_source=openai">margatecarnival.org</a>
+
+2. npm run typecheck
+   PASS
+
+3. npm run test:unit
+   PASS
+   Test files: 4 passed
+   Tests: 33 passed
+
+4. npm run test:run
+   PASS
+   Test files: 10 passed
+   Tests: 70 passed
+   Notes: the Workers harness emitted its existing missing legacy-secret,
+   remote-binding, listener-count and delayed-close warnings. All assertions
+   completed successfully and the command exited with status 0.
+
+5. npm run deploy:dry-run
+   PASS
+   Wrangler: 4.107.0
+   Upload: 1,696.11 KiB raw, 268.87 KiB gzip
+   AI_PROVIDER_MODE: openai
+
+6. git diff --check
+   PASS
+
+7. Scope review
+   PASS
+   The seven pre-existing tracked .DS_Store deletions remain untouched and are
+   outside this repair.
